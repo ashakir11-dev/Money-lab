@@ -22,8 +22,9 @@ GATES: list[tuple[int, str, list[str], str]] = [
             "tests/test_dashboard_rsi_path.py",
             "tests/test_macd.py",
             "tests/test_dashboard_macd.py",
+            "tests/test_macd_paper.py",
         ],
-        "paper mode check once paper trading lands",
+        "",
     ),
     (
         2,
