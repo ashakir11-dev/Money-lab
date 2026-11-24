@@ -40,8 +40,11 @@ GATES: list[tuple[int, str, list[str], str]] = [
             "tests/test_engine_fixtures.py",
             "tests/test_rsi_divergence.py",
             "tests/test_account_state.py",
+            "tests/test_paper.py",
+            "tests/test_dashboard_paper.py",
         ],
-        "paper mode, replay, duplicate delivery, and a real observed market session",
+        "one genuinely new market session processed live (needs the Tiingo provider and a "
+        "trading day)",
     ),
     (
         5,

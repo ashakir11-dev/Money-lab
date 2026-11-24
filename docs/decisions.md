@@ -43,3 +43,6 @@ No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Eac
   `MarketView`; its state serialises to JSON so paper mode can resume after a restart.
 * Components are auto-discovered: every module in `moneylab/components/` is imported,
   so a new indicator is one new file calling `register_indicator`.
+* Paper mode freezes a completed run and steps the same `Account` one delivered session
+  at a time; deliveries are idempotent, conflicts are rejected, a missing session makes
+  processing wait. See [paper-trading.md](paper-trading.md).

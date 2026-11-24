@@ -23,9 +23,10 @@ uv run moneylab dashboard    # open http://localhost:8501
 | Command | What it does |
 | --- | --- |
 | `make check` | lint, format check, type check and all tests |
-| `uv run pytest` | all tests (about 3 seconds) |
+| `uv run pytest` | all tests (about 10 seconds) |
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
+| `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper ingest`, `paper status`, `paper replay` |
 | `uv run python scripts/make_fixture.py` | regenerates the deterministic fixture |
 | `uv run python scripts/export_demo_ledgers.py OUT` | writes both demo ledgers and the comparison |
 
@@ -51,6 +52,7 @@ src/moneylab/
   components/   declared, versioned indicators and conditions (SMA, RSI, crossings, thresholds)
   data/         file-import adapter, immutable content-addressed snapshots, session alignment
   engine/       config resolution, the daily simulator, reporting and comparison
+  paper/        paper forward testing: frozen runs stepped on delivered sessions, replay
   store.py      run history (SQLite records + Parquet ledgers)
   service.py    the one entry point used by the dashboard, CLI and tests
   dashboard/    Streamlit app; controls are generated from component declarations
