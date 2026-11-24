@@ -43,10 +43,11 @@ uv run moneylab dashboard    # open http://localhost:8501
 
 ## The RSI threshold demo in the dashboard
 
-1. **Data**: press *Import as new snapshot* (the path defaults to the fixture).
+1. **Data**, tab *Import a CSV file*: press *Import as new snapshot* (the path defaults
+   to the fixture).
 2. **Strategy builder**: pick AAA, BBB, CCC, DDD. The entry already has *close crosses
    above SMA(20)*. Press *Add entry condition*: it adds *RSI(14) below 30*. Run.
-3. **Runs**: open that run, inspect *Resolved settings*, press *Duplicate this run*.
+3. **Runs**: open that run, inspect the *Settings* tab, press *Duplicate this run*.
 4. In the duplicate change only the threshold 30 to 35. Run. The dashboard opens a
    comparison with the parent on the Compare page.
 5. **Compare**: one config difference (`entry[1].params.value`: 30 to 35) and the first
@@ -55,6 +56,21 @@ uv run moneylab dashboard    # open http://localhost:8501
 
 `tests/test_dashboard_rsi_path.py` drives these exact steps through the real dashboard
 script, and `tests/test_rsi_divergence.py` checks both ledgers against hand calculations.
+
+## Demo data or real data?
+
+Every snapshot, run and comparison carries a label:
+
+- **Demo data**: the hand-designed synthetic fixture in `fixtures/data` (AAA to DDD and a
+  synthetic SPY). It exists to make known trades happen on known dates; it is not real.
+- **Real data · Tiingo**: real end-of-day prices (split and dividend adjusted) fetched from
+  Tiingo. Not intraday or streaming: the latest bar is the last completed session.
+- **Imported file**: any other CSV you import.
+
+To backtest on real prices: put `TIINGO_API_KEY=...` in a `.env` file in this folder (or
+export it), start the dashboard, then **Data** > *Real prices (Tiingo)*: enter symbols
+(include your benchmark, e.g. SPY) and dates, press *Fetch from Tiingo*, then *Build a
+strategy on this data*. The sidebar shows whether a key was found.
 
 ## Layout
 
