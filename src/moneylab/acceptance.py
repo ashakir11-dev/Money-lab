@@ -55,8 +55,7 @@ GATES: list[tuple[int, str, list[str], str]] = [
         5,
         "Universe and source flexibility",
         ["tests/test_source_flexibility.py", "tests/test_tiingo_provider.py"],
-        "live Tiingo check in a session that has TIINGO_API_KEY "
-        "(uv run pytest -m network -q tests/test_tiingo_live.py)",
+        "",
     ),
     (
         6,
@@ -67,9 +66,11 @@ GATES: list[tuple[int, str, list[str], str]] = [
 ]
 
 
-# gate -> recorded evidence that is too slow for every acceptance run (re-run separately)
+# gate -> recorded evidence that is too slow or needs a secret (re-run separately)
 REPORTS: dict[int, str] = {
     2: "docs/benchmarks/capacity.md (re-run: uv run python scripts/benchmark_capacity.py)",
+    5: "docs/live-checks/tiingo.md (re-run with TIINGO_API_KEY: "
+    "uv run pytest -m network -q tests/test_tiingo_live.py)",
 }
 
 
