@@ -29,8 +29,8 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         2,
         "Capacity and speed",
-        [],
-        "250-symbol x 5-year dataset, parallel worker pool, timed 10-variant batches",
+        ["tests/test_batch.py"],
+        "",
     ),
     (
         3,
@@ -67,13 +67,19 @@ GATES: list[tuple[int, str, list[str], str]] = [
 ]
 
 
+# gate -> recorded evidence that is too slow for every acceptance run (re-run separately)
+REPORTS: dict[int, str] = {
+    2: "docs/benchmarks/capacity.md (re-run: uv run python scripts/benchmark_capacity.py)",
+}
+
+
 def main() -> int:
     tests = sorted({t for _, _, ts, _ in GATES for t in ts})
     code = subprocess.call([sys.executable, "-m", "pytest", "-q", *tests], cwd=ROOT)
     print("\nAcceptance gates")
     for n, title, ts, missing in GATES:
         status = "FAIL" if code != 0 and ts else ("PENDING" if missing else "PASS")
-        evidence = ", ".join(ts) or "none yet"
+        evidence = ", ".join([*ts, *([REPORTS[n]] if n in REPORTS else [])]) or "none yet"
         print(f"  Gate {n} [{status}] {title}")
         print(f"      evidence: {evidence}\n      depends on: {missing or 'nothing'}")
     return code

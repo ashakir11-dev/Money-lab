@@ -63,6 +63,20 @@ def _compute_indicators(
     return out
 
 
+@dataclass(frozen=True)
+class _Cond:
+    """A resolved condition with its labels worked out once (not per session)."""
+
+    kind: str
+    key: str
+    label: str
+    params: dict[str, Any]
+
+
+def _compile(conds: list[dict[str, Any]]) -> list[_Cond]:
+    return [_Cond(c["kind"], _ind_key(c["indicator"]), _cond_label(c), c["params"]) for c in conds]
+
+
 def _evaluate(
     conds: list[dict[str, Any]],
     ind: dict[str, np.ndarray],
@@ -70,26 +84,38 @@ def _evaluate(
     i: int,
 ) -> tuple[bool | None, list[dict[str, Any]], dict[str, float | None]]:
     """Evaluate all conditions at session i. Returns (passed | None if not evaluable)."""
+    return _evaluate_compiled(_compile(conds), ind, close, i)
+
+
+def _evaluate_compiled(
+    conds: list[_Cond],
+    ind: dict[str, np.ndarray],
+    close: np.ndarray,
+    i: int,
+) -> tuple[bool | None, list[dict[str, Any]], dict[str, float | None]]:
     results: list[dict[str, Any]] = []
-    values: dict[str, float | None] = {"close": _f(close[i])}
+    c_i = close[i]
+    values: dict[str, float | None] = {"close": _f(c_i)}
     evaluable = True
     for c in conds:
-        key = _ind_key(c["indicator"])
-        v = ind[key][i]
-        values[key] = _f(v)
-        p = c["params"]
-        r: dict[str, Any] = {"condition": _cond_label(c), "indicator": key, "observed": _f(v)}
-        if c["kind"] == "price_cross":
-            pv = ind[key][i - 1] if i > 0 else np.nan
+        key = c.key
+        arr = ind[key]
+        v = arr[i]
+        fv = _f(v)
+        values[key] = fv
+        p = c.params
+        r: dict[str, Any] = {"condition": c.label, "indicator": key, "observed": fv}
+        if c.kind == "price_cross":
+            pv = arr[i - 1] if i > 0 else np.nan
             pc = close[i - 1] if i > 0 else np.nan
             values[f"prev {key}"] = _f(pv)
             values["prev close"] = _f(pc)
-            if any(math.isnan(x) for x in (v, pv, pc, close[i])):
+            if math.isnan(v) or math.isnan(pv) or math.isnan(pc) or math.isnan(c_i):
                 r["passed"] = None
             elif p["direction"] == "above":
-                r["passed"] = bool(pc <= pv and close[i] > v)
+                r["passed"] = bool(pc <= pv and c_i > v)
             else:
-                r["passed"] = bool(pc >= pv and close[i] < v)
+                r["passed"] = bool(pc >= pv and c_i < v)
         else:
             r["threshold"] = p["value"]
             r["op"] = p["op"]
@@ -105,6 +131,47 @@ def _evaluate(
     if not evaluable:
         return None, results, values
     return all(r["passed"] for r in results), results, values
+
+
+def _entry_candidates(conds: list[_Cond], view: MarketView, symbols: list[str]) -> np.ndarray:
+    """Boolean (sessions x symbols): True where the entry step can record something.
+
+    Mirrors the per-symbol branches of ``Account._decide_entries`` with whole-array
+    comparisons, so the per-session loop only visits symbols that are missing a bar
+    (and listed), in warm-up, a near miss or a full signal. Every other symbol records
+    nothing and changes no state, so skipping it cannot change any ledger. The rows
+    that are recorded are still built by ``_evaluate_compiled``.
+    """
+    n = len(view.sessions)
+    if not symbols:
+        return np.zeros((n, 0), dtype=bool)
+    close = np.vstack([view.closes[s] for s in symbols])
+    prev_close = np.concatenate([np.full((len(symbols), 1), np.nan), close[:, :-1]], axis=1)
+    any_none = np.zeros(close.shape, dtype=bool)
+    any_fail = np.zeros(close.shape, dtype=bool)
+    any_pass = np.zeros(close.shape, dtype=bool)
+    with np.errstate(invalid="ignore"):
+        for c in conds:
+            v = np.vstack([view.indicators[s][c.key] for s in symbols])
+            p = c.params
+            if c.kind == "price_cross":
+                pv = np.concatenate([np.full((len(symbols), 1), np.nan), v[:, :-1]], axis=1)
+                none = np.isnan(v) | np.isnan(pv) | np.isnan(prev_close) | np.isnan(close)
+                if p["direction"] == "above":
+                    passed = (prev_close <= pv) & (close > v)
+                else:
+                    passed = (prev_close >= pv) & (close < v)
+            else:
+                none = np.isnan(v)
+                passed = v < p["value"] if p["op"] == "below" else v > p["value"]
+            passed &= ~none
+            any_none |= none
+            any_pass |= passed
+            any_fail |= ~none & ~passed
+    record = (any_none & ~any_fail) | (~any_none & any_pass)
+    listed = np.arange(n)[None, :] >= np.array([view.first_bar[s] for s in symbols])[:, None]
+    out: np.ndarray = (listed & (np.isnan(close) | record)).T.copy()
+    return out
 
 
 def _cents(x: float) -> float:
@@ -197,6 +264,18 @@ class Account:
         self.fills: list[dict[str, Any]] = []
         self.equity_rows: list[dict[str, Any]] = []
         self.last_index = -1
+        # Derived, not state: rebuilt from ``resolved`` and the view after a restart.
+        self._entry_compiled = _compile(self.entry_conds)
+        self._exit_compiled = _compile(self.exit_conds)
+        self._cand_view: MarketView | None = None
+        self._cand: np.ndarray = np.zeros((0, 0), dtype=bool)
+
+    def _candidates(self, view: MarketView, i: int) -> np.ndarray:
+        """Indices into ``self.symbols`` the entry step must visit at session ``i``."""
+        if view is not self._cand_view:
+            self._cand = _entry_candidates(self._entry_compiled, view, self.symbols)
+            self._cand_view = view
+        return np.flatnonzero(self._cand[i])
 
     # Persistence ---------------------------------------------------------------
     def state(self) -> dict[str, Any]:
@@ -326,7 +405,9 @@ class Account:
                 closes = view.closes[sym]
                 if math.isnan(closes[i]):
                     continue
-                ok, res, vals = _evaluate(self.exit_conds, view.indicators[sym], closes, i)
+                ok, res, vals = _evaluate_compiled(
+                    self._exit_compiled, view.indicators[sym], closes, i
+                )
                 if ok:
                     did = self._record(
                         day, sym, EXIT, "exit signal", qty=pos.qty, conditions=res, values=vals
@@ -349,7 +430,11 @@ class Account:
             for s, o in self.pending.items()
             if o.side == "sell"
         )
-        for sym in self.symbols:
+        symbols = self.symbols
+        # Only symbols that can record something are visited (see _entry_candidates);
+        # the rest are not yet listed or fail a condition outright.
+        for k in self._candidates(view, i):
+            sym = symbols[k]
             if i < view.first_bar[sym]:
                 continue  # not yet listed in the snapshot
             closes = view.closes[sym]
@@ -357,7 +442,9 @@ class Account:
             if math.isnan(c):
                 self._record(day, sym, INELIGIBLE, "missing_bar")
                 continue
-            ok, res, vals = _evaluate(self.entry_conds, view.indicators[sym], closes, i)
+            ok, res, vals = _evaluate_compiled(
+                self._entry_compiled, view.indicators[sym], closes, i
+            )
             if ok is None:
                 if all(r["passed"] is not False for r in res):
                     self._record(day, sym, INELIGIBLE, "warmup", conditions=res, values=vals)

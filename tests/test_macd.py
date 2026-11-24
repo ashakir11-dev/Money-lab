@@ -191,7 +191,7 @@ def test_invalid_params_are_rejected_before_execution(
     def boom(*_: object, **__: object) -> None:
         raise AssertionError("simulator must not run on an invalid config")
 
-    monkeypatch.setattr("moneylab.service.simulate", boom)
+    monkeypatch.setattr("moneylab.engine.batch.simulate", boom)
     with pytest.raises(ValueError, match=re.escape(message)):
         resolve(_config(**params))
     with pytest.raises(ValueError, match=re.escape(message)):
