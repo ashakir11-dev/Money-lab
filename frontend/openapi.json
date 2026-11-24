@@ -1,0 +1,2137 @@
+{
+  "components": {
+    "schemas": {
+      "BatchSubmit": {
+        "properties": {
+          "configs": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyConfig"
+            },
+            "minItems": 1,
+            "title": "Configs",
+            "type": "array"
+          },
+          "parent_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Ids"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configs",
+          "snapshot_id"
+        ],
+        "title": "BatchSubmit",
+        "type": "object"
+      },
+      "CompareOut": {
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/RunDetail"
+          },
+          "b": {
+            "$ref": "#/components/schemas/RunDetail"
+          },
+          "config_diff": {
+            "items": {
+              "$ref": "#/components/schemas/SettingDiff"
+            },
+            "title": "Config Diff",
+            "type": "array"
+          },
+          "data_differs": {
+            "title": "Data Differs",
+            "type": "boolean"
+          },
+          "first_difference": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Difference"
+          },
+          "is_parent": {
+            "description": "run A is run B's parent",
+            "title": "Is Parent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "is_parent",
+          "config_diff",
+          "data_differs",
+          "first_difference"
+        ],
+        "title": "CompareOut",
+        "type": "object"
+      },
+      "ComponentOut": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "params": {
+            "items": {
+              "$ref": "#/components/schemas/ParamOut"
+            },
+            "title": "Params",
+            "type": "array"
+          },
+          "price_scale": {
+            "title": "Price Scale",
+            "type": "boolean"
+          },
+          "universe": {
+            "description": "cross-sectional: computed over the whole universe",
+            "title": "Universe",
+            "type": "boolean"
+          },
+          "uses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Uses",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "label",
+          "description",
+          "uses",
+          "params",
+          "price_scale",
+          "universe"
+        ],
+        "title": "ComponentOut",
+        "type": "object"
+      },
+      "Condition": {
+        "properties": {
+          "indicator": {
+            "$ref": "#/components/schemas/IndicatorRef"
+          },
+          "kind": {
+            "enum": [
+              "price_cross",
+              "threshold"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "indicator"
+        ],
+        "title": "Condition",
+        "type": "object"
+      },
+      "CsvImport": {
+        "properties": {
+          "csv": {
+            "description": "date,symbol,open,high,low,close,volume",
+            "minLength": 1,
+            "title": "Csv",
+            "type": "string"
+          },
+          "filename": {
+            "default": "upload.csv",
+            "title": "Filename",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csv"
+        ],
+        "title": "CsvImport",
+        "type": "object"
+      },
+      "DecisionPage": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "offset",
+          "limit",
+          "rows"
+        ],
+        "title": "DecisionPage",
+        "type": "object"
+      },
+      "Defaults": {
+        "properties": {
+          "benchmark": {
+            "default": "SPY",
+            "title": "Benchmark",
+            "type": "string"
+          },
+          "cost_bps_per_side": {
+            "title": "Cost Bps Per Side",
+            "type": "number"
+          },
+          "exit_sessions": {
+            "default": 10,
+            "title": "Exit Sessions",
+            "type": "integer"
+          },
+          "max_positions": {
+            "title": "Max Positions",
+            "type": "integer"
+          },
+          "starting_cash": {
+            "title": "Starting Cash",
+            "type": "number"
+          },
+          "target_allocation": {
+            "title": "Target Allocation",
+            "type": "number"
+          }
+        },
+        "required": [
+          "starting_cash",
+          "target_allocation",
+          "max_positions",
+          "cost_bps_per_side"
+        ],
+        "title": "Defaults",
+        "type": "object"
+      },
+      "EquityRow": {
+        "properties": {
+          "benchmark_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Equity"
+          },
+          "cash": {
+            "title": "Cash",
+            "type": "number"
+          },
+          "equity": {
+            "title": "Equity",
+            "type": "number"
+          },
+          "positions": {
+            "title": "Positions",
+            "type": "integer"
+          },
+          "positions_value": {
+            "title": "Positions Value",
+            "type": "number"
+          },
+          "session": {
+            "title": "Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "cash",
+          "positions_value",
+          "equity",
+          "positions"
+        ],
+        "title": "EquityRow",
+        "type": "object"
+      },
+      "ExitRule": {
+        "properties": {
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "kind": {
+            "default": "holding_period",
+            "enum": [
+              "holding_period",
+              "signal"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "ExitRule",
+        "type": "object"
+      },
+      "FillRow": {
+        "properties": {
+          "cash_after": {
+            "title": "Cash After",
+            "type": "number"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Id"
+          },
+          "gross": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "qty": {
+            "title": "Qty",
+            "type": "integer"
+          },
+          "session": {
+            "title": "Session",
+            "type": "string"
+          },
+          "sessions_waited": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessions Waited"
+          },
+          "side": {
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "symbol",
+          "side",
+          "qty",
+          "price",
+          "cost",
+          "cash_after"
+        ],
+        "title": "FillRow",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "api_version": {
+            "default": "1",
+            "title": "Api Version",
+            "type": "string"
+          },
+          "engine_version": {
+            "default": "engine/0.2.0",
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "Health",
+        "type": "object"
+      },
+      "IndicatorRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "IndicatorRef",
+        "type": "object"
+      },
+      "JobOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Run Ids",
+            "type": "array"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "complete",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "submitted_at",
+          "started_at",
+          "finished_at",
+          "run_ids",
+          "error"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
+      "ParamOut": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "help": {
+            "default": "",
+            "title": "Help",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "default",
+          "label"
+        ],
+        "title": "ParamOut",
+        "type": "object"
+      },
+      "PortfolioSettings": {
+        "properties": {
+          "cost_bps_per_side": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Bps Per Side"
+          },
+          "max_positions": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Positions"
+          },
+          "starting_cash": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starting Cash"
+          },
+          "target_allocation": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Allocation"
+          }
+        },
+        "title": "PortfolioSettings",
+        "type": "object"
+      },
+      "RunDetail": {
+        "properties": {
+          "benchmark_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Return"
+          },
+          "config_hash": {
+            "title": "Config Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "title": "Metrics",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open_positions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Positions"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "resolved": {
+            "additionalProperties": true,
+            "title": "Resolved",
+            "type": "object"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "real",
+              "demo",
+              "file"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_label": {
+            "title": "Source Label",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "name",
+          "created_at",
+          "status",
+          "snapshot_id",
+          "source_kind",
+          "source_label",
+          "summary",
+          "total_return",
+          "benchmark_return",
+          "max_drawdown",
+          "sharpe",
+          "trades",
+          "open_positions",
+          "engine_version",
+          "config_hash",
+          "finished_at",
+          "resolved",
+          "metrics"
+        ],
+        "title": "RunDetail",
+        "type": "object"
+      },
+      "RunSubmit": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/StrategyConfig"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "watchlist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchlist"
+          }
+        },
+        "required": [
+          "config",
+          "snapshot_id"
+        ],
+        "title": "RunSubmit",
+        "type": "object"
+      },
+      "RunSummary": {
+        "properties": {
+          "benchmark_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Return"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open_positions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Positions"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "real",
+              "demo",
+              "file"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_label": {
+            "title": "Source Label",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "name",
+          "created_at",
+          "status",
+          "snapshot_id",
+          "source_kind",
+          "source_label",
+          "summary",
+          "total_return",
+          "benchmark_return",
+          "max_drawdown",
+          "sharpe",
+          "trades",
+          "open_positions"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
+      "SettingDiff": {
+        "properties": {
+          "a": {
+            "title": "A"
+          },
+          "b": {
+            "title": "B"
+          },
+          "setting": {
+            "title": "Setting",
+            "type": "string"
+          }
+        },
+        "required": [
+          "setting",
+          "a",
+          "b"
+        ],
+        "title": "SettingDiff",
+        "type": "object"
+      },
+      "SnapshotOut": {
+        "properties": {
+          "adjustment": {
+            "title": "Adjustment",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "first_date": {
+            "title": "First Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_date": {
+            "title": "Last Date",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "real",
+              "demo",
+              "file"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_label": {
+            "title": "Source Label",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Symbols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "source_kind",
+          "source_label",
+          "label",
+          "adjustment",
+          "created_at",
+          "symbols",
+          "first_date",
+          "last_date",
+          "rows"
+        ],
+        "title": "SnapshotOut",
+        "type": "object"
+      },
+      "StrategyConfig": {
+        "properties": {
+          "benchmark": {
+            "default": "SPY",
+            "title": "Benchmark",
+            "type": "string"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "entry": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "title": "Entry",
+            "type": "array"
+          },
+          "exit": {
+            "$ref": "#/components/schemas/ExitRule"
+          },
+          "name": {
+            "default": "Untitled strategy",
+            "title": "Name",
+            "type": "string"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/PortfolioSettings"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "universe": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Universe",
+            "type": "array"
+          }
+        },
+        "required": [
+          "universe",
+          "entry"
+        ],
+        "title": "StrategyConfig",
+        "type": "object"
+      },
+      "TiingoImport": {
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbols",
+          "start",
+          "end"
+        ],
+        "title": "TiingoImport",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WatchlistIn": {
+        "properties": {
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "symbols"
+        ],
+        "title": "WatchlistIn",
+        "type": "object"
+      },
+      "WatchlistOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "label",
+          "members",
+          "created_at"
+        ],
+        "title": "WatchlistOut",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Build strategies, run backtests in the background, compare runs.",
+    "title": "Money-lab research API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/batches": {
+      "post": {
+        "description": "Queue several variants; each runs on its own account across worker processes.",
+        "operationId": "submit_batch_api_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Batch",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/compare": {
+      "get": {
+        "description": "What changed between two runs: settings, data, and the first differing\ntrading decision with the values behind it.",
+        "operationId": "compare_api_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "a",
+            "required": true,
+            "schema": {
+              "title": "A",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "b",
+            "required": true,
+            "schema": {
+              "title": "B",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/components": {
+      "get": {
+        "description": "Every registered indicator with its versioned parameter schema. The builder\ndraws its controls from this, so a new indicator file needs no UI change.",
+        "operationId": "components_api_components_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ComponentOut"
+                  },
+                  "title": "Response Components Api Components Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Components",
+        "tags": [
+          "registry"
+        ]
+      }
+    },
+    "/api/defaults": {
+      "get": {
+        "operationId": "defaults_api_defaults_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Defaults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Defaults",
+        "tags": [
+          "registry"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobOut"
+                  },
+                  "title": "Response List Jobs Api Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Jobs",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "operationId": "runs_api_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummary"
+                  },
+                  "title": "Response Runs Api Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runs",
+        "tags": [
+          "runs"
+        ]
+      },
+      "post": {
+        "description": "Queue one run. Returns a job at once; poll ``/api/jobs/{id}`` for its run id.",
+        "operationId": "submit_run_api_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}": {
+      "get": {
+        "operationId": "run_detail_api_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Detail",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/decisions": {
+      "get": {
+        "description": "Decisions in engine order. Filter by action (enter, exit, skip, no_signal,\nineligible), symbol or session.",
+        "operationId": "decisions_api_runs__run_id__decisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decisions",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/duplicate": {
+      "post": {
+        "description": "Re-run exactly as saved (same settings, data and versions).",
+        "operationId": "duplicate_api_runs__run_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/equity": {
+      "get": {
+        "operationId": "equity_api_runs__run_id__equity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EquityRow"
+                  },
+                  "title": "Response Equity Api Runs  Run Id  Equity Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Equity",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/fills": {
+      "get": {
+        "operationId": "fills_api_runs__run_id__fills_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FillRow"
+                  },
+                  "title": "Response Fills Api Runs  Run Id  Fills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fills",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/snapshots": {
+      "get": {
+        "operationId": "snapshots_api_snapshots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotOut"
+                  },
+                  "title": "Response Snapshots Api Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Snapshots",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/snapshots/csv": {
+      "post": {
+        "operationId": "import_csv_api_snapshots_csv_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Csv",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/snapshots/tiingo": {
+      "post": {
+        "description": "Fetch daily bars, splits and dividends from Tiingo. The key stays on the server.",
+        "operationId": "import_tiingo_api_snapshots_tiingo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TiingoImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Tiingo",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/validate": {
+      "post": {
+        "description": "Resolve a strategy with today's defaults without running it.",
+        "operationId": "validate_api_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Api Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate",
+        "tags": [
+          "registry"
+        ]
+      }
+    },
+    "/api/watchlists": {
+      "get": {
+        "operationId": "watchlists_api_watchlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WatchlistOut"
+                  },
+                  "title": "Response Watchlists Api Watchlists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Watchlists",
+        "tags": [
+          "data"
+        ]
+      },
+      "post": {
+        "operationId": "save_watchlist_api_watchlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Watchlist",
+        "tags": [
+          "data"
+        ]
+      }
+    }
+  }
+}

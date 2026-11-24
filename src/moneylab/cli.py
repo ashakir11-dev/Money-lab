@@ -24,6 +24,35 @@ def dashboard(port: int = 8501) -> None:
     )
 
 
+@app.command()
+def serve(
+    port: int = 8000,
+    host: str = "127.0.0.1",
+    open_browser: Annotated[bool, typer.Option("--open/--no-open")] = False,
+) -> None:
+    """Start the lab at http://HOST:PORT: the research API and the built dashboard.
+
+    Build the dashboard once with ``npm --prefix frontend run build`` (``make web``).
+    Runs keep going in the server even if the browser tab is closed.
+    """
+    import uvicorn
+
+    from moneylab.api.app import DEFAULT_WEB_DIR, create_app
+
+    if not DEFAULT_WEB_DIR.is_dir():
+        typer.echo(
+            f"note: no built dashboard at {DEFAULT_WEB_DIR}; serving the API only "
+            "(run `make web` to build it)"
+        )
+    url = f"http://{host}:{port}"
+    typer.echo(f"Money-lab at {url}  (API docs at {url}/docs)")
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+
+
 @app.command("import")
 def import_file(
     path: Path,
