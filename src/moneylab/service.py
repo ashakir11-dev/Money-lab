@@ -23,7 +23,8 @@ from moneylab.data.snapshot import (
 )
 from moneylab.engine.config import StrategyConfig, check_versions, config_hash, resolve
 from moneylab.engine.reporting import config_diff, first_difference, metrics
-from moneylab.engine.simulator import simulate
+from moneylab.engine.simulator import RunResult, simulate
+from moneylab.paper.desk import PaperDesk
 from moneylab.settings import Settings, get_settings
 from moneylab.store import RunStore
 
@@ -33,6 +34,7 @@ class Lab:
     settings: Settings
     store: RunStore
     _data_cache: dict[tuple[Any, ...], MarketData] = field(default_factory=dict, repr=False)
+    _paper: PaperDesk | None = field(default=None, repr=False)
 
     @classmethod
     def open(cls, home: Path | None = None) -> Lab:
@@ -230,3 +232,38 @@ class Lab:
                 la.decisions, lb.decisions, la.fills, lb.fills, la.equity, lb.equity
             ),
         }
+
+    # Paper forward testing (docs/paper-trading.md) ------------------------------------
+    @property
+    def paper(self) -> PaperDesk:
+        if self._paper is None:
+            self._paper = PaperDesk(self.settings, self.store)
+        return self._paper
+
+    def start_paper(self, run_id: str, start_date: str | date | None = None, name: str = "") -> str:
+        """Freeze a completed run and open a paper account for sessions after the start."""
+        return self.paper.start(run_id, start_date, name)
+
+    def paper_ingest(
+        self, paper_id: str, session_frame: pd.DataFrame, received_at: str | None = None
+    ) -> dict[str, Any]:
+        """Record one delivered session (import-format bars) and process what is ready."""
+        return self.paper.ingest(paper_id, session_frame, received_at).as_dict()
+
+    def paper_ingest_sessions(
+        self, paper_id: str, frame: pd.DataFrame, received_at: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Ingest a multi-session frame one session at a time, in date order."""
+        return [r.as_dict() for r in self.paper.ingest_sessions(paper_id, frame, received_at)]
+
+    def paper_status(self, paper_id: str, as_of: str | date | None = None) -> dict[str, Any]:
+        return self.paper.status(paper_id, as_of)
+
+    def paper_replay(self, paper_id: str) -> dict[str, Any]:
+        return self.paper.replay(paper_id)
+
+    def paper_ledgers(self, paper_id: str) -> RunResult:
+        return self.paper.ledgers(paper_id)
+
+    def paper_accounts(self) -> list[dict[str, Any]]:
+        return self.paper.accounts()

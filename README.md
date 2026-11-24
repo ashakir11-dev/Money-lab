@@ -23,14 +23,18 @@ uv run moneylab dashboard    # open http://localhost:8501
 | Command | What it does |
 | --- | --- |
 | `make check` | lint, format check, type check and all tests |
-| `uv run pytest` | all tests (about 3 seconds) |
+| `uv run pytest` | all tests (about 10 seconds) |
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
+<<<<<<< HEAD
+| `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper ingest`, `paper status`, `paper replay` |
+=======
 | `uv run moneylab fetch SPY QQQ --start 2020-01-02 --end 2024-12-31` | imports daily history from Tiingo (needs `TIINGO_API_KEY`, see [providers](docs/providers.md)) |
 | `uv run moneylab new-sessions SNAPSHOT_ID` | prints sessions Tiingo has after a snapshot, in the import format |
 | `uv run moneylab watchlist NAME SYM... --label TEXT` | saves a labelled watchlist (a new version if it changed); without symbols shows it |
 | `uv run pytest -m network -q tests/test_tiingo_live.py` | live Tiingo check (deselected by default; needs the key) |
 | `uv run python scripts/make_tiingo_fixtures.py` | regenerates the recorded-style Tiingo responses |
+>>>>>>> origin/claude/project-thread-7z8tbd-tiingo
 | `uv run python scripts/make_fixture.py` | regenerates the deterministic fixture |
 | `uv run python scripts/export_demo_ledgers.py OUT` | writes both demo ledgers and the comparison |
 
@@ -57,6 +61,7 @@ src/moneylab/
   data/         file-import adapter, immutable content-addressed snapshots, session alignment
   data/providers/  live provider adapters (Tiingo) sharing the file adapter's adjustment
   engine/       config resolution, the daily simulator, reporting and comparison
+  paper/        paper forward testing: frozen runs stepped on delivered sessions, replay
   store.py      run history (SQLite records + Parquet ledgers)
   service.py    the one entry point used by the dashboard, CLI and tests
   dashboard/    Streamlit app; controls are generated from component declarations

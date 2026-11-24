@@ -117,6 +117,76 @@ def demo() -> None:
     typer.echo(f"original run {out['original']}, changed run {out['changed']}")
 
 
+paper_app = typer.Typer(
+    no_args_is_help=True, help="Paper forward testing of a frozen run (docs/paper-trading.md)."
+)
+app.add_typer(paper_app, name="paper")
+
+
+@paper_app.command("start")
+def paper_start(
+    run_id: str,
+    start: str = typer.Option("", help="last history session (default: the snapshot's last)"),
+    name: str = "",
+) -> None:
+    """Freeze a completed run and open a paper account for the sessions after START."""
+    from moneylab.service import Lab
+
+    lab = Lab.open()
+    pid = lab.start_paper(run_id, start or None, name)
+    st = lab.paper_status(pid)
+    typer.echo(f"paper account {pid}: history to {st['start_session']}, next {st['next_expected']}")
+
+
+@paper_app.command("list")
+def paper_list() -> None:
+    """List paper accounts with their latest processed session."""
+    from moneylab.service import Lab
+
+    for a in Lab.open().paper_accounts():
+        typer.echo(
+            f"{a['id']}  {a['name']}  run {a['run_id']}  start {a['start_session']}  "
+            f"latest {a['latest_session'] or '-'}  ({a['processed_sessions']} sessions)"
+        )
+
+
+@paper_app.command("ingest")
+def paper_ingest(paper_id: str, path: Path) -> None:
+    """Deliver the sessions in a CSV (import format), one event per session, in date order."""
+    import pandas as pd
+
+    from moneylab.service import Lab
+
+    for r in Lab.open().paper_ingest_sessions(paper_id, pd.read_csv(path)):
+        note = f": {r['detail']}" if r["detail"] != r["status"] else ""
+        done = f"; processed {', '.join(r['processed'])}" if r["processed"] else ""
+        typer.echo(f"{r['session']} {r['status']}{note}{done}")
+
+
+@paper_app.command("status")
+def paper_status(
+    paper_id: str, as_of: str = typer.Option("", help="report gaps up to here")
+) -> None:
+    """Latest processed session, missing and conflicting data, positions and cash."""
+    import json
+
+    from moneylab.service import Lab
+
+    typer.echo(json.dumps(Lab.open().paper_status(paper_id, as_of or None), indent=2))
+
+
+@paper_app.command("replay")
+def paper_replay(paper_id: str) -> None:
+    """Replay the recorded inputs from the initial state; exit 1 unless it matches exactly."""
+    import json
+
+    from moneylab.service import Lab
+
+    out = Lab.open().paper_replay(paper_id)
+    typer.echo(json.dumps(out, indent=2, default=str))
+    raise SystemExit(0 if out["match"] else 1)
+
+
 @app.command()
 def acceptance() -> None:
     """Run the acceptance checks and print each gate's status."""
