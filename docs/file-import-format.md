@@ -21,3 +21,14 @@ Rules:
 
 The adjustment policy is recorded as `split_and_dividend_adjusted` in each snapshot's
 metadata.
+
+## Raw prices with an actions file
+
+`uv run moneylab import PATH --actions ACTIONS.csv` (or `Lab.import_file(path, actions_path=...)`) accepts raw,
+unadjusted prices plus an actions CSV `date,symbol,type,value`: `split` (new shares per
+old share, effective `date`) or `dividend` (cash per share, ex-date `date`). The lab
+adjusts them once at import (`moneylab.data.actions`) and records the policy
+`split_and_dividend_adjusted_from_raw`. The Tiingo adapter builds the same two frames
+from the API and uses the same function, so identical data loaded either way gets the
+same snapshot id (see [providers](providers.md)). Newly available sessions fetched from
+a provider come back in this same column layout.

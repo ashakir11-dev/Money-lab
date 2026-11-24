@@ -107,12 +107,14 @@ def _condition_editor(cond: dict[str, Any], use: str, key: str) -> dict[str, Any
             if k in {p.name for p in ind_decl.params}
         }
         if ind_id == cond["indicator"]["id"]
-        else {}
+        else {},
+        cross_check=False,  # inconsistent values are reported by "Validate, run and save"
     )
     cond_params = cond_decl.resolve_params(
         {k: v for k, v in cond["params"].items() if k in {p.name for p in cond_decl.params}}
         if kind == cond["kind"]
-        else {}
+        else {},
+        cross_check=False,
     )
     with cols[2]:
         for p in ind_decl.params:

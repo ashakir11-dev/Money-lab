@@ -22,6 +22,11 @@ Use = Literal["indicator", "entry", "exit", "filter"]
 # data up to and including that session.
 IndicatorFn = Callable[[pd.DataFrame, dict[str, Any]], pd.Series]
 
+# Optional cross-parameter check: receives the resolved (defaulted, individually
+# validated) parameters and raises ValueError when a combination is invalid, for
+# example MACD's fast < slow. ParamSpec bounds only cover one parameter at a time.
+ParamCheck = Callable[[dict[str, Any]], None]
+
 
 @dataclass(frozen=True)
 class ParamSpec:
@@ -67,6 +72,7 @@ class ComponentDeclaration:
     outputs: tuple[str, ...] = ("value",)
     description: str = ""
     compute: IndicatorFn | None = field(default=None, compare=False, repr=False)
+    check: ParamCheck | None = field(default=None, compare=False, repr=False)
 
     def param(self, name: str) -> ParamSpec:
         for p in self.params:
@@ -74,12 +80,19 @@ class ComponentDeclaration:
                 return p
         raise KeyError(f"{self.id} has no parameter {name!r}")
 
-    def resolve_params(self, given: dict[str, Any]) -> dict[str, Any]:
-        """Fill defaults and validate. Unknown parameters are rejected."""
+    def resolve_params(self, given: dict[str, Any], *, cross_check: bool = True) -> dict[str, Any]:
+        """Fill defaults, validate each parameter, then run the optional cross-check.
+
+        Unknown parameters are rejected. Editors pass ``cross_check=False`` to fill a
+        form whose values are not yet consistent; execution always checks.
+        """
         unknown = set(given) - {p.name for p in self.params}
         if unknown:
             raise ValueError(f"{self.id}: unknown parameter(s) {sorted(unknown)}")
-        return {p.name: p.validate(given.get(p.name, p.default)) for p in self.params}
+        resolved = {p.name: p.validate(given.get(p.name, p.default)) for p in self.params}
+        if cross_check and self.check is not None:
+            self.check(resolved)
+        return resolved
 
     def warmup(self, params: dict[str, Any]) -> int:
         """Sessions of history needed before the first valid value (0-based index)."""
@@ -104,6 +117,7 @@ def register_indicator(
     params: tuple[ParamSpec, ...],
     description: str = "",
     inputs: tuple[str, ...] = ("close",),
+    check: ParamCheck | None = None,
 ) -> Callable[[IndicatorFn], IndicatorFn]:
     """Decorator: implement an indicator once and make it usable in every strategy."""
 
@@ -118,6 +132,7 @@ def register_indicator(
                 inputs=inputs,
                 description=description,
                 compute=fn,
+                check=check,
             )
         )
         return fn
