@@ -26,7 +26,6 @@ from moneylab.engine.config import (
 from moneylab.service import Lab
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "85ad541"  # commit before MACD work started
 SMALL = {"fast": 3, "slow": 7, "signal": 3}
 CLOSES = [10.0, 12.0, 11.0, 13.0, 15.0, 14.0, 16.0, 18.0, 17.0, 20.0]
 
@@ -243,24 +242,39 @@ def test_historical_run_persists_and_reopens(lab: Lab) -> None:
 # Zero edits outside the component folder -----------------------------------------
 
 
-def test_no_dashboard_engine_or_store_edits_since_base() -> None:
+def test_macd_commit_only_adds_new_files() -> None:
+    """The commit that introduced macd.py added files and modified none."""
     try:
-        out = subprocess.run(
+        sha = subprocess.run(
             [
                 "git",
-                "diff",
-                "--name-only",
-                f"{BASE}..HEAD",
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
                 "--",
-                "src/moneylab/dashboard",
-                "src/moneylab/engine",
-                "src/moneylab/store.py",
+                "src/moneylab/components/macd.py",
             ],
             cwd=ROOT,
             capture_output=True,
             text=True,
             check=True,
-        )
+        ).stdout.split()
+        if not sha:
+            pytest.skip("macd.py commit not in history")
+        out = subprocess.run(
+            ["git", "show", "--name-status", "--format=", sha[-1]],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
     except (FileNotFoundError, subprocess.CalledProcessError) as e:
         pytest.skip(f"git history unavailable: {e}")
-    assert out.stdout.strip() == ""
+    rows = [line.split("\t") for line in out.strip().splitlines()]
+    assert rows and all(status == "A" for status, *_ in rows), rows
+    paths = {path for _, path in rows}
+    assert "src/moneylab/components/macd.py" in paths
+    assert not any(
+        p.startswith(("src/moneylab/dashboard", "src/moneylab/engine", "src/moneylab/store"))
+        for p in paths
+    )

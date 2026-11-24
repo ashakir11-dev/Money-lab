@@ -96,10 +96,10 @@ def test_fast_not_below_slow_is_rejected_in_the_dashboard_and_nothing_runs(
     at, r = _builder_with_macd(tmp_path, monkeypatch)
     at.number_input(key=f"b{r}.entry1.ind.fast").set_value(30).run()
     at.button(key="run").click().run()
-    # Known limitation: the dashboard's condition editor resolves the draft's params
-    # before drawing controls, so the cross-parameter check surfaces as an exception
-    # box rather than the "Not run" message. Either way nothing is executed or saved.
-    shown = [str(e.value) for e in at.exception] + [str(e.value) for e in at.error]
-    assert any("fast (30) must be shorter than slow (26)" in m for m in shown), shown
+    # The editor keeps drawing the controls; the run button reports the error.
+    assert not at.exception, at.exception
+    errors = [str(e.value) for e in at.error]
+    assert any("Not run" in m and "fast (30) must be shorter than slow (26)" in m for m in errors)
+    assert at.number_input(key=f"b{r}.entry1.ind.fast").value == 30
     assert "last_run" not in at.session_state
     assert Lab.open(tmp_path / "home").store.list_runs() == []

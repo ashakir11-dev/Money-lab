@@ -80,16 +80,17 @@ class ComponentDeclaration:
                 return p
         raise KeyError(f"{self.id} has no parameter {name!r}")
 
-    def resolve_params(self, given: dict[str, Any]) -> dict[str, Any]:
+    def resolve_params(self, given: dict[str, Any], *, cross_check: bool = True) -> dict[str, Any]:
         """Fill defaults, validate each parameter, then run the optional cross-check.
 
-        Unknown parameters are rejected.
+        Unknown parameters are rejected. Editors pass ``cross_check=False`` to fill a
+        form whose values are not yet consistent; execution always checks.
         """
         unknown = set(given) - {p.name for p in self.params}
         if unknown:
             raise ValueError(f"{self.id}: unknown parameter(s) {sorted(unknown)}")
         resolved = {p.name: p.validate(given.get(p.name, p.default)) for p in self.params}
-        if self.check is not None:
+        if cross_check and self.check is not None:
             self.check(resolved)
         return resolved
 
