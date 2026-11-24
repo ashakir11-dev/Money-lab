@@ -1,0 +1,5 @@
+date,symbol,type,value
+2023-02-15,AAA,dividend,0.85
+2023-03-01,BBB,split,3.0
+2023-03-17,SPY,dividend,1.5
+2023-05-01,DDD,split,2.0

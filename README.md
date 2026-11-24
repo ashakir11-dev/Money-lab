@@ -26,6 +26,11 @@ uv run moneylab dashboard    # open http://localhost:8501
 | `uv run pytest` | all tests (about 3 seconds) |
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
+| `uv run moneylab fetch SPY QQQ --start 2020-01-02 --end 2024-12-31` | imports daily history from Tiingo (needs `TIINGO_API_KEY`, see [providers](docs/providers.md)) |
+| `uv run moneylab new-sessions SNAPSHOT_ID` | prints sessions Tiingo has after a snapshot, in the import format |
+| `uv run moneylab watchlist NAME SYM... --label TEXT` | saves a labelled watchlist (a new version if it changed); without symbols shows it |
+| `uv run pytest -m network -q tests/test_tiingo_live.py` | live Tiingo check (deselected by default; needs the key) |
+| `uv run python scripts/make_tiingo_fixtures.py` | regenerates the recorded-style Tiingo responses |
 | `uv run python scripts/make_fixture.py` | regenerates the deterministic fixture |
 | `uv run python scripts/export_demo_ledgers.py OUT` | writes both demo ledgers and the comparison |
 
@@ -50,12 +55,14 @@ script, and `tests/test_rsi_divergence.py` checks both ledgers against hand calc
 src/moneylab/
   components/   declared, versioned indicators and conditions (SMA, RSI, crossings, thresholds)
   data/         file-import adapter, immutable content-addressed snapshots, session alignment
+  data/providers/  live provider adapters (Tiingo) sharing the file adapter's adjustment
   engine/       config resolution, the daily simulator, reporting and comparison
   store.py      run history (SQLite records + Parquet ledgers)
   service.py    the one entry point used by the dashboard, CLI and tests
   dashboard/    Streamlit app; controls are generated from component declarations
 fixtures/data/  deterministic offline dataset
-docs/           decisions, file format, acceptance report
+fixtures/tiingo/ recorded-style Tiingo responses (split + dividend variant)
+docs/           decisions, file format, providers, acceptance report
 ```
 
 Runtime state (snapshots, database, ledgers) goes to `MONEYLAB_HOME` (default `./var`,

@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS runs (
     resolved_json TEXT NOT NULL,
     metrics_json TEXT
 );
+CREATE TABLE IF NOT EXISTS watchlists (
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    members_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (name, version)
+);
 """
 
 JSON_COLUMNS = ("conditions", "values")
@@ -102,6 +110,53 @@ class RunStore:
                 ),
             )
         return run_id
+
+    # Watchlists: named, labelled, versioned. A version is never edited; saving
+    # different members or a different label under the same name adds a version.
+    def save_watchlist(self, name: str, members: list[str], label: str = "") -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("a watchlist needs a name")
+        syms = sorted({m.strip().upper() for m in members if m.strip()})
+        if not syms:
+            raise ValueError("a watchlist needs at least one symbol")
+        latest = self.watchlist(name) if self._has_watchlist(name) else None
+        if latest and latest["members"] == syms and latest["label"] == label:
+            return latest
+        version = (latest["version"] + 1) if latest else 1
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO watchlists VALUES (?,?,?,?,?)",
+                (name, version, label, json.dumps(syms), datetime.now(UTC).isoformat()),
+            )
+        return self.watchlist(name, version)
+
+    def _has_watchlist(self, name: str) -> bool:
+        with self._conn() as c:
+            r = c.execute("SELECT 1 FROM watchlists WHERE name = ?", (name,)).fetchone()
+        return r is not None
+
+    def watchlist(self, name: str, version: int | None = None) -> dict[str, Any]:
+        """A watchlist version (the latest by default): name, version, label, members,
+        created_at."""
+        q = "SELECT * FROM watchlists WHERE name = ?"
+        args: tuple[Any, ...] = (name,)
+        if version is not None:
+            q += " AND version = ?"
+            args += (version,)
+        with self._conn() as c:
+            r = c.execute(q + " ORDER BY version DESC LIMIT 1", args).fetchone()
+        if r is None:
+            raise KeyError(f"no watchlist {name!r}" + (f" version {version}" if version else ""))
+        out = dict(r)
+        out["members"] = json.loads(out.pop("members_json"))
+        return out
+
+    def list_watchlists(self) -> list[dict[str, Any]]:
+        """The latest version of every watchlist, by name."""
+        with self._conn() as c:
+            names = [r[0] for r in c.execute("SELECT DISTINCT name FROM watchlists ORDER BY name")]
+        return [self.watchlist(n) for n in names]
 
     def list_runs(self) -> list[dict[str, Any]]:
         with self._conn() as c:
