@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from moneylab.dashboard import ui
 from moneylab.service import Lab
 
 
@@ -55,6 +56,10 @@ def _start_form(lab: Lab) -> None:
 
 
 def page_paper(lab: Lab) -> None:
+    ui.page_header(
+        "Paper trading",
+        "Freeze a saved run and feed it new sessions one at a time, as if trading forward.",
+    )
     _start_form(lab)
     accounts = lab.paper_accounts()
     if not accounts:
