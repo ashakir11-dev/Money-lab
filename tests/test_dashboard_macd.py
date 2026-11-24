@@ -43,7 +43,7 @@ def _builder_with_macd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
     assert "MACD" in at.selectbox(key=f"b{r}.entry1.ind").options  # declared label
     at.selectbox(key=f"b{r}.entry1.ind").set_value("macd").run()
     assert not at.exception, at.exception
-    return at, r
+    return at, _rev(at)
 
 
 def test_macd_configured_and_run_from_the_dashboard(

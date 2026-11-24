@@ -277,7 +277,14 @@ class Lab:
             "b": b,
             "config_diff": config_diff(a["resolved"], b["resolved"]),
             "first_difference": first_difference(
-                la.decisions, lb.decisions, la.fills, lb.fills, la.equity, lb.equity
+                la.decisions,
+                lb.decisions,
+                la.fills,
+                lb.fills,
+                la.equity,
+                lb.equity,
+                a["resolved"]["universe"],
+                b["resolved"]["universe"],
             ),
         }
 

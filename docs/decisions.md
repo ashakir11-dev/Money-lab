@@ -69,3 +69,19 @@ No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Eac
   only for those. Decisions, fills, skip reasons and equity are unchanged.
 * Benchmark: `uv run python scripts/benchmark_capacity.py` writes
   [benchmarks/capacity.md](benchmarks/capacity.md).
+
+## Breadth filter and which indicators a price crossing accepts
+
+- `breadth(length)` is the fraction of eligible universe symbols whose close is above
+  their own SMA(length). Eligible means the symbol has a bar that session and its SMA is
+  defined (listed long enough, no gap in the window). It is computed once per run over the
+  run's universe (not the benchmark) and every symbol sees the same value, so it acts as a
+  market-wide filter when used with a threshold, for example "breadth above 0.5". With no
+  eligible symbol it is undefined and the condition does not pass (decision: warmup).
+- Cross-sectional indicators register with `register_universe_indicator`; the simulator
+  computes them over all universe frames at once. Per-symbol indicators are unchanged.
+- "Close crosses X" is only allowed when X is in price units (declared `price_scale`;
+  today only SMA). Crossing RSI, MACD or breadth is rejected at validation, and the
+  dashboard only offers price-unit indicators for crossings.
+- Switching a condition's indicator in the builder redraws its controls from the new
+  indicator's declared defaults instead of carrying over a same-named value.

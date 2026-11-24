@@ -75,13 +75,16 @@ def first_difference(
     fills_b: pd.DataFrame,
     eq_a: pd.DataFrame,
     eq_b: pd.DataFrame,
+    universe_a: list[str] | None = None,
+    universe_b: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """The earliest trading decision (enter, exit or skip) that differs, or None.
 
     Decisions are matched on (session, symbol) and ordered by session then symbol, the
     same order the engine processes them. When one run has no trading decision for that
     key, its diagnostic row (for example a near miss showing the observed RSI against its
-    threshold) is shown instead.
+    threshold) is shown instead. When the universes are given and the symbol is not
+    in one run's universe, that run's side says so.
     """
 
     def keyed(d: pd.DataFrame, trading: bool) -> _Keyed:
@@ -95,11 +98,15 @@ def first_difference(
             continue
         session, symbol = key
         ra, rb = ka.row(key), kb.row(key)
+        if ra is None:
+            ra = keyed(dec_a, False).row(key)
+        if rb is None:
+            rb = keyed(dec_b, False).row(key)
         return {
             "session": session,
             "symbol": symbol,
-            "a": _row_view(ra if ra is not None else keyed(dec_a, False).row(key), fills_a),
-            "b": _row_view(rb if rb is not None else keyed(dec_b, False).row(key), fills_b),
+            "a": _row_view(ra, fills_a, symbol, universe_a),
+            "b": _row_view(rb, fills_b, symbol, universe_b),
             "impact": _impact(session, eq_a, eq_b),
         }
     return None
@@ -138,8 +145,15 @@ class _Keyed:
         return f"{a}|{r}|{q}"
 
 
-def _row_view(row: pd.Series | None, fills: pd.DataFrame) -> dict[str, Any]:
+def _row_view(
+    row: pd.Series | None,
+    fills: pd.DataFrame,
+    symbol: str = "",
+    universe: list[str] | None = None,
+) -> dict[str, Any]:
     if row is None:
+        if universe is not None and symbol not in universe:
+            return {"action": "none", "reason": f"{symbol} is not in this run's universe"}
         return {"action": "none", "reason": "no entry condition passed; nothing recorded"}
     view: dict[str, Any] = {str(k): _plain(v) for k, v in row.items() if not _is_missing(v)}
     if len(fills) and "decision_id" in fills:
