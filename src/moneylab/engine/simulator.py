@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import numpy as np
@@ -130,6 +131,11 @@ def _evaluate(
     return all(r["passed"] for r in results), results, values
 
 
+def _cents(x: float) -> float:
+    """Round half-up to the cent (deterministic, matches hand calculation)."""
+    return float(Decimal(repr(float(x))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def _f(x: float) -> float | None:
     return None if x is None or (isinstance(x, float) and math.isnan(x)) else round(float(x), 6)
 
@@ -185,8 +191,8 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
                 if side == "sell":
                     pos = positions.pop(sym)
                     gross = pos.qty * px
-                    cost = round(gross * cost_rate, 2)
-                    cash = round(cash + gross - cost, 2)
+                    cost = _cents(gross * cost_rate)
+                    cash = _cents(cash + gross - cost)
                     fills.append(
                         _fill(day, sym, "sell", pos.qty, px, cost, cash, o, i - o.decision_idx)
                     )
@@ -200,8 +206,8 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
                     record(i, sym, SKIP, "insufficient_cash_at_open", order_qty=o.qty, open=px)
                     continue
                 gross = qty * px
-                cost = round(gross * cost_rate, 2)
-                cash = round(cash - gross - cost, 2)
+                cost = _cents(gross * cost_rate)
+                cash = _cents(cash - gross - cost)
                 positions[sym] = _Position(qty, i, px)
                 fills.append(
                     _fill(day, sym, "buy", qty, px, cost, cash, o, i - o.decision_idx, note)
@@ -212,12 +218,12 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
             if not math.isnan(closes[sym][i]):
                 last_close[sym] = closes[sym][i]
         pos_value = sum(p.qty * last_close[s] for s, p in positions.items())
-        equity = round(cash + pos_value, 2)
+        equity = _cents(cash + pos_value)
         equity_rows.append(
             {
                 "session": day,
                 "cash": cash,
-                "positions_value": round(pos_value, 2),
+                "positions_value": _cents(pos_value),
                 "equity": equity,
                 "positions": len(positions),
             }
@@ -362,7 +368,7 @@ def _fill(
         "side": side,
         "qty": qty,
         "price": round(px, 6),
-        "gross": round(qty * px, 2),
+        "gross": _cents(qty * px),
         "cost": cost,
         "cash_after": cash,
         "decision_id": o.decision_id,
