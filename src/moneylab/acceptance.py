@@ -46,8 +46,9 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         5,
         "Universe and source flexibility",
-        [],
-        "live provider adapter (Tiingo) and a second watchlist run",
+        ["tests/test_source_flexibility.py", "tests/test_tiingo_provider.py"],
+        "live Tiingo check in a session that has TIINGO_API_KEY "
+        "(uv run pytest -m network -q tests/test_tiingo_live.py)",
     ),
     (
         6,
