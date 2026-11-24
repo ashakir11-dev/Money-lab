@@ -36,9 +36,12 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         4,
         "Correctness and forward replay",
-        ["tests/test_rsi_divergence.py"],
-        "fixtures for gaps, insufficient cash, simultaneous signals, corporate action; paper mode "
-        "and a real observed market session",
+        [
+            "tests/test_engine_fixtures.py",
+            "tests/test_rsi_divergence.py",
+            "tests/test_account_state.py",
+        ],
+        "paper mode, replay, duplicate delivery, and a real observed market session",
     ),
     (
         5,
@@ -49,8 +52,8 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         6,
         "Historical inspection and reproducibility",
-        ["tests/test_rsi_divergence.py"],
-        "changed-default reopen check and unchanged-duplicate ledger reproduction test",
+        ["tests/test_reproducibility.py", "tests/test_rsi_divergence.py"],
+        "",
     ),
 ]
 
@@ -60,9 +63,8 @@ def main() -> int:
     code = subprocess.call([sys.executable, "-m", "pytest", "-q", *tests], cwd=ROOT)
     print("\nAcceptance gates")
     for n, title, ts, missing in GATES:
-        # No gate has complete evidence yet, so the best status today is PENDING.
-        status = "FAIL" if code != 0 and ts else "PENDING"
+        status = "FAIL" if code != 0 and ts else ("PENDING" if missing else "PASS")
         evidence = ", ".join(ts) or "none yet"
         print(f"  Gate {n} [{status}] {title}")
-        print(f"      evidence: {evidence}\n      depends on: {missing}")
+        print(f"      evidence: {evidence}\n      depends on: {missing or 'nothing'}")
     return code

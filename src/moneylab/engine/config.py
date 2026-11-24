@@ -200,3 +200,31 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
 def config_hash(resolved: dict[str, Any]) -> str:
     blob = json.dumps({k: v for k, v in resolved.items() if k != "name"}, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+class VersionMismatch(RuntimeError):
+    pass
+
+
+def check_versions(resolved: dict[str, Any]) -> None:
+    """Raise if the components or engine a resolved config names have changed version."""
+    problems = []
+    if resolved["execution"]["engine_version"] != ENGINE_VERSION:
+        problems.append(f"engine {resolved['execution']['engine_version']} -> {ENGINE_VERSION}")
+    conds = resolved["entry"] + resolved["exit"]["conditions"]
+    items = [(c["kind"], c["version"]) for c in conds]
+    items += [(c["indicator"]["id"], c["indicator"]["version"]) for c in conds]
+    if resolved["exit"]["kind"] == "holding_period":
+        items.append(("holding_period", resolved["exit"]["version"]))
+    for cid, ver in items:
+        cur = get_component(cid).version
+        if cur != ver:
+            problems.append(f"{cid} {ver} -> {cur}")
+    if problems:
+        raise VersionMismatch("cannot reproduce exactly: " + "; ".join(sorted(set(problems))))
+
+
+def _flatten_for_test(d: dict[str, Any]) -> dict[str, Any]:
+    from moneylab.engine.reporting import _flatten
+
+    return _flatten(d)

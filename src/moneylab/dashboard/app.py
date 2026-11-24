@@ -422,7 +422,7 @@ def page_gates(lab: Lab) -> None:
                 {
                     "gate": n,
                     "title": t,
-                    "status": "PENDING",
+                    "status": "PASS" if not m else "PENDING",
                     "evidence so far": ", ".join(ts) or "none",
                     "depends on": m,
                 }
