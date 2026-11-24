@@ -1,9 +1,13 @@
 """Strategy components: declared, versioned, registered once and reused everywhere.
 
-Importing this package registers the built-in components.
+Importing this package imports every module in it, so each module's registrations
+run. Adding an indicator is one new file in this folder that calls
+``register_indicator``; nothing else in the lab needs to change.
 """
 
-from moneylab.components import builtin as _builtin  # noqa: F401  (registers components)
+import importlib
+import pkgutil
+
 from moneylab.components.registry import (
     ComponentDeclaration,
     ParamSpec,
@@ -11,6 +15,10 @@ from moneylab.components.registry import (
     list_components,
     register_indicator,
 )
+
+for _mod in sorted(m.name for m in pkgutil.iter_modules(__path__)):
+    if _mod != "registry":
+        importlib.import_module(f"{__name__}.{_mod}")
 
 __all__ = [
     "ComponentDeclaration",

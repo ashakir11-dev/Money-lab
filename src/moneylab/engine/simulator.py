@@ -36,30 +36,6 @@ INELIGIBLE = "ineligible"  # diagnostic: warm-up or missing bar
 DECISION_ACTIONS = (ENTER, EXIT, SKIP)
 
 
-@dataclass
-class _Position:
-    qty: int
-    fill_idx: int
-    entry_price: float
-
-
-@dataclass
-class _Order:
-    symbol: str
-    side: str  # "buy" | "sell"
-    qty: int
-    decision_idx: int
-    decision_id: int
-
-
-@dataclass
-class RunResult:
-    decisions: pd.DataFrame
-    fills: pd.DataFrame
-    equity: pd.DataFrame
-    meta: dict[str, Any] = field(default_factory=dict)
-
-
 def _ind_key(ind: dict[str, Any]) -> str:
     args = ",".join(f"{k}={v}" for k, v in sorted(ind["params"].items()))
     return f"{ind['id']}({args})"
@@ -140,36 +116,121 @@ def _f(x: float) -> float | None:
     return None if x is None or (isinstance(x, float) and math.isnan(x)) else round(float(x), 6)
 
 
-def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
-    port = resolved["portfolio"]
-    cost_rate = float(port["cost_bps_per_side"]) / 10_000.0
-    target = float(port["target_allocation"])
-    max_pos = int(port["max_positions"])
-    entry_conds = resolved["entry"]
-    exit_rule = resolved["exit"]
-    exit_conds = exit_rule["conditions"]
-    hold_n = int(exit_rule["params"].get("sessions", 0))
-    symbols = sorted(resolved["universe"])
+@dataclass
+class _Position:
+    qty: int
+    fill_idx: int
+    entry_price: float
 
-    ind = _compute_indicators(data, entry_conds + exit_conds)
-    opens = {s: data.frames[s]["open"].to_numpy(dtype=float) for s in symbols}
-    closes = {s: data.frames[s]["close"].to_numpy(dtype=float) for s in symbols}
-    sessions = data.sessions
 
-    cash = float(port["starting_cash"])
-    positions: dict[str, _Position] = {}
-    pending: dict[str, _Order] = {}
-    last_close: dict[str, float] = {}
-    decisions: list[dict[str, Any]] = []
-    fills: list[dict[str, Any]] = []
-    equity_rows: list[dict[str, Any]] = []
+@dataclass
+class _Order:
+    symbol: str
+    side: str  # "buy" | "sell"
+    qty: int
+    decision_idx: int
+    decision_id: int
+    decision_close: float = math.nan
 
-    def record(i: int, sym: str, action: str, reason: str, **extra: Any) -> int:
-        did = len(decisions)
-        decisions.append(
+
+@dataclass
+class RunResult:
+    decisions: pd.DataFrame
+    fills: pd.DataFrame
+    equity: pd.DataFrame
+    meta: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MarketView:
+    """Read-only per-session inputs for one account: prices and indicator values.
+
+    Arrays are aligned to ``sessions``. Indicators are causal (each value uses data up
+    to and including its own session), so a view built from history that ends at
+    session ``t`` gives the same values at ``t`` as one built from a longer history.
+    """
+
+    sessions: pd.DatetimeIndex
+    opens: dict[str, np.ndarray]
+    closes: dict[str, np.ndarray]
+    indicators: dict[str, dict[str, np.ndarray]]
+    first_bar: dict[str, int]
+
+    @classmethod
+    def build(cls, resolved: dict[str, Any], data: MarketData) -> MarketView:
+        symbols = sorted(resolved["universe"])
+        conds = resolved["entry"] + resolved["exit"]["conditions"]
+        return cls(
+            sessions=data.sessions,
+            opens={s: data.frames[s]["open"].to_numpy(dtype=float) for s in symbols},
+            closes={s: data.frames[s]["close"].to_numpy(dtype=float) for s in symbols},
+            indicators=_compute_indicators(data, conds),
+            first_bar=dict(data.first_bar),
+        )
+
+
+class Account:
+    """One variant's mutable state: cash, positions, pending orders and its ledgers.
+
+    ``step(view, i)`` processes exchange session ``i`` (fills at the open, mark at the
+    close, then decisions). Historical runs step through every session; paper mode
+    steps one new session at a time. ``state()`` / ``from_state()`` round-trip
+    everything needed to resume after a restart.
+    """
+
+    def __init__(self, resolved: dict[str, Any]) -> None:
+        self.resolved = resolved
+        port = resolved["portfolio"]
+        self.cost_rate = float(port["cost_bps_per_side"]) / 10_000.0
+        self.target = float(port["target_allocation"])
+        self.max_pos = int(port["max_positions"])
+        self.entry_conds = resolved["entry"]
+        self.exit_rule = resolved["exit"]
+        self.exit_conds = self.exit_rule["conditions"]
+        self.hold_n = int(self.exit_rule["params"].get("sessions", 0))
+        self.symbols = sorted(resolved["universe"])
+        self.cash = float(port["starting_cash"])
+        self.positions: dict[str, _Position] = {}
+        self.pending: dict[str, _Order] = {}
+        self.last_close: dict[str, float] = {}
+        self.decisions: list[dict[str, Any]] = []
+        self.fills: list[dict[str, Any]] = []
+        self.equity_rows: list[dict[str, Any]] = []
+        self.last_index = -1
+
+    # Persistence ---------------------------------------------------------------
+    def state(self) -> dict[str, Any]:
+        return {
+            "cash": self.cash,
+            "positions": {s: vars(p) for s, p in self.positions.items()},
+            "pending": {s: vars(o) for s, o in self.pending.items()},
+            "last_close": dict(self.last_close),
+            "decisions": self.decisions,
+            "fills": self.fills,
+            "equity_rows": self.equity_rows,
+            "last_index": self.last_index,
+        }
+
+    @classmethod
+    def from_state(cls, resolved: dict[str, Any], state: dict[str, Any]) -> Account:
+        a = cls(resolved)
+        a.cash = float(state["cash"])
+        a.positions = {s: _Position(**p) for s, p in state["positions"].items()}
+        a.pending = {s: _Order(**o) for s, o in state["pending"].items()}
+        a.last_close = {s: float(v) for s, v in state["last_close"].items()}
+        a.decisions = list(state["decisions"])
+        a.fills = list(state["fills"])
+        a.equity_rows = list(state["equity_rows"])
+        a.last_index = int(state["last_index"])
+        return a
+
+    # Processing ----------------------------------------------------------------
+    def _record(self, day: str, sym: str, action: str, reason: str, **extra: Any) -> int:
+        did = len(self.decisions)
+        self.decisions.append(
             {
                 "decision_id": did,
-                "session": sessions[i].date().isoformat(),
+                "session": day,
                 "symbol": sym,
                 "action": action,
                 "reason": reason,
@@ -178,111 +239,136 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
         )
         return did
 
-    for i in range(len(sessions)):
-        day = sessions[i].date().isoformat()
-        # 1. Fills at the open: exits first, then entries, each in ascending symbol order.
+    def step(self, view: MarketView, i: int) -> None:
+        if i != self.last_index + 1:
+            raise ValueError(
+                f"sessions must be processed in order: expected {self.last_index + 1}, got {i}"
+            )
+        self._fill_at_open(view, i)
+        equity = self._mark_at_close(view, i)
+        exiting = self._decide_exits(view, i)
+        self._decide_entries(view, i, equity, exiting)
+        self.last_index = i
+
+    def _fill_at_open(self, view: MarketView, i: int) -> None:
+        day = view.sessions[i].date().isoformat()
+        cost_rate = self.cost_rate
         for side in ("sell", "buy"):
-            for sym in sorted(s for s, o in pending.items() if o.side == side):
-                o = pending[sym]
-                px = opens[sym][i]
+            for sym in sorted(s for s, o in self.pending.items() if o.side == side):
+                o = self.pending[sym]
+                px = view.opens[sym][i]
                 if math.isnan(px):
                     continue  # no bar: never invent a price, wait for the next session
-                del pending[sym]
+                del self.pending[sym]
                 if side == "sell":
-                    pos = positions.pop(sym)
+                    pos = self.positions.pop(sym)
                     gross = pos.qty * px
                     cost = _cents(gross * cost_rate)
-                    cash = _cents(cash + gross - cost)
-                    fills.append(
-                        _fill(day, sym, "sell", pos.qty, px, cost, cash, o, i - o.decision_idx)
+                    self.cash = _cents(self.cash + gross - cost)
+                    self.fills.append(
+                        _fill(day, sym, "sell", pos.qty, px, cost, self.cash, o, i - o.decision_idx)
                     )
                     continue
                 qty = o.qty
                 note = ""
-                if qty * px * (1 + cost_rate) > cash:
-                    qty = int(cash // (px * (1 + cost_rate)))
+                if qty * px * (1 + cost_rate) > self.cash:
+                    qty = int(self.cash // (px * (1 + cost_rate)))
                     note = f"reduced from {o.qty} to {qty}: opening price {px:.2f} > cash"
                 if qty <= 0:
-                    record(i, sym, SKIP, "insufficient_cash_at_open", order_qty=o.qty, open=px)
+                    self._record(
+                        day, sym, SKIP, "insufficient_cash_at_open", order_qty=o.qty, open=px
+                    )
                     continue
                 gross = qty * px
                 cost = _cents(gross * cost_rate)
-                cash = _cents(cash - gross - cost)
-                positions[sym] = _Position(qty, i, px)
-                fills.append(
-                    _fill(day, sym, "buy", qty, px, cost, cash, o, i - o.decision_idx, note)
+                self.cash = _cents(self.cash - gross - cost)
+                self.positions[sym] = _Position(qty, i, px)
+                self.fills.append(
+                    _fill(day, sym, "buy", qty, px, cost, self.cash, o, i - o.decision_idx, note)
                 )
 
-        # 2. Mark to market at the close (last known close values a symbol without a bar).
-        for sym in symbols:
-            if not math.isnan(closes[sym][i]):
-                last_close[sym] = closes[sym][i]
-        pos_value = sum(p.qty * last_close[s] for s, p in positions.items())
-        equity = _cents(cash + pos_value)
-        equity_rows.append(
+    def _mark_at_close(self, view: MarketView, i: int) -> float:
+        """Mark to market (last known close values a symbol without a bar)."""
+        for sym in self.symbols:
+            c = view.closes[sym][i]
+            if not math.isnan(c):
+                self.last_close[sym] = float(c)
+        pos_value = sum(p.qty * self.last_close[s] for s, p in self.positions.items())
+        equity = _cents(self.cash + pos_value)
+        self.equity_rows.append(
             {
-                "session": day,
-                "cash": cash,
+                "session": view.sessions[i].date().isoformat(),
+                "cash": self.cash,
                 "positions_value": _cents(pos_value),
                 "equity": equity,
-                "positions": len(positions),
+                "positions": len(self.positions),
             }
         )
+        return equity
 
-        # 3a. Exit decisions for held positions.
+    def _decide_exits(self, view: MarketView, i: int) -> int:
+        day = view.sessions[i].date().isoformat()
         exiting = 0
-        for sym in sorted(positions):
-            if sym in pending:
+        for sym in sorted(self.positions):
+            if sym in self.pending:
                 exiting += 1
                 continue
-            pos = positions[sym]
+            pos = self.positions[sym]
             held = i - pos.fill_idx
-            if exit_rule["kind"] == "holding_period":
-                if held >= hold_n:
-                    did = record(i, sym, EXIT, f"held {held} sessions >= {hold_n}", qty=pos.qty)
-                    pending[sym] = _Order(sym, "sell", pos.qty, i, did)
+            if self.exit_rule["kind"] == "holding_period":
+                if held >= self.hold_n:
+                    did = self._record(
+                        day, sym, EXIT, f"held {held} sessions >= {self.hold_n}", qty=pos.qty
+                    )
+                    self.pending[sym] = _Order(sym, "sell", pos.qty, i, did)
                     exiting += 1
             else:
-                if math.isnan(closes[sym][i]):
+                closes = view.closes[sym]
+                if math.isnan(closes[i]):
                     continue
-                ok, res, vals = _evaluate(exit_conds, ind[sym], closes[sym], i)
+                ok, res, vals = _evaluate(self.exit_conds, view.indicators[sym], closes, i)
                 if ok:
-                    did = record(
-                        i, sym, EXIT, "exit signal", qty=pos.qty, conditions=res, values=vals
+                    did = self._record(
+                        day, sym, EXIT, "exit signal", qty=pos.qty, conditions=res, values=vals
                     )
-                    pending[sym] = _Order(sym, "sell", pos.qty, i, did)
+                    self.pending[sym] = _Order(sym, "sell", pos.qty, i, did)
                     exiting += 1
+        return exiting
 
-        # 3b. Entry decisions, ascending symbol order (documented tie-break).
+    def _decide_entries(self, view: MarketView, i: int, equity: float, exiting: int) -> None:
+        """Entry decisions in ascending symbol order (documented tie-break)."""
+        day = view.sessions[i].date().isoformat()
+        cost_rate = self.cost_rate
         committed = sum(
-            o.qty * closes[o.symbol][o.decision_idx] * (1 + cost_rate)
-            for o in pending.values()
+            o.qty * o.decision_close * (1 + cost_rate)
+            for o in self.pending.values()
             if o.side == "buy"
         )
         expected_proceeds = sum(
-            positions[s].qty * last_close[s] * (1 - cost_rate)
-            for s, o in pending.items()
+            self.positions[s].qty * self.last_close[s] * (1 - cost_rate)
+            for s, o in self.pending.items()
             if o.side == "sell"
         )
-        for sym in symbols:
-            if i < data.first_bar[sym]:
+        for sym in self.symbols:
+            if i < view.first_bar[sym]:
                 continue  # not yet listed in the snapshot
-            c = closes[sym][i]
+            closes = view.closes[sym]
+            c = closes[i]
             if math.isnan(c):
-                record(i, sym, INELIGIBLE, "missing_bar")
+                self._record(day, sym, INELIGIBLE, "missing_bar")
                 continue
-            ok, res, vals = _evaluate(entry_conds, ind[sym], closes[sym], i)
+            ok, res, vals = _evaluate(self.entry_conds, view.indicators[sym], closes, i)
             if ok is None:
                 if all(r["passed"] is not False for r in res):
-                    record(i, sym, INELIGIBLE, "warmup", conditions=res, values=vals)
+                    self._record(day, sym, INELIGIBLE, "warmup", conditions=res, values=vals)
                 continue
             if not ok:
                 # Keep near misses (some but not all conditions passed) so comparisons can
                 # show exactly which condition blocked an entry.
                 if any(r["passed"] for r in res):
                     failed = [r["condition"] for r in res if not r["passed"]]
-                    record(
-                        i,
+                    self._record(
+                        day,
                         sym,
                         NO_SIGNAL,
                         "failed: " + "; ".join(failed),
@@ -290,26 +376,26 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
                         values=vals,
                     )
                 continue
-            if sym in positions or sym in pending:
-                record(i, sym, SKIP, "already_held", conditions=res, values=vals)
+            if sym in self.positions or sym in self.pending:
+                self._record(day, sym, SKIP, "already_held", conditions=res, values=vals)
                 continue
             open_slots = (
-                max_pos
-                - (len(positions) - exiting)
-                - sum(1 for o in pending.values() if o.side == "buy")
+                self.max_pos
+                - (len(self.positions) - exiting)
+                - sum(1 for o in self.pending.values() if o.side == "buy")
             )
             if open_slots <= 0:
-                record(i, sym, SKIP, "max_positions", conditions=res, values=vals)
+                self._record(day, sym, SKIP, "max_positions", conditions=res, values=vals)
                 continue
-            qty = int((target * equity) // c)
+            qty = int((self.target * equity) // c)
             if qty <= 0:
-                record(i, sym, SKIP, "zero_quantity", conditions=res, values=vals)
+                self._record(day, sym, SKIP, "zero_quantity", conditions=res, values=vals)
                 continue
             est = qty * c * (1 + cost_rate)
-            available = cash + expected_proceeds - committed
+            available = self.cash + expected_proceeds - committed
             if est > available:
-                record(
-                    i,
+                self._record(
+                    day,
                     sym,
                     SKIP,
                     "insufficient_cash",
@@ -320,8 +406,8 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
                     available=round(available, 2),
                 )
                 continue
-            did = record(
-                i,
+            did = self._record(
+                day,
                 sym,
                 ENTER,
                 "all entry conditions passed",
@@ -330,24 +416,38 @@ def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
                 qty=qty,
                 est_cost=round(est, 2),
             )
-            pending[sym] = _Order(sym, "buy", qty, i, did)
+            self.pending[sym] = _Order(sym, "buy", qty, i, did, float(c))
             committed += est
 
-    dec = pd.DataFrame(decisions)
-    if dec.empty:
-        dec = pd.DataFrame(columns=["decision_id", "session", "symbol", "action", "reason"])
-    fl = pd.DataFrame(fills)
-    if fl.empty:
-        fl = pd.DataFrame(
-            columns=["session", "symbol", "side", "qty", "price", "cost", "cash_after"]
+    # Output --------------------------------------------------------------------
+    def result(self, data: MarketData | None = None) -> RunResult:
+        dec = pd.DataFrame(self.decisions)
+        if dec.empty:
+            dec = pd.DataFrame(columns=["decision_id", "session", "symbol", "action", "reason"])
+        fl = pd.DataFrame(self.fills)
+        if fl.empty:
+            fl = pd.DataFrame(
+                columns=["session", "symbol", "side", "qty", "price", "cost", "cash_after"]
+            )
+        eq = pd.DataFrame(self.equity_rows)
+        bench = self.resolved["benchmark"]
+        if data is not None and bench in data.frames and len(eq):
+            bc = data.frames[bench]["close"].ffill().to_numpy(dtype=float)[: len(eq)]
+            first = bc[~np.isnan(bc)][0]
+            start = float(self.resolved["portfolio"]["starting_cash"])
+            eq["benchmark_equity"] = np.round(start * bc / first, 2)
+        return RunResult(
+            dec, fl, eq, {"open_positions": {s: p.qty for s, p in self.positions.items()}}
         )
-    eq = pd.DataFrame(equity_rows)
-    bench = resolved["benchmark"]
-    if bench in data.frames:
-        bc = data.frames[bench]["close"].ffill().to_numpy(dtype=float)
-        first = bc[~np.isnan(bc)][0]
-        eq["benchmark_equity"] = np.round(float(port["starting_cash"]) * bc / first, 2)
-    return RunResult(dec, fl, eq, {"open_positions": {s: p.qty for s, p in positions.items()}})
+
+
+def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
+    """Historical run: one account stepped through every session of ``data``."""
+    view = MarketView.build(resolved, data)
+    account = Account(resolved)
+    for i in range(len(view.sessions)):
+        account.step(view, i)
+    return account.result(data)
 
 
 def _fill(
