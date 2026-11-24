@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tests/test_macd.py inspects the commit that added macd.py
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - run: uv run ruff check .

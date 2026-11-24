@@ -15,11 +15,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from moneylab.components.registry import ComponentDeclaration, get_component, list_components
+from moneylab.dashboard.paper_page import page_paper
 from moneylab.data.snapshot import list_snapshots
 from moneylab.engine.config import StrategyConfig, config_from_resolved
 from moneylab.service import Lab
 
-PAGES = ("Runs", "Strategy builder", "Compare", "Data", "Acceptance gates")
+PAGES = ("Runs", "Strategy builder", "Compare", "Paper trading", "Data", "Acceptance gates")
 
 
 @st.cache_resource
@@ -106,12 +107,14 @@ def _condition_editor(cond: dict[str, Any], use: str, key: str) -> dict[str, Any
             if k in {p.name for p in ind_decl.params}
         }
         if ind_id == cond["indicator"]["id"]
-        else {}
+        else {},
+        cross_check=False,  # inconsistent values are reported by "Validate, run and save"
     )
     cond_params = cond_decl.resolve_params(
         {k: v for k, v in cond["params"].items() if k in {p.name for p in cond_decl.params}}
         if kind == cond["kind"]
-        else {}
+        else {},
+        cross_check=False,
     )
     with cols[2]:
         for p in ind_decl.params:
@@ -483,6 +486,7 @@ def main() -> None:
         "Runs": page_runs,
         "Strategy builder": page_builder,
         "Compare": page_compare,
+        "Paper trading": page_paper,
         "Data": page_data,
         "Acceptance gates": page_gates,
     }[page](lab)

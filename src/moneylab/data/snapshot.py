@@ -66,14 +66,29 @@ def save_snapshot(
     source: str,
     adjustment: str = DEFAULT_ADJUSTMENT,
     label: str = "",
+    provenance: dict[str, Any] | None = None,
+    raw: pd.DataFrame | None = None,
+    actions: pd.DataFrame | None = None,
 ) -> Snapshot:
+    """Store ``df`` as an immutable snapshot (a no-op if identical contents exist).
+
+    ``provenance`` (provider, request range, fetch time, ...) is kept in the metadata of
+    a new snapshot. ``raw`` and ``actions``, when given, are stored next to it so the
+    adjusted bars can be re-derived. Every call, new or not, is appended to the import
+    log (``imports.jsonl``), so a second source yielding identical data is recorded too.
+    """
     df = normalise(df)
     sid = content_id(df)
     root.mkdir(parents=True, exist_ok=True)
     data_path = root / f"{sid}.parquet"
     meta_path = root / f"{sid}.json"
+    _log_import(root, sid, source, adjustment, label, provenance)
     if meta_path.exists():
         return load_snapshot(sid, root)
+    if raw is not None:
+        raw.to_parquet(root / f"{sid}.raw.parquet", index=False)
+    if actions is not None:
+        actions.to_parquet(root / f"{sid}.actions.parquet", index=False)
     meta = {
         "id": sid,
         "source": source,
@@ -84,10 +99,42 @@ def save_snapshot(
         "first_date": df["date"].min().date().isoformat(),
         "last_date": df["date"].max().date().isoformat(),
         "rows": len(df),
+        "provenance": provenance or {},
     }
     df.to_parquet(data_path, index=False)
     meta_path.write_text(json.dumps(meta, indent=2))
     return Snapshot(sid, df, meta)
+
+
+IMPORT_LOG = "imports.jsonl"
+
+
+def _log_import(
+    root: Path,
+    sid: str,
+    source: str,
+    adjustment: str,
+    label: str,
+    provenance: dict[str, Any] | None,
+) -> None:
+    rec = {
+        "snapshot_id": sid,
+        "source": source,
+        "adjustment": adjustment,
+        "label": label,
+        "imported_at": datetime.now(UTC).isoformat(),
+        "provenance": provenance or {},
+    }
+    with (root / IMPORT_LOG).open("a") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def list_imports(root: Path) -> list[dict[str, Any]]:
+    """Every import ever made into ``root``, oldest first (append-only log)."""
+    path = root / IMPORT_LOG
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
 def load_snapshot(sid: str, root: Path) -> Snapshot:

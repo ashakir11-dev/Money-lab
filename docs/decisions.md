@@ -8,7 +8,7 @@ The spec leaves the stack open. These are the defaults chosen.
 | Storage | SQLite (run records) + Parquet (data snapshots and ledgers) | local, zero-ops, persistent; Parquet keeps 250 x 5 years compact and fast |
 | Dashboard | Streamlit | controls can be generated from component declarations at runtime; headless `AppTest` lets tests drive the real UI |
 | Calendar | `exchange-calendars` (XNYS) | lookbacks and holding periods count exchange sessions |
-| Live provider | Tiingo (planned, pending) | free tier with adjusted daily bars and corporate actions; key goes in `TIINGO_API_KEY` |
+| Live provider | Tiingo End-of-Day (`httpx`) | free tier with raw daily bars plus dividends and splits; key goes in `TIINGO_API_KEY`; see [providers](providers.md) |
 | Tooling | ruff, mypy (strict), pytest, GitHub Actions | |
 
 No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Each layer
@@ -36,6 +36,10 @@ No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Eac
 * Metrics are computed only after a run completes, from its ledgers.
 * Corporate actions: raw prices plus an actions file (splits, cash dividends) are
   adjusted once at import (`moneylab.data.actions`); the snapshot records the policy.
+  The Tiingo adapter turns `splitFactor`/`divCash` into the same actions frame and
+  uses the same function, so both adapters give the same snapshot for the same data.
+* Watchlists are named, labelled and versioned in SQLite; a run on a watchlist records
+  the version and members it used.
   Ledger quantities are in adjusted shares of the snapshot used.
 * Reproduction: `Lab.duplicate` re-runs the stored resolved settings on the stored
   snapshot and refuses if any component or the engine version changed.
@@ -43,6 +47,9 @@ No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Eac
   `MarketView`; its state serialises to JSON so paper mode can resume after a restart.
 * Components are auto-discovered: every module in `moneylab/components/` is imported,
   so a new indicator is one new file calling `register_indicator`.
+* Paper mode freezes a completed run and steps the same `Account` one delivered session
+  at a time; deliveries are idempotent, conflicts are rejected, a missing session makes
+  processing wait. See [paper-trading.md](paper-trading.md).
 
 ## Batches of variants (gate 2)
 

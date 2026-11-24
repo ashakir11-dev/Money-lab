@@ -18,8 +18,13 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         1,
         "No-code configuration and extensibility",
-        ["tests/test_dashboard_rsi_path.py"],
-        "MACD registered with zero dashboard/simulator/ledger edits; paper mode",
+        [
+            "tests/test_dashboard_rsi_path.py",
+            "tests/test_macd.py",
+            "tests/test_dashboard_macd.py",
+            "tests/test_macd_paper.py",
+        ],
+        "",
     ),
     (
         2,
@@ -40,14 +45,18 @@ GATES: list[tuple[int, str, list[str], str]] = [
             "tests/test_engine_fixtures.py",
             "tests/test_rsi_divergence.py",
             "tests/test_account_state.py",
+            "tests/test_paper.py",
+            "tests/test_dashboard_paper.py",
         ],
-        "paper mode, replay, duplicate delivery, and a real observed market session",
+        "one genuinely new market session processed live (needs the Tiingo provider and a "
+        "trading day)",
     ),
     (
         5,
         "Universe and source flexibility",
-        [],
-        "live provider adapter (Tiingo) and a second watchlist run",
+        ["tests/test_source_flexibility.py", "tests/test_tiingo_provider.py"],
+        "live Tiingo check in a session that has TIINGO_API_KEY "
+        "(uv run pytest -m network -q tests/test_tiingo_live.py)",
     ),
     (
         6,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -24,12 +25,87 @@ def dashboard(port: int = 8501) -> None:
 
 
 @app.command("import")
-def import_file(path: Path, label: str = "") -> None:
+def import_file(
+    path: Path,
+    label: str = "",
+    actions: Annotated[
+        Path | None, typer.Option(help="actions CSV; PATH then holds raw prices")
+    ] = None,
+) -> None:
     """Import a CSV in the documented file format as an immutable snapshot."""
     from moneylab.service import Lab
 
-    snap = Lab.open().import_file(path, label=label)
+    snap = Lab.open().import_file(path, label=label, actions_path=actions)
     typer.echo(f"snapshot {snap.id}: {len(snap.meta['symbols'])} symbols, {snap.meta['rows']} rows")
+
+
+@app.command()
+def fetch(
+    symbols: list[str],
+    start: str = typer.Option(..., help="first date, YYYY-MM-DD"),
+    end: str = typer.Option(..., help="last date, YYYY-MM-DD"),
+    label: str = "",
+    refresh: bool = typer.Option(False, help="ignore the response cache"),
+) -> None:
+    """Fetch daily history from Tiingo (needs TIINGO_API_KEY) as an immutable snapshot."""
+    from datetime import date
+
+    from moneylab.data.providers import ProviderError
+    from moneylab.service import Lab
+
+    try:
+        snap = Lab.open().import_provider(
+            symbols, date.fromisoformat(start), date.fromisoformat(end), label, refresh=refresh
+        )
+    except (ProviderError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+    p = snap.meta.get("provenance", {})
+    typer.echo(
+        f"snapshot {snap.id}: {len(snap.meta['symbols'])} symbols, {snap.meta['rows']} rows, "
+        f"{snap.meta['first_date']}..{snap.meta['last_date']} "
+        f"(source {snap.meta['source']}, adjustment {snap.meta['adjustment']}, "
+        f"http requests {p.get('http_requests', '?')}, cache hits {p.get('cache_hits', '?')})"
+    )
+    spread = p.get("tiingo_adj_ratio_spread")
+    if spread:
+        typer.echo(f"Tiingo adjClose vs lab adjustment, relative spread: {spread}")
+
+
+@app.command("new-sessions")
+def new_sessions_cmd(snapshot_id: str) -> None:
+    """Show sessions Tiingo has that are newer than SNAPSHOT_ID (nothing is stored)."""
+    from moneylab.data.providers import ProviderError
+    from moneylab.service import Lab
+
+    try:
+        new = Lab.open().fetch_new_sessions(snapshot_id)
+    except (ProviderError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(new.bars.to_csv(index=False, date_format="%Y-%m-%d"), nl=False)
+    if new.basis_changed:
+        typer.echo("corporate actions in the window:", err=True)
+        typer.echo(new.actions.to_csv(index=False, date_format="%Y-%m-%d"), err=True, nl=False)
+
+
+@app.command()
+def watchlist(
+    name: str,
+    symbols: Annotated[
+        list[str] | None, typer.Argument(help="members; omit to show the watchlist")
+    ] = None,
+    label: str = "",
+) -> None:
+    """Save NAME with SYMBOLS (a new version if it changed), or show it."""
+    from moneylab.service import Lab
+
+    lab = Lab.open()
+    wl = lab.save_watchlist(name, symbols, label) if symbols else lab.watchlist(name)
+    typer.echo(
+        f"{wl['name']} v{wl['version']} ({wl['label'] or 'no label'}, {wl['created_at']}): "
+        + " ".join(wl["members"])
+    )
 
 
 @app.command()
@@ -39,6 +115,76 @@ def demo() -> None:
 
     out = run_rsi_demo()
     typer.echo(f"original run {out['original']}, changed run {out['changed']}")
+
+
+paper_app = typer.Typer(
+    no_args_is_help=True, help="Paper forward testing of a frozen run (docs/paper-trading.md)."
+)
+app.add_typer(paper_app, name="paper")
+
+
+@paper_app.command("start")
+def paper_start(
+    run_id: str,
+    start: str = typer.Option("", help="last history session (default: the snapshot's last)"),
+    name: str = "",
+) -> None:
+    """Freeze a completed run and open a paper account for the sessions after START."""
+    from moneylab.service import Lab
+
+    lab = Lab.open()
+    pid = lab.start_paper(run_id, start or None, name)
+    st = lab.paper_status(pid)
+    typer.echo(f"paper account {pid}: history to {st['start_session']}, next {st['next_expected']}")
+
+
+@paper_app.command("list")
+def paper_list() -> None:
+    """List paper accounts with their latest processed session."""
+    from moneylab.service import Lab
+
+    for a in Lab.open().paper_accounts():
+        typer.echo(
+            f"{a['id']}  {a['name']}  run {a['run_id']}  start {a['start_session']}  "
+            f"latest {a['latest_session'] or '-'}  ({a['processed_sessions']} sessions)"
+        )
+
+
+@paper_app.command("ingest")
+def paper_ingest(paper_id: str, path: Path) -> None:
+    """Deliver the sessions in a CSV (import format), one event per session, in date order."""
+    import pandas as pd
+
+    from moneylab.service import Lab
+
+    for r in Lab.open().paper_ingest_sessions(paper_id, pd.read_csv(path)):
+        note = f": {r['detail']}" if r["detail"] != r["status"] else ""
+        done = f"; processed {', '.join(r['processed'])}" if r["processed"] else ""
+        typer.echo(f"{r['session']} {r['status']}{note}{done}")
+
+
+@paper_app.command("status")
+def paper_status(
+    paper_id: str, as_of: str = typer.Option("", help="report gaps up to here")
+) -> None:
+    """Latest processed session, missing and conflicting data, positions and cash."""
+    import json
+
+    from moneylab.service import Lab
+
+    typer.echo(json.dumps(Lab.open().paper_status(paper_id, as_of or None), indent=2))
+
+
+@paper_app.command("replay")
+def paper_replay(paper_id: str) -> None:
+    """Replay the recorded inputs from the initial state; exit 1 unless it matches exactly."""
+    import json
+
+    from moneylab.service import Lab
+
+    out = Lab.open().paper_replay(paper_id)
+    typer.echo(json.dumps(out, indent=2, default=str))
+    raise SystemExit(0 if out["match"] else 1)
 
 
 @app.command()
