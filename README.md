@@ -60,7 +60,7 @@ script, and `tests/test_rsi_divergence.py` checks both ledgers against hand calc
 
 ```
 src/moneylab/
-  components/   declared, versioned indicators and conditions (SMA, RSI, crossings, thresholds)
+  components/   declared, versioned indicators and conditions (SMA, RSI, MACD, breadth, crossings, thresholds)
   data/         file-import adapter, immutable content-addressed snapshots, session alignment
   data/providers/  live provider adapters (Tiingo) sharing the file adapter's adjustment
   engine/       config resolution, the daily simulator, reporting and comparison

@@ -22,6 +22,11 @@ Use = Literal["indicator", "entry", "exit", "filter"]
 # data up to and including that session.
 IndicatorFn = Callable[[pd.DataFrame, dict[str, Any]], pd.Series]
 
+# A cross-sectional indicator (for example market breadth) receives every universe
+# symbol's frame at once and returns one value per session, shared by all symbols.
+# The same causality rule applies: a value may only use data up to its own session.
+UniverseFn = Callable[[dict[str, pd.DataFrame], dict[str, Any]], pd.Series]
+
 # Optional cross-parameter check: receives the resolved (defaulted, individually
 # validated) parameters and raises ValueError when a combination is invalid, for
 # example MACD's fast < slow. ParamSpec bounds only cover one parameter at a time.
@@ -73,6 +78,10 @@ class ComponentDeclaration:
     description: str = ""
     compute: IndicatorFn | None = field(default=None, compare=False, repr=False)
     check: ParamCheck | None = field(default=None, compare=False, repr=False)
+    # Set for indicators computed across the whole universe instead of per symbol.
+    compute_universe: UniverseFn | None = field(default=None, compare=False, repr=False)
+    # True when values are in price units, so "close crosses <indicator>" is meaningful.
+    price_scale: bool = False
 
     def param(self, name: str) -> ParamSpec:
         for p in self.params:
@@ -118,6 +127,7 @@ def register_indicator(
     description: str = "",
     inputs: tuple[str, ...] = ("close",),
     check: ParamCheck | None = None,
+    price_scale: bool = False,
 ) -> Callable[[IndicatorFn], IndicatorFn]:
     """Decorator: implement an indicator once and make it usable in every strategy."""
 
@@ -133,6 +143,36 @@ def register_indicator(
                 description=description,
                 compute=fn,
                 check=check,
+                price_scale=price_scale,
+            )
+        )
+        return fn
+
+    return wrap
+
+
+def register_universe_indicator(
+    *,
+    id: str,
+    version: str,
+    label: str,
+    params: tuple[ParamSpec, ...],
+    description: str = "",
+    inputs: tuple[str, ...] = ("close",),
+) -> Callable[[UniverseFn], UniverseFn]:
+    """Decorator for a cross-sectional indicator: one value per session for the universe."""
+
+    def wrap(fn: UniverseFn) -> UniverseFn:
+        register(
+            ComponentDeclaration(
+                id=id,
+                version=version,
+                label=label,
+                uses=("indicator",),
+                params=params,
+                inputs=inputs,
+                description=description,
+                compute_universe=fn,
             )
         )
         return fn

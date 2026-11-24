@@ -49,14 +49,28 @@ def _cond_label(c: dict[str, Any]) -> str:
 
 
 def _compute_indicators(
-    data: MarketData, conditions: list[dict[str, Any]]
+    data: MarketData, conditions: list[dict[str, Any]], universe: list[str] | None = None
 ) -> dict[str, dict[str, np.ndarray]]:
-    """symbol -> indicator key -> values aligned to sessions. Computed once per run."""
+    """symbol -> indicator key -> values aligned to sessions. Computed once per run.
+
+    Cross-sectional indicators (breadth) are computed once over the universe symbols
+    and the same array is shared by every symbol.
+    """
     needed = {_ind_key(c["indicator"]): c["indicator"] for c in conditions}
+    members = sorted(universe) if universe is not None else sorted(data.frames)
+    shared: dict[str, np.ndarray] = {}
+    for key, ind in needed.items():
+        decl = get_component(ind["id"])
+        if decl.compute_universe is not None:
+            frames = {s: data.frames[s] for s in members if s in data.frames}
+            shared[key] = decl.compute_universe(frames, ind["params"]).to_numpy(dtype=float)
     out: dict[str, dict[str, np.ndarray]] = {}
     for sym, frame in data.frames.items():
         out[sym] = {}
         for key, ind in needed.items():
+            if key in shared:
+                out[sym][key] = shared[key]
+                continue
             decl = get_component(ind["id"])
             assert decl.compute is not None
             out[sym][key] = decl.compute(frame, ind["params"]).to_numpy(dtype=float)
@@ -231,7 +245,7 @@ class MarketView:
             sessions=data.sessions,
             opens={s: data.frames[s]["open"].to_numpy(dtype=float) for s in symbols},
             closes={s: data.frames[s]["close"].to_numpy(dtype=float) for s in symbols},
-            indicators=_compute_indicators(data, conds),
+            indicators=_compute_indicators(data, conds, symbols),
             first_bar=dict(data.first_bar),
         )
 

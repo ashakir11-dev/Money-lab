@@ -7,6 +7,7 @@ registered indicator appears here without dashboard edits. All work goes through
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +25,13 @@ PAGES = ("Runs", "Strategy builder", "Compare", "Paper trading", "Data", "Accept
 
 
 @st.cache_resource
+def _cached_lab(home: str) -> Lab:
+    return Lab.open(Path(home)) if home else Lab.open()
+
+
 def _lab() -> Lab:
-    return Lab.open()
+    # Keyed by MONEYLAB_HOME so a process that switches homes never reuses another's Lab.
+    return _cached_lab(os.environ.get("MONEYLAB_HOME", ""))
 
 
 def _set_draft(cfg: dict[str, Any], parent_id: str | None, snapshot_id: str | None) -> None:
@@ -80,7 +86,6 @@ def _param_widget(decl: ComponentDeclaration, name: str, value: Any, key: str) -
 
 def _condition_editor(cond: dict[str, Any], use: str, key: str) -> dict[str, Any]:
     kinds = [d.id for d in list_components(use) if d.id in ("price_cross", "threshold")]  # type: ignore[arg-type]
-    indicators = [d.id for d in list_components("indicator")]
     cols = st.columns([2, 2, 3])
     with cols[0]:
         kind = st.selectbox(
@@ -90,11 +95,16 @@ def _condition_editor(cond: dict[str, Any], use: str, key: str) -> dict[str, Any
             key=f"{key}.kind",
             format_func=lambda k: get_component(k).label,
         )
+    # "close crosses X" only makes sense for indicators in price units (the SMA).
+    indicators = [
+        d.id for d in list_components("indicator") if kind != "price_cross" or d.price_scale
+    ]
+    current = cond["indicator"]["id"]
     with cols[1]:
         ind_id = st.selectbox(
             "Indicator",
             indicators,
-            index=indicators.index(cond["indicator"]["id"]),
+            index=indicators.index(current) if current in indicators else 0,
             key=f"{key}.ind",
             format_func=lambda k: get_component(k).label,
         )
@@ -126,6 +136,25 @@ def _condition_editor(cond: dict[str, Any], use: str, key: str) -> dict[str, Any
                 cond_decl, p.name, cond_params[p.name], f"{key}.{p.name}"
             )
     return {"kind": kind, "indicator": {"id": ind_id, "params": ind_params}, "params": cond_params}
+
+
+def _shape(conds: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    return [(c["kind"], c["indicator"]["id"]) for c in conds]
+
+
+def _reset_changed(new: list[dict[str, Any]], old: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Clear parameters of conditions whose kind or indicator was just switched, so the
+    redrawn controls start from the new component's declared defaults."""
+    out = []
+    for i, c in enumerate(new):
+        prev = old[i] if i < len(old) else None
+        c = {**c, "indicator": dict(c["indicator"])}
+        if prev is None or prev["indicator"]["id"] != c["indicator"]["id"]:
+            c["indicator"]["params"] = {}
+        if prev is None or prev["kind"] != c["kind"]:
+            c["params"] = {}
+        out.append(c)
+    return out
 
 
 def page_builder(lab: Lab) -> None:
@@ -176,6 +205,12 @@ def page_builder(lab: Lab) -> None:
                 ]
                 st.session_state["draft_rev"] += 1
                 st.rerun()
+    if _shape(new_entry) != _shape(draft["entry"]):
+        # A different condition or indicator was picked: redraw its parameter controls
+        # from that component's declared defaults instead of the previous widget values.
+        draft["entry"] = _reset_changed(new_entry, draft["entry"])
+        st.session_state["draft_rev"] += 1
+        st.rerun()
     draft["entry"] = new_entry
     if st.button("Add entry condition", key=f"b{rev}.entry.add"):
         draft["entry"].append(
@@ -213,13 +248,12 @@ def page_builder(lab: Lab) -> None:
                 "params": {"direction": "below"},
             }
         ]
-        draft["exit"] = {
-            "kind": "signal",
-            "params": {},
-            "conditions": [
-                _condition_editor(c, "exit", f"b{rev}.exit{i}") for i, c in enumerate(conds)
-            ],
-        }
+        new_exit = [_condition_editor(c, "exit", f"b{rev}.exit{i}") for i, c in enumerate(conds)]
+        draft["exit"] = {"kind": "signal", "params": {}, "conditions": new_exit}
+        if ex["conditions"] and _shape(new_exit) != _shape(ex["conditions"]):
+            draft["exit"]["conditions"] = _reset_changed(new_exit, ex["conditions"])
+            st.session_state["draft_rev"] += 1
+            st.rerun()
 
     st.subheader("Portfolio and costs")
     s = lab.settings
@@ -271,6 +305,19 @@ def page_builder(lab: Lab) -> None:
             st.success(f"Saved run {run_id}")
             if parent:
                 st.session_state["compare_pair"] = (parent, run_id)
+    # After running a duplicate, one click opens the comparison with its parent, and
+    # the Compare page leads with the first differing decision.
+    pair = st.session_state.get("compare_pair")
+    last = st.session_state.get("last_run")
+    if (
+        parent
+        and pair
+        and last
+        and tuple(pair) == (parent, last)
+        and st.button("Compare with the original run", key="run.compare")
+    ):
+        st.session_state["nav_to"] = "Compare"
+        st.rerun()
 
 
 def page_runs(lab: Lab) -> None:

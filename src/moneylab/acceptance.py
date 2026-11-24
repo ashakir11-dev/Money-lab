@@ -35,8 +35,8 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         3,
         "Research usability",
-        ["tests/test_dashboard_rsi_path.py"],
-        "universe change in the same flow; timed five-minute walkthrough",
+        ["tests/test_gate3_usability.py", "tests/test_dashboard_rsi_path.py"],
+        "a person's timed run of docs/walkthrough.md (the five-minute limit)",
     ),
     (
         4,

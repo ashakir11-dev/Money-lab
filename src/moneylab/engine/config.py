@@ -98,6 +98,11 @@ def _resolve_condition(c: Condition, use: str) -> dict[str, Any]:
     ind_decl = get_component(c.indicator.id)
     if "indicator" not in ind_decl.uses:
         raise ValueError(f"{c.indicator.id} is not an indicator")
+    if c.kind == "price_cross" and not ind_decl.price_scale:
+        raise ValueError(
+            f"close cannot cross {ind_decl.label} ({ind_decl.id}): it is not in price "
+            "units. Use a threshold condition instead."
+        )
     return {
         "kind": c.kind,
         "version": cond_decl.version,

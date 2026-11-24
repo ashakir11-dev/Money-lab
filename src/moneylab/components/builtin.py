@@ -21,6 +21,7 @@ from moneylab.components.registry import (
     label="Simple moving average",
     params=(ParamSpec("length", "int", 20, "Lookback (sessions)", min=1, max=400),),
     description="Mean of the last `length` closes. Undefined until `length` closes exist.",
+    price_scale=True,
 )
 def sma(bars: pd.DataFrame, params: dict[str, Any]) -> pd.Series:
     n = int(params["length"])
