@@ -12,6 +12,7 @@ import sqlite3
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,35 @@ CREATE TABLE IF NOT EXISTS runs (
 """
 
 JSON_COLUMNS = ("conditions", "values")
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """Everything the ``runs`` table holds for one finished run."""
+
+    run_id: str
+    resolved: dict[str, Any]
+    snapshot_id: str
+    config_hash: str
+    metrics: dict[str, Any]
+    parent_id: str | None = None
+    created_at: str | None = None
+
+
+def new_run_id() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+
+
+def write_ledgers(run_dir: Path, result: RunResult) -> None:
+    """Write a run's decisions, fills and equity as Parquet into a new directory."""
+    run_dir.mkdir(parents=True)
+    dec = result.decisions.copy()
+    for col in JSON_COLUMNS:
+        if col in dec:
+            dec[col] = dec[col].map(lambda v: json.dumps(v) if isinstance(v, list | dict) else None)
+    dec.to_parquet(run_dir / "decisions.parquet", index=False)
+    result.fills.to_parquet(run_dir / "fills.parquet", index=False)
+    result.equity.to_parquet(run_dir / "equity.parquet", index=False)
 
 
 class RunStore:
@@ -71,37 +101,50 @@ class RunStore:
         parent_id: str | None = None,
         created_at: str | None = None,
     ) -> str:
-        run_id = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
-        d = self.run_dir(run_id)
-        d.mkdir(parents=True)
-        dec = result.decisions.copy()
-        for col in JSON_COLUMNS:
-            if col in dec:
-                dec[col] = dec[col].map(
-                    lambda v: json.dumps(v) if isinstance(v, list | dict) else None
+        run_id = new_run_id()
+        write_ledgers(self.run_dir(run_id), result)
+        self.insert_records(
+            [
+                RunRecord(
+                    run_id=run_id,
+                    resolved=resolved,
+                    snapshot_id=snapshot_id,
+                    config_hash=config_hash,
+                    metrics=metrics,
+                    parent_id=parent_id,
+                    created_at=created_at,
                 )
-        dec.to_parquet(d / "decisions.parquet", index=False)
-        result.fills.to_parquet(d / "fills.parquet", index=False)
-        result.equity.to_parquet(d / "equity.parquet", index=False)
+            ]
+        )
+        return run_id
+
+    def insert_records(self, records: list[RunRecord]) -> None:
+        """Insert run records whose ledgers are already written, in one transaction.
+
+        Only this process writes SQLite. Batch workers write their own run's Parquet
+        ledgers (a fresh directory per run) and hand the record back here.
+        """
         now = datetime.now(UTC).isoformat()
         with self._conn() as c:
-            c.execute(
+            c.executemany(
                 "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    run_id,
-                    parent_id,
-                    resolved["name"],
-                    created_at or now,
-                    now,
-                    "completed",
-                    snapshot_id,
-                    resolved["execution"]["engine_version"],
-                    config_hash,
-                    json.dumps(resolved),
-                    json.dumps(metrics),
-                ),
+                [
+                    (
+                        r.run_id,
+                        r.parent_id,
+                        r.resolved["name"],
+                        r.created_at or now,
+                        now,
+                        "completed",
+                        r.snapshot_id,
+                        r.resolved["execution"]["engine_version"],
+                        r.config_hash,
+                        json.dumps(r.resolved),
+                        json.dumps(r.metrics),
+                    )
+                    for r in records
+                ],
             )
-        return run_id
 
     def list_runs(self) -> list[dict[str, Any]]:
         with self._conn() as c:

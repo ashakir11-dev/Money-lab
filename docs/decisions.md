@@ -43,3 +43,22 @@ No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Eac
   `MarketView`; its state serialises to JSON so paper mode can resume after a restart.
 * Components are auto-discovered: every module in `moneylab/components/` is imported,
   so a new indicator is one new file calling `register_indicator`.
+
+## Batches of variants (gate 2)
+
+* `Lab.run_batch(configs, snapshot_id, workers=..., parent_ids=None)` runs several
+  variants and returns their run ids in order. `workers` defaults to
+  `MONEYLAB_WORKERS` (0 = one per CPU); 1 runs sequentially in-process.
+* Immutable inputs are shared: market data is built once per date range in the parent
+  and inherited copy-on-write by `fork`ed workers (`moneylab.engine.batch`). Where
+  `fork` is unavailable each worker gets one pickled copy at start-up.
+* Mutable state is isolated: each variant has its own `Account`, so its symbols compete
+  only for its own cash and position slots.
+* Workers write their run's Parquet ledgers into a fresh run directory; only the parent
+  writes SQLite, in one transaction per batch.
+* Finished results are never reused: every submitted variant is simulated.
+* The simulator precomputes, per account and view, which symbols can record anything at
+  each session (whole-array condition checks) and builds the detailed condition rows
+  only for those. Decisions, fills, skip reasons and equity are unchanged.
+* Benchmark: `uv run python scripts/benchmark_capacity.py` writes
+  [benchmarks/capacity.md](benchmarks/capacity.md).

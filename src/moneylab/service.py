@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,9 +19,9 @@ from moneylab.data.snapshot import (
     read_import_file,
     save_snapshot,
 )
+from moneylab.engine.batch import Job, SnapshotInfo, run_jobs, run_one
 from moneylab.engine.config import StrategyConfig, check_versions, config_hash, resolve
-from moneylab.engine.reporting import config_diff, first_difference, metrics
-from moneylab.engine.simulator import simulate
+from moneylab.engine.reporting import config_diff, first_difference
 from moneylab.settings import Settings, get_settings
 from moneylab.store import RunStore
 
@@ -105,18 +106,7 @@ class Lab:
             resolved["start"],
             resolved["end"],
         )
-        result = simulate(resolved, data)
-        m = metrics(result.equity, result.fills)
-        if "benchmark_equity" in result.equity:
-            m["benchmark"] = metrics(result.equity, result.fills, column="benchmark_equity")
-        resolved = dict(resolved)
-        resolved["data"] = {
-            "snapshot_id": snap.id,
-            "source": snap.meta["source"],
-            "adjustment": snap.meta["adjustment"],
-            "first_session": data.sessions[0].date().isoformat(),
-            "last_session": data.sessions[-1].date().isoformat(),
-        }
+        resolved, result, m = run_one(resolved, data, _snap_info(snap))
         return self.store.save(
             resolved=resolved,
             snapshot_id=snap.id,
@@ -125,6 +115,63 @@ class Lab:
             metrics=m,
             parent_id=parent_id,
         )
+
+    def run_batch(
+        self,
+        configs: list[StrategyConfig],
+        snapshot_id: str,
+        workers: int | None = None,
+        parent_ids: list[str | None] | None = None,
+        timings: dict[str, float] | None = None,
+    ) -> list[str]:
+        """Run several saved variants, each on its own account, and save every run.
+
+        Market data is built once per date range (over the union of the variants'
+        symbols) and shared read-only with the workers. ``workers`` defaults to
+        ``settings.workers`` (0 = one per CPU); 1 runs sequentially in this process.
+        Finished results are never reused. Returns run ids in ``configs`` order.
+        ``timings``, when given, receives the seconds spent in each phase.
+        """
+        clock = time.perf_counter()
+        phases = timings if timings is not None else {}
+
+        def lap(name: str) -> None:
+            nonlocal clock
+            now = time.perf_counter()
+            phases[name] = now - clock
+            clock = now
+
+        if parent_ids is not None and len(parent_ids) != len(configs):
+            raise ValueError("parent_ids must have one entry per config")
+        resolved = [resolve(c, self.settings) for c in configs]
+        lap("resolve")
+        snap = self.snapshot(snapshot_id)
+        groups: dict[tuple[str | None, str | None], set[str]] = {}
+        for r in resolved:
+            groups.setdefault((r["start"], r["end"]), set()).update(
+                [*r["universe"], r["benchmark"]]
+            )
+        keys = {g: n for n, g in enumerate(groups)}
+        datasets = {
+            keys[g]: self.market_data(snap.id, sorted(syms), g[0], g[1])
+            for g, syms in groups.items()
+        }
+        lap("load_data")
+        jobs = [
+            Job(r, keys[(r["start"], r["end"])], parent_ids[n] if parent_ids else None)
+            for n, r in enumerate(resolved)
+        ]
+        records = run_jobs(
+            jobs,
+            datasets,
+            _snap_info(snap),
+            self.store.home / "runs",
+            self.settings.workers if workers is None else workers,
+        )
+        lap("simulate_and_write_ledgers")
+        self.store.insert_records(records)
+        lap("save_records")
+        return [r.run_id for r in records]
 
     def compare(self, run_a: str, run_b: str) -> dict[str, Any]:
         a, b = self.store.get(run_a), self.store.get(run_b)
@@ -137,3 +184,7 @@ class Lab:
                 la.decisions, lb.decisions, la.fills, lb.fills, la.equity, lb.equity
             ),
         }
+
+
+def _snap_info(snap: Snapshot) -> SnapshotInfo:
+    return SnapshotInfo(snap.id, snap.meta["source"], snap.meta["adjustment"])

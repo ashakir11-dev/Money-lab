@@ -4,7 +4,8 @@ A local, single-user trading research lab for US stocks and ETFs, built to the
 [Trading Research Lab MVP spec](docs/spec-status.md). Today it runs one complete path
 end to end: build an SMA-cross strategy in the dashboard, add an RSI filter, duplicate
 the run, change the RSI threshold from 30 to 35, rerun, and see exactly which trade
-changed and why. The other acceptance gates are tracked as pending in
+changed and why. Batches of variants run concurrently on a worker pool
+(`Lab.run_batch`). Acceptance gate status is tracked in
 [docs/acceptance-report.md](docs/acceptance-report.md).
 
 ## Setup
@@ -28,6 +29,8 @@ uv run moneylab dashboard    # open http://localhost:8501
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
 | `uv run python scripts/make_fixture.py` | regenerates the deterministic fixture |
 | `uv run python scripts/export_demo_ledgers.py OUT` | writes both demo ledgers and the comparison |
+| `uv run python scripts/make_capacity_dataset.py` | writes the 250 stocks + SPY x 5 years capacity CSV under `var/` |
+| `uv run python scripts/benchmark_capacity.py` | gate 2 benchmark: three timed 10-variant batches, writes `docs/benchmarks/capacity.md` |
 
 ## The RSI threshold demo in the dashboard
 
