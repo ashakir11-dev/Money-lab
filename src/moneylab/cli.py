@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -24,12 +25,87 @@ def dashboard(port: int = 8501) -> None:
 
 
 @app.command("import")
-def import_file(path: Path, label: str = "") -> None:
+def import_file(
+    path: Path,
+    label: str = "",
+    actions: Annotated[
+        Path | None, typer.Option(help="actions CSV; PATH then holds raw prices")
+    ] = None,
+) -> None:
     """Import a CSV in the documented file format as an immutable snapshot."""
     from moneylab.service import Lab
 
-    snap = Lab.open().import_file(path, label=label)
+    snap = Lab.open().import_file(path, label=label, actions_path=actions)
     typer.echo(f"snapshot {snap.id}: {len(snap.meta['symbols'])} symbols, {snap.meta['rows']} rows")
+
+
+@app.command()
+def fetch(
+    symbols: list[str],
+    start: str = typer.Option(..., help="first date, YYYY-MM-DD"),
+    end: str = typer.Option(..., help="last date, YYYY-MM-DD"),
+    label: str = "",
+    refresh: bool = typer.Option(False, help="ignore the response cache"),
+) -> None:
+    """Fetch daily history from Tiingo (needs TIINGO_API_KEY) as an immutable snapshot."""
+    from datetime import date
+
+    from moneylab.data.providers import ProviderError
+    from moneylab.service import Lab
+
+    try:
+        snap = Lab.open().import_provider(
+            symbols, date.fromisoformat(start), date.fromisoformat(end), label, refresh=refresh
+        )
+    except (ProviderError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+    p = snap.meta.get("provenance", {})
+    typer.echo(
+        f"snapshot {snap.id}: {len(snap.meta['symbols'])} symbols, {snap.meta['rows']} rows, "
+        f"{snap.meta['first_date']}..{snap.meta['last_date']} "
+        f"(source {snap.meta['source']}, adjustment {snap.meta['adjustment']}, "
+        f"http requests {p.get('http_requests', '?')}, cache hits {p.get('cache_hits', '?')})"
+    )
+    spread = p.get("tiingo_adj_ratio_spread")
+    if spread:
+        typer.echo(f"Tiingo adjClose vs lab adjustment, relative spread: {spread}")
+
+
+@app.command("new-sessions")
+def new_sessions_cmd(snapshot_id: str) -> None:
+    """Show sessions Tiingo has that are newer than SNAPSHOT_ID (nothing is stored)."""
+    from moneylab.data.providers import ProviderError
+    from moneylab.service import Lab
+
+    try:
+        new = Lab.open().fetch_new_sessions(snapshot_id)
+    except (ProviderError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(new.bars.to_csv(index=False, date_format="%Y-%m-%d"), nl=False)
+    if new.basis_changed:
+        typer.echo("corporate actions in the window:", err=True)
+        typer.echo(new.actions.to_csv(index=False, date_format="%Y-%m-%d"), err=True, nl=False)
+
+
+@app.command()
+def watchlist(
+    name: str,
+    symbols: Annotated[
+        list[str] | None, typer.Argument(help="members; omit to show the watchlist")
+    ] = None,
+    label: str = "",
+) -> None:
+    """Save NAME with SYMBOLS (a new version if it changed), or show it."""
+    from moneylab.service import Lab
+
+    lab = Lab.open()
+    wl = lab.save_watchlist(name, symbols, label) if symbols else lab.watchlist(name)
+    typer.echo(
+        f"{wl['name']} v{wl['version']} ({wl['label'] or 'no label'}, {wl['created_at']}): "
+        + " ".join(wl["members"])
+    )
 
 
 @app.command()
