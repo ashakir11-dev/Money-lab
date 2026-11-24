@@ -68,10 +68,6 @@ def config_diff(
     return rows
 
 
-def _decision_sig(row: pd.Series) -> str:
-    return f"{row['action']}|{row['reason']}|{row.get('qty')}"
-
-
 def first_difference(
     dec_a: pd.DataFrame,
     dec_b: pd.DataFrame,
@@ -88,28 +84,58 @@ def first_difference(
     threshold) is shown instead.
     """
 
-    def keyed(d: pd.DataFrame, trading: bool) -> dict[tuple[str, str], pd.Series]:
-        mask = d["action"].isin(DECISION_ACTIONS)
-        rows = d[mask] if trading else d[~mask]
-        return {(r["session"], r["symbol"]): r for _, r in rows.iterrows()}
+    def keyed(d: pd.DataFrame, trading: bool) -> _Keyed:
+        mask = d["action"].isin(DECISION_ACTIONS).to_numpy()
+        return _Keyed(d, mask if trading else ~mask)
 
     ka, kb = keyed(dec_a, True), keyed(dec_b, True)
-    diag_a, diag_b = keyed(dec_a, False), keyed(dec_b, False)
-    for key in sorted(set(ka) | set(kb)):
-        ra, rb = ka.get(key), kb.get(key)
-        sa = _decision_sig(ra) if ra is not None else "none"
-        sb = _decision_sig(rb) if rb is not None else "none"
+    for key in sorted(set(ka.pos) | set(kb.pos)):
+        sa, sb = ka.sig(key), kb.sig(key)
         if sa == sb:
             continue
         session, symbol = key
+        ra, rb = ka.row(key), kb.row(key)
         return {
             "session": session,
             "symbol": symbol,
-            "a": _row_view(ra if ra is not None else diag_a.get(key), fills_a),
-            "b": _row_view(rb if rb is not None else diag_b.get(key), fills_b),
+            "a": _row_view(ra if ra is not None else keyed(dec_a, False).row(key), fills_a),
+            "b": _row_view(rb if rb is not None else keyed(dec_b, False).row(key), fills_b),
             "impact": _impact(session, eq_a, eq_b),
         }
     return None
+
+
+class _Keyed:
+    """Rows of a decision ledger keyed by (session, symbol); the last row wins.
+
+    Row Series are built only on demand, exactly as ``DataFrame.iterrows`` builds
+    them, so large ledgers (hundreds of thousands of diagnostic rows) compare fast.
+    """
+
+    def __init__(self, d: pd.DataFrame, mask: np.ndarray) -> None:
+        self.d = d
+        self.values = d.values
+        idx = np.flatnonzero(mask)
+        sessions = d["session"].to_numpy(dtype=object)[idx]
+        symbols = d["symbol"].to_numpy(dtype=object)[idx]
+        self.pos: dict[tuple[str, str], int] = dict(
+            zip(zip(sessions, symbols, strict=True), idx.tolist(), strict=True)
+        )
+        cols = list(d.columns)
+        self._sig_cols = [cols.index(c) if c in cols else None for c in ("action", "reason", "qty")]
+
+    def row(self, key: tuple[str, str]) -> pd.Series | None:
+        p = self.pos.get(key)
+        if p is None:
+            return None
+        return pd.Series(self.values[p], index=self.d.columns, name=self.d.index[p])
+
+    def sig(self, key: tuple[str, str]) -> str:
+        p = self.pos.get(key)
+        if p is None:
+            return "none"
+        a, r, q = (None if c is None else self.values[p][c] for c in self._sig_cols)
+        return f"{a}|{r}|{q}"
 
 
 def _row_view(row: pd.Series | None, fills: pd.DataFrame) -> dict[str, Any]:
