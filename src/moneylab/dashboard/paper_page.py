@@ -23,7 +23,7 @@ def _table(rows: list[dict[str, Any]] | pd.DataFrame, empty: str) -> None:
     for col in ("conditions", "values"):
         if col in out:
             out[col] = out[col].map(lambda v: "" if v is None else str(v))
-    st.dataframe(out, hide_index=True, use_container_width=True)
+    st.dataframe(out, hide_index=True, width="stretch")
 
 
 def _start_form(lab: Lab) -> None:
@@ -60,7 +60,7 @@ def page_paper(lab: Lab) -> None:
     if not accounts:
         st.info("No paper accounts yet.")
         return
-    st.dataframe(pd.DataFrame(accounts), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(accounts), hide_index=True, width="stretch")
     ids = [a["id"] for a in accounts]
     cur = st.session_state.get("paper.selected")
     pid = st.selectbox(
