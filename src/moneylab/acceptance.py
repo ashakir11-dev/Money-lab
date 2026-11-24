@@ -47,9 +47,10 @@ GATES: list[tuple[int, str, list[str], str]] = [
             "tests/test_account_state.py",
             "tests/test_paper.py",
             "tests/test_dashboard_paper.py",
+            "tests/test_conventions.py",
         ],
         "one genuinely new market session processed live (needs the Tiingo provider and a "
-        "trading day)",
+        "trading day); the forward-parity milestone is deferred as of 2026-11-24",
     ),
     (
         5,

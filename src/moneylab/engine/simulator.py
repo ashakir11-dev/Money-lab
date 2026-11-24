@@ -364,12 +364,20 @@ class Account:
                     continue
                 qty = o.qty
                 note = ""
-                if qty * px * (1 + cost_rate) > self.cash:
-                    qty = int(self.cash // (px * (1 + cost_rate)))
-                    note = f"reduced from {o.qty} to {qty}: opening price {px:.2f} > cash"
-                if qty <= 0:
+                need = qty * px * (1 + cost_rate)
+                if need > self.cash:
+                    # The ordered quantity is no longer affordable at the open: skip the
+                    # whole order and keep the reason (never buy a smaller quantity).
                     self._record(
-                        day, sym, SKIP, "insufficient_cash_at_open", order_qty=o.qty, open=px
+                        day,
+                        sym,
+                        SKIP,
+                        "insufficient_cash_at_open",
+                        order_qty=o.qty,
+                        open=px,
+                        est_cost=round(need, 2),
+                        available=round(self.cash, 2),
+                        order_decision_id=o.decision_id,
                     )
                     continue
                 gross = qty * px
@@ -407,7 +415,8 @@ class Account:
                 exiting += 1
                 continue
             pos = self.positions[sym]
-            held = i - pos.fill_idx
+            # The fill session counts as holding session one.
+            held = i - pos.fill_idx + 1
             if self.exit_rule["kind"] == "holding_period":
                 if held >= self.hold_n:
                     did = self._record(
@@ -531,15 +540,56 @@ class Account:
                 columns=["session", "symbol", "side", "qty", "price", "cost", "cash_after"]
             )
         eq = pd.DataFrame(self.equity_rows)
+        meta: dict[str, Any] = {"open_positions": {s: p.qty for s, p in self.positions.items()}}
         bench = self.resolved["benchmark"]
         if data is not None and bench in data.frames and len(eq):
-            bc = data.frames[bench]["close"].ffill().to_numpy(dtype=float)[: len(eq)]
-            first = bc[~np.isnan(bc)][0]
-            start = float(self.resolved["portfolio"]["starting_cash"])
-            eq["benchmark_equity"] = np.round(start * bc / first, 2)
-        return RunResult(
-            dec, fl, eq, {"open_positions": {s: p.qty for s, p in self.positions.items()}}
-        )
+            values, invested = _benchmark(
+                data.frames[bench],
+                data.sessions,
+                len(eq),
+                float(self.resolved["portfolio"]["starting_cash"]),
+                self.cost_rate,
+            )
+            if invested is not None:
+                eq["benchmark_equity"] = values
+                meta["benchmark"] = {"symbol": bench, **invested}
+        return RunResult(dec, fl, eq, meta)
+
+
+def _benchmark(
+    frame: pd.DataFrame,
+    sessions: pd.DatetimeIndex,
+    n: int,
+    start: float,
+    cost_rate: float,
+) -> tuple[np.ndarray, dict[str, Any] | None]:
+    """Buy-and-hold the benchmark under the strategy's own conventions.
+
+    Whole shares are bought at the open of the first session with a bar, paying the
+    same cost per side; the rest stays as cash. It is valued at each close (last known
+    close when a bar is missing). Prices come from the same snapshot, so splits and
+    dividends are treated exactly as for the strategy's holdings.
+    """
+    opens = frame["open"].to_numpy(dtype=float)[:n]
+    closes = frame["close"].ffill().to_numpy(dtype=float)[:n]
+    ok = np.flatnonzero(~np.isnan(opens) & ~np.isnan(closes))
+    if ok.size == 0:
+        return np.full(n, np.nan), None
+    j = int(ok[0])
+    px = float(opens[j])
+    shares = int(start // (px * (1 + cost_rate)))
+    cost = _cents(shares * px * cost_rate)
+    cash = _cents(start - shares * px - cost)
+    values = np.array(
+        [start if k < j else _cents(cash + shares * float(closes[k])) for k in range(n)]
+    )
+    return values, {
+        "invested_session": sessions[j].date().isoformat(),
+        "price": round(px, 6),
+        "shares": shares,
+        "cost": cost,
+        "cash_left": cash,
+    }
 
 
 def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:

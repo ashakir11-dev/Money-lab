@@ -497,6 +497,7 @@ def page_runs(lab: Lab) -> None:
                 st.rerun()
 
     _metrics(run["metrics"], res["benchmark"])
+    _run_context(res, run["metrics"])
     ui.eyebrow("Equity vs benchmark")
     ui.equity_chart(
         {res["name"]: led.equity}, benchmark=led.equity, benchmark_name=res["benchmark"]
@@ -604,7 +605,12 @@ def page_compare(lab: Lab) -> None:
         return
     ids = [r["id"] for r in runs]
     names = {r["id"]: r["name"] for r in runs}
-    pa, pb = st.session_state.get("compare_pair", (ids[1], ids[0]))
+    # Default: the newest run against its parent (the experimental control); without a
+    # parent, against the run before it.
+    parents = {r["id"]: r["parent_id"] for r in runs}
+    newest_parent = parents.get(ids[0])
+    default = (newest_parent, ids[0]) if newest_parent in names else (ids[1], ids[0])
+    pa, pb = st.session_state.get("compare_pair", default)
     c1, c2 = st.columns(2)
     a = c1.selectbox(
         "Run A",
@@ -714,14 +720,17 @@ def page_compare(lab: Lab) -> None:
 PERF_ROWS = [
     ("total_return", "Total return", "pct"),
     ("max_drawdown", "Max drawdown", "pct"),
-    ("sharpe", "Sharpe", "num"),
-    ("trades", "Trades", "int"),
+    ("sharpe", "Sharpe", "sharpe"),
+    ("trades", "Round trips", "int"),
+    ("open_positions", "Open at end", "int"),
     ("avg_exposure", "Avg exposure", "pct"),
     ("costs", "Costs ($)", "num"),
 ]
 
 
 def _fmt(v: Any, kind: str, signed: bool = False) -> str:
+    if kind == "sharpe" and v is None and not signed:
+        return "undefined"
     if not isinstance(v, int | float) or pd.isna(v):
         return "\u2013"
     sign = "+" if signed else ""
@@ -895,10 +904,39 @@ def _metrics(m: dict[str, Any], benchmark: str = "benchmark") -> None:
         ),
     )
     cols[1].metric("Max drawdown", ui.fmt_pct(m.get("max_drawdown")))
-    cols[2].metric("Sharpe", ui.fmt_num(m.get("sharpe")), help=m.get("sharpe_assumptions"))
-    cols[3].metric("Trades", m.get("trades", 0))
+    cols[2].metric("Sharpe", _sharpe(m.get("sharpe")), help=m.get("sharpe_assumptions"))
+    cols[3].metric(
+        "Round trips",
+        m.get("trades", 0),
+        help=f"Completed buy-then-sell trades. Still open at the end: "
+        f"{m.get('open_positions', 0)}.",
+    )
     cols[4].metric("Avg exposure", ui.fmt_pct(m.get("avg_exposure"), 1))
     cols[5].metric("Costs", ui.fmt_money(m.get("costs")))
+
+
+def _sharpe(v: Any) -> str:
+    """Sharpe is undefined when daily returns never vary; say so instead of showing 0."""
+    return "undefined" if v is None else ui.fmt_num(v)
+
+
+def _run_context(res: dict[str, Any], m: dict[str, Any]) -> None:
+    """Open positions, how the benchmark was bought, and when the watchlist was chosen."""
+    parts = [f"Open positions at the end: {m.get('open_positions', 0)}"]
+    b = m.get("benchmark") or {}
+    if b.get("invested_session"):
+        parts.append(
+            f"{res['benchmark']} bought {b['shares']:,} shares at "
+            f"{ui.fmt_money(b['price'])} on {b['invested_session']} "
+            f"(cost {ui.fmt_money(b['cost'])}, cash left {ui.fmt_money(b['cash_left'])})"
+        )
+    wl = res.get("watchlist")
+    if wl:
+        parts.append(
+            f"Watchlist {wl['name']} v{wl['version']} selected {str(wl['created_at'])[:10]}: "
+            "a list chosen today describes past performance of today's picks"
+        )
+    st.caption(" · ".join(parts))
 
 
 PAGE_ICONS = {

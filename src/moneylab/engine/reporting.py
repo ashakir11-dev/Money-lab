@@ -16,7 +16,8 @@ import pandas as pd
 from moneylab.engine.simulator import DECISION_ACTIONS
 
 SHARPE_ASSUMPTIONS = (
-    "daily close-to-close equity returns, risk-free rate 0, annualised by sqrt(252)"
+    "daily close-to-close equity returns, sample standard deviation, risk-free rate 0, "
+    "annualised by sqrt(252); undefined when returns never vary"
 )
 
 
@@ -26,7 +27,9 @@ def metrics(equity: pd.DataFrame, fills: pd.DataFrame, column: str = "equity") -
     peak = np.maximum.accumulate(e) if e.size else e
     dd = float(((e - peak) / peak).min()) if e.size else 0.0
     sd = float(rets.std(ddof=1)) if rets.size > 1 else 0.0
-    sharpe = float(rets.mean() / sd * math.sqrt(252)) if sd > 0 else 0.0
+    # Undefined (None) when there are fewer than two daily returns or they never vary;
+    # the dashboard shows it as "undefined" rather than a misleading 0.
+    sharpe = float(rets.mean() / sd * math.sqrt(252)) if sd > 0 else None
     out: dict[str, Any] = {
         "total_return": float(e[-1] / e[0] - 1) if e.size else 0.0,
         "max_drawdown": dd,
@@ -34,7 +37,12 @@ def metrics(equity: pd.DataFrame, fills: pd.DataFrame, column: str = "equity") -
         "sharpe_assumptions": SHARPE_ASSUMPTIONS,
     }
     if column == "equity":
-        out["trades"] = int((fills["side"] == "buy").sum()) if len(fills) else 0
+        # A trade is a completed round trip (a sell that closes a position); positions
+        # still open at the end are counted separately.
+        buys = int((fills["side"] == "buy").sum()) if len(fills) else 0
+        sells = int((fills["side"] == "sell").sum()) if len(fills) else 0
+        out["trades"] = sells
+        out["open_positions"] = buys - sells
         out["costs"] = float(fills["cost"].sum()) if len(fills) else 0.0
         out["avg_exposure"] = float((equity["positions_value"] / equity["equity"]).mean())
         out["final_equity"] = float(e[-1]) if e.size else 0.0
