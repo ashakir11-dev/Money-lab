@@ -236,7 +236,8 @@ def test_cli_fetch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from moneylab.cli import app
 
     monkeypatch.setenv("MONEYLAB_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("TIINGO_API_KEY", raising=False)
+    # Empty env wins over a developer `.env` so the missing-key path stays testable.
+    monkeypatch.setenv("TIINGO_API_KEY", "")
     args = ["fetch", "AAA", "SPY", "--start", "2023-01-03", "--end", "2023-06-30"]
     res = CliRunner().invoke(app, args)
     assert res.exit_code == 1 and "TIINGO_API_KEY is not set" in res.output

@@ -32,8 +32,22 @@ function shortDate(d: string): string {
   return `${mon} ${y}`;
 }
 
+type FormatFn = (v: unknown) => string;
+
 /** Account value over time: one line per series on shared session dates. */
-export function EquityChart({ dates, series, label = "Account value" }: { dates: string[]; series: Series[]; label?: string }) {
+export function EquityChart({
+  dates,
+  series,
+  label = "Account value",
+  formatTick,
+  formatValue,
+}: {
+  dates: string[];
+  series: Series[];
+  label?: string;
+  formatTick?: FormatFn;
+  formatValue?: FormatFn;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const shown = series.filter((s) => s.values.some((v) => typeof v === "number"));
 
@@ -98,7 +112,11 @@ export function EquityChart({ dates, series, label = "Account value" }: { dates:
           <g key={t}>
             <line x1={M.left} x2={W - M.right} y1={geo.y(t)} y2={geo.y(t)} className="grid" />
             <text x={M.left - 8} y={geo.y(t) + 4} textAnchor="end" className="tick">
-              {t >= 1000 ? `$${Math.round(t / 1000).toLocaleString("en-US")}k` : `$${t.toFixed(0)}`}
+              {formatTick
+                ? formatTick(t)
+                : t >= 1000
+                  ? `$${Math.round(t / 1000).toLocaleString("en-US")}k`
+                  : `$${t.toFixed(0)}`}
             </text>
           </g>
         ))}
@@ -125,7 +143,7 @@ export function EquityChart({ dates, series, label = "Account value" }: { dates:
           <strong>{dates[hover]}</strong>
           {shown.map((s) => (
             <span key={s.name}>
-              <i style={{ background: s.color }} /> {s.name}: {money(s.values[hover])}
+              <i style={{ background: s.color }} /> {s.name}: {(formatValue ?? money)(s.values[hover])}
             </span>
           ))}
         </figcaption>

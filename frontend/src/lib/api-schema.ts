@@ -578,6 +578,24 @@ export interface components {
             /** Target Allocation */
             target_allocation: number;
         };
+        /**
+         * EntryFill
+         * @description When a passing signal becomes a fill. Default is the next session open.
+         */
+        EntryFill: {
+            /** Above Pct */
+            above_pct?: number | null;
+            /** Below Pct */
+            below_pct?: number | null;
+            /** Dip Pct */
+            dip_pct?: number | null;
+            /**
+             * Kind
+             * @default next_open
+             * @enum {string}
+             */
+            kind: "next_open" | "next_range" | "dip";
+        };
         /** EquityRow */
         EquityRow: {
             /** Benchmark Equity */
@@ -943,6 +961,7 @@ export interface components {
             end?: string | null;
             /** Entry */
             entry: components["schemas"]["Condition"][];
+            entry_fill?: components["schemas"]["EntryFill"];
             exit?: components["schemas"]["ExitRule"];
             /**
              * Name
