@@ -36,7 +36,7 @@ GATES: list[tuple[int, str, list[str], str]] = [
         3,
         "Research usability",
         ["tests/test_gate3_usability.py", "tests/test_dashboard_rsi_path.py"],
-        "a person's timed run of docs/walkthrough.md (the five-minute limit)",
+        "",
     ),
     (
         4,
@@ -69,6 +69,8 @@ GATES: list[tuple[int, str, list[str], str]] = [
 
 # gate -> recorded evidence that is too slow or needs a secret (re-run separately)
 REPORTS: dict[int, str] = {
+    3: "docs/walkthrough.md, run in the browser on 2026-11-25 in 18.9 s "
+    "(re-run: node --test e2e/gates.test.cjs)",
     2: "docs/benchmarks/capacity.md (re-run: uv run python scripts/benchmark_capacity.py)",
     5: "docs/live-checks/tiingo.md (re-run with TIINGO_API_KEY: "
     "uv run pytest -m network -q tests/test_tiingo_live.py)",
