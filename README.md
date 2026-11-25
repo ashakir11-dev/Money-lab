@@ -5,7 +5,7 @@ A local, single-user trading research lab for US stocks and ETFs, built to the
 end to end: build an SMA-cross strategy in the dashboard, add an RSI filter, duplicate
 the run, change the RSI threshold from 30 to 35, rerun, and see exactly which trade
 changed and why. Batches of variants run concurrently on a worker pool
-(`Lab.run_batch`). Acceptance gate status is tracked in
+(`Lab.run_batch`). A plain-language tour with diagrams is in [docs/system-overview.md](docs/system-overview.md). Acceptance gate status is tracked in
 [docs/acceptance-report.md](docs/acceptance-report.md).
 
 ## Setup
