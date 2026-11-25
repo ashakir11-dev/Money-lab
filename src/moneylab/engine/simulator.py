@@ -24,8 +24,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from moneylab.components.registry import get_component
+from moneylab.components.registry import (
+    ExitContext,
+    SizingContext,
+    get_component,
+    indicator_key,
+)
 from moneylab.data.snapshot import MarketData
+from moneylab.engine.config import required_indicators, resolved_exits, resolved_sizing
 
 # Decision actions
 ENTER = "enter"
@@ -38,26 +44,29 @@ DECISION_ACTIONS = (ENTER, EXIT, SKIP)
 
 
 def _ind_key(ind: dict[str, Any]) -> str:
-    args = ",".join(f"{k}={v}" for k, v in sorted(ind["params"].items()))
-    return f"{ind['id']}({args})"
+    return indicator_key(ind)
 
 
 def _cond_label(c: dict[str, Any]) -> str:
     p = c["params"]
     if c["kind"] == "price_cross":
         return f"close crosses {p['direction']} {_ind_key(c['indicator'])}"
+    if c["kind"] == "indicator_compare":
+        return f"{_ind_key(c['indicator'])} {p['op']} {_ind_key(c['other'])}"
+    if c["kind"] == "indicator_cross":
+        return f"{_ind_key(c['indicator'])} crosses {p['direction']} {_ind_key(c['other'])}"
     return f"{_ind_key(c['indicator'])} {p['op']} {p['value']:g}"
 
 
 def _compute_indicators(
-    data: MarketData, conditions: list[dict[str, Any]], universe: list[str] | None = None
+    data: MarketData, indicators: list[dict[str, Any]], universe: list[str] | None = None
 ) -> dict[str, dict[str, np.ndarray]]:
     """symbol -> indicator key -> values aligned to sessions. Computed once per run.
 
     Cross-sectional indicators (breadth) are computed once over the universe symbols
     and the same array is shared by every symbol.
     """
-    needed = {_ind_key(c["indicator"]): c["indicator"] for c in conditions}
+    needed = {_ind_key(ind): ind for ind in indicators}
     members = sorted(universe) if universe is not None else sorted(data.frames)
     shared: dict[str, np.ndarray] = {}
     for key, ind in needed.items():
@@ -86,10 +95,20 @@ class _Cond:
     key: str
     label: str
     params: dict[str, Any]
+    other: str | None = None  # second indicator's key for indicator_compare / _cross
 
 
 def _compile(conds: list[dict[str, Any]]) -> list[_Cond]:
-    return [_Cond(c["kind"], _ind_key(c["indicator"]), _cond_label(c), c["params"]) for c in conds]
+    return [
+        _Cond(
+            c["kind"],
+            _ind_key(c["indicator"]),
+            _cond_label(c),
+            c["params"],
+            _ind_key(c["other"]) if c.get("other") else None,
+        )
+        for c in conds
+    ]
 
 
 def _evaluate(
@@ -131,6 +150,29 @@ def _evaluate_compiled(
                 r["passed"] = bool(pc <= pv and c_i > v)
             else:
                 r["passed"] = bool(pc >= pv and c_i < v)
+        elif c.other is not None:
+            other = ind[c.other]
+            w = other[i]
+            values[c.other] = _f(w)
+            r["other"] = c.other
+            r["other_observed"] = _f(w)
+            if c.kind == "indicator_cross":
+                pv = arr[i - 1] if i > 0 else np.nan
+                pw = other[i - 1] if i > 0 else np.nan
+                values[f"prev {key}"] = _f(pv)
+                values[f"prev {c.other}"] = _f(pw)
+                if math.isnan(v) or math.isnan(w) or math.isnan(pv) or math.isnan(pw):
+                    r["passed"] = None
+                elif p["direction"] == "above":
+                    r["passed"] = bool(pv <= pw and v > w)
+                else:
+                    r["passed"] = bool(pv >= pw and v < w)
+            elif math.isnan(v) or math.isnan(w):
+                r["passed"] = None
+            elif p["op"] == "above":
+                r["passed"] = bool(v > w)
+            else:
+                r["passed"] = bool(v < w)
         else:
             r["threshold"] = p["value"]
             r["op"] = p["op"]
@@ -176,6 +218,20 @@ def _entry_candidates(conds: list[_Cond], view: MarketView, symbols: list[str]) 
                     passed = (prev_close <= pv) & (close > v)
                 else:
                     passed = (prev_close >= pv) & (close < v)
+            elif c.other is not None:
+                w = np.vstack([view.indicators[s][c.other] for s in symbols])
+                none = np.isnan(v) | np.isnan(w)
+                if c.kind == "indicator_cross":
+                    pad = np.full((len(symbols), 1), np.nan)
+                    pv = np.concatenate([pad, v[:, :-1]], axis=1)
+                    pw = np.concatenate([pad, w[:, :-1]], axis=1)
+                    none = none | np.isnan(pv) | np.isnan(pw)
+                    if p["direction"] == "above":
+                        passed = (pv <= pw) & (v > w)
+                    else:
+                        passed = (pv >= pw) & (v < w)
+                else:
+                    passed = v > w if p["op"] == "above" else v < w
             else:
                 none = np.isnan(v)
                 passed = v < p["value"] if p["op"] == "below" else v > p["value"]
@@ -203,6 +259,8 @@ class _Position:
     qty: int
     fill_idx: int
     entry_price: float
+    # Highest close from the fill session on (NaN until the first close is seen).
+    peak_close: float = math.nan
 
 
 @dataclass
@@ -217,6 +275,51 @@ class _Order:
     limit_px: float = math.nan
     range_lo: float = math.nan
     range_hi: float = math.nan
+
+
+@dataclass(frozen=True)
+class _ExitRule:
+    """One resolved exit rule, ready to check a position at a session's close."""
+
+    kind: str
+    params: dict[str, Any]
+    compiled: list[_Cond]
+    keys: list[str]
+
+    @classmethod
+    def build(cls, ex: dict[str, Any]) -> _ExitRule:
+        return cls(
+            ex["kind"],
+            ex["params"],
+            _compile(ex["conditions"]),
+            [_ind_key(r) for r in ex.get("requires", [])],
+        )
+
+    def check(
+        self, view: MarketView, sym: str, i: int, pos: _Position, held: int, close: float
+    ) -> tuple[str, dict[str, Any]] | None:
+        if self.kind == "signal":
+            cap = int(self.params.get("max_sessions") or 0)
+            if cap and held >= cap:
+                return f"held {held} sessions >= {cap}", {}
+            if math.isnan(close):
+                return None
+            ok, res, vals = _evaluate_compiled(
+                self.compiled, view.indicators[sym], view.closes[sym], i
+            )
+            return ("exit signal", {"conditions": res, "values": vals}) if ok else None
+        fn = get_component(self.kind).exit_fn
+        assert fn is not None
+        ctx = ExitContext(
+            symbol=sym,
+            qty=pos.qty,
+            entry_price=pos.entry_price,
+            held=held,
+            close=close,
+            peak_close=pos.peak_close,
+            values={k: float(view.indicators[sym][k][i]) for k in self.keys},
+        )
+        return fn(ctx, self.params)
 
 
 @dataclass
@@ -247,14 +350,13 @@ class MarketView:
     @classmethod
     def build(cls, resolved: dict[str, Any], data: MarketData) -> MarketView:
         symbols = sorted(resolved["universe"])
-        conds = resolved["entry"] + resolved["exit"]["conditions"]
         return cls(
             sessions=data.sessions,
             opens={s: data.frames[s]["open"].to_numpy(dtype=float) for s in symbols},
             highs={s: data.frames[s]["high"].to_numpy(dtype=float) for s in symbols},
             lows={s: data.frames[s]["low"].to_numpy(dtype=float) for s in symbols},
             closes={s: data.frames[s]["close"].to_numpy(dtype=float) for s in symbols},
-            indicators=_compute_indicators(data, conds, symbols),
+            indicators=_compute_indicators(data, required_indicators(resolved), symbols),
             first_bar=dict(data.first_bar),
         )
 
@@ -275,10 +377,9 @@ class Account:
         self.target = float(port["target_allocation"])
         self.max_pos = int(port["max_positions"])
         self.entry_conds = resolved["entry"]
-        self.exit_rule = resolved["exit"]
-        self.exit_conds = self.exit_rule["conditions"]
-        params = self.exit_rule["params"]
-        self.hold_n = int(params.get("sessions") or params.get("max_sessions") or 0)
+        self.exits = resolved_exits(resolved)
+        self.sizing = resolved_sizing(resolved)
+        self.rank = resolved.get("rank_by")
         self.entry_fill = resolved.get("entry_fill") or {"kind": "next_open"}
         self.symbols = sorted(resolved["universe"])
         self.cash = float(port["starting_cash"])
@@ -291,16 +392,32 @@ class Account:
         self.last_index = -1
         # Derived, not state: rebuilt from ``resolved`` and the view after a restart.
         self._entry_compiled = _compile(self.entry_conds)
-        self._exit_compiled = _compile(self.exit_conds)
+        self._exit_rules = [_ExitRule.build(e) for e in self.exits]
+        self._size_fn = get_component(self.sizing["id"]).size_fn
+        self._size_keys = [_ind_key(r) for r in self.sizing.get("requires", [])]
+        self._rank_key = _ind_key(self.rank["indicator"]) if self.rank else None
         self._cand_view: MarketView | None = None
         self._cand: np.ndarray = np.zeros((0, 0), dtype=bool)
 
     def _candidates(self, view: MarketView, i: int) -> np.ndarray:
-        """Indices into ``self.symbols`` the entry step must visit at session ``i``."""
+        """Indices into ``self.symbols`` the entry step must visit at session ``i``, in
+        processing order: ascending symbol, or by the rank indicator (missing values
+        last, ties in symbol order)."""
         if view is not self._cand_view:
             self._cand = _entry_candidates(self._entry_compiled, view, self.symbols)
             self._cand_view = view
-        return np.flatnonzero(self._cand[i])
+        ks = np.flatnonzero(self._cand[i])
+        if self._rank_key is None or ks.size < 2:
+            return ks
+        sign = 1.0 if self.rank and self.rank["order"] == "ascending" else -1.0
+        key = self._rank_key
+
+        def order(k: int) -> tuple[bool, float, int]:
+            v = view.indicators[self.symbols[k]][key][i]
+            missing = bool(math.isnan(v))
+            return (missing, 0.0 if missing else sign * float(v), int(k))
+
+        return np.array(sorted(ks.tolist(), key=order), dtype=int)
 
     # Persistence ---------------------------------------------------------------
     def state(self) -> dict[str, Any]:
@@ -481,35 +598,20 @@ class Account:
                 exiting += 1
                 continue
             pos = self.positions[sym]
+            close = float(view.closes[sym][i])
+            if not math.isnan(close) and not close <= pos.peak_close:
+                pos.peak_close = close
             # The fill session counts as holding session one.
             held = i - pos.fill_idx + 1
-            if self.exit_rule["kind"] == "holding_period":
-                if held >= self.hold_n:
-                    did = self._record(
-                        day, sym, EXIT, f"held {held} sessions >= {self.hold_n}", qty=pos.qty
-                    )
-                    self.pending[sym] = _Order(sym, "sell", pos.qty, i, did)
-                    exiting += 1
-            else:
-                if self.hold_n and held >= self.hold_n:
-                    did = self._record(
-                        day, sym, EXIT, f"held {held} sessions >= {self.hold_n}", qty=pos.qty
-                    )
-                    self.pending[sym] = _Order(sym, "sell", pos.qty, i, did)
-                    exiting += 1
+            for rule in self._exit_rules:
+                fired = rule.check(view, sym, i, pos, held, close)
+                if fired is None:
                     continue
-                closes = view.closes[sym]
-                if math.isnan(closes[i]):
-                    continue
-                ok, res, vals = _evaluate_compiled(
-                    self._exit_compiled, view.indicators[sym], closes, i
-                )
-                if ok:
-                    did = self._record(
-                        day, sym, EXIT, "exit signal", qty=pos.qty, conditions=res, values=vals
-                    )
-                    self.pending[sym] = _Order(sym, "sell", pos.qty, i, did)
-                    exiting += 1
+                reason, extra = fired
+                did = self._record(day, sym, EXIT, reason, qty=pos.qty, **extra)
+                self.pending[sym] = _Order(sym, "sell", pos.qty, i, did)
+                exiting += 1
+                break
         return exiting
 
     def _decide_entries(self, view: MarketView, i: int, equity: float, exiting: int) -> None:
@@ -570,7 +672,23 @@ class Account:
             if open_slots <= 0:
                 self._record(day, sym, SKIP, "max_positions", conditions=res, values=vals)
                 continue
-            qty = int((self.target * equity) // c)
+            assert self._size_fn is not None
+            size_inputs = {k: float(view.indicators[sym][k][i]) for k in self._size_keys}
+            if size_inputs:
+                # Record what the sizing rule saw, so its quantity can be checked.
+                vals = {**vals, **{k: _f(v) for k, v in size_inputs.items()}}
+            qty = int(
+                self._size_fn(
+                    SizingContext(
+                        symbol=sym,
+                        close=float(c),
+                        equity=equity,
+                        target_allocation=self.target,
+                        values=size_inputs,
+                    ),
+                    self.sizing["params"],
+                )
+            )
             if qty <= 0:
                 self._record(day, sym, SKIP, "zero_quantity", conditions=res, values=vals)
                 continue

@@ -4,6 +4,10 @@ A component declares a stable identifier, version, inputs, typed parameters with
 defaults and constraints, outputs, and the contexts it may be used in. The dashboard
 builds its controls from these declarations, and config validation uses them too, so
 a new indicator only needs to be implemented and registered here.
+
+Exit rules and position sizing rules are components too: each is one function
+registered with ``register_exit`` or ``register_sizing``, and the engine calls it with
+a small read-only context. Neither may look past the decision session.
 """
 
 from __future__ import annotations
@@ -15,9 +19,9 @@ from typing import Any, Literal
 import pandas as pd
 
 ParamType = Literal["int", "float", "choice"]
-Use = Literal["indicator", "entry", "exit", "filter"]
+Use = Literal["indicator", "entry", "exit", "filter", "exit_rule", "sizing"]
 
-# An indicator receives the full close/open/high/low frame for one symbol (indexed by
+# An indicator receives the full open/high/low/close/volume frame for one symbol (indexed by
 # session) and its parameters, and returns one value per session. Values must only use
 # data up to and including that session.
 IndicatorFn = Callable[[pd.DataFrame, dict[str, Any]], pd.Series]
@@ -31,6 +35,59 @@ UniverseFn = Callable[[dict[str, pd.DataFrame], dict[str, Any]], pd.Series]
 # validated) parameters and raises ValueError when a combination is invalid, for
 # example MACD's fast < slow. ParamSpec bounds only cover one parameter at a time.
 ParamCheck = Callable[[dict[str, Any]], None]
+
+# Indicators a rule needs computed for it, as resolved indicator refs
+# ({"id": ..., "params": {...}}), worked out from the rule's own parameters.
+Requires = Callable[[dict[str, Any]], list[dict[str, Any]]]
+
+
+@dataclass(frozen=True)
+class ExitContext:
+    """What an exit rule sees for one open position at the close of session ``i``.
+
+    ``close`` is NaN when the symbol has no bar that session. ``peak_close`` is the
+    highest close from the fill session up to and including ``i``. ``values`` holds the
+    rule's required indicators at ``i``, keyed by their indicator key.
+    """
+
+    symbol: str
+    qty: int
+    entry_price: float
+    held: int  # sessions held; the fill session counts as one
+    close: float
+    peak_close: float
+    values: dict[str, float]
+
+
+@dataclass(frozen=True)
+class SizingContext:
+    """What a sizing rule sees when an entry signal passes at the close of session ``i``."""
+
+    symbol: str
+    close: float
+    equity: float  # account equity at this close
+    target_allocation: float
+    values: dict[str, float]
+
+
+# An exit rule returns None (hold) or (reason, extra fields recorded on the decision).
+ExitFn = Callable[[ExitContext, dict[str, Any]], tuple[str, dict[str, Any]] | None]
+# A sizing rule returns the whole number of shares to order (0 records zero_quantity).
+SizeFn = Callable[[SizingContext, dict[str, Any]], int]
+
+
+def indicator_key(ref: dict[str, Any]) -> str:
+    """The stable key of a resolved indicator ref, e.g. ``atr(length=14)``.
+
+    The engine stores indicator values under this key (in decision ``values`` and in
+    ``ExitContext.values`` / ``SizingContext.values``); rules look their inputs up with it.
+    """
+    args = ",".join(f"{k}={v}" for k, v in sorted(ref["params"].items()))
+    return f"{ref['id']}({args})"
+
+
+def _no_requirements(params: dict[str, Any]) -> list[dict[str, Any]]:
+    return []
 
 
 @dataclass(frozen=True)
@@ -82,6 +139,9 @@ class ComponentDeclaration:
     compute_universe: UniverseFn | None = field(default=None, compare=False, repr=False)
     # True when values are in price units, so "close crosses <indicator>" is meaningful.
     price_scale: bool = False
+    exit_fn: ExitFn | None = field(default=None, compare=False, repr=False)
+    size_fn: SizeFn | None = field(default=None, compare=False, repr=False)
+    requires: Requires = field(default=_no_requirements, compare=False, repr=False)
 
     def param(self, name: str) -> ParamSpec:
         for p in self.params:
@@ -173,6 +233,72 @@ def register_universe_indicator(
                 inputs=inputs,
                 description=description,
                 compute_universe=fn,
+            )
+        )
+        return fn
+
+    return wrap
+
+
+def register_exit(
+    *,
+    id: str,
+    version: str,
+    label: str,
+    params: tuple[ParamSpec, ...],
+    description: str = "",
+    check: ParamCheck | None = None,
+    requires: Requires = _no_requirements,
+) -> Callable[[ExitFn], ExitFn]:
+    """Decorator: an exit rule usable in any strategy's list of exits."""
+
+    def wrap(fn: ExitFn) -> ExitFn:
+        register(
+            ComponentDeclaration(
+                id=id,
+                version=version,
+                label=label,
+                uses=("exit_rule",),
+                params=params,
+                inputs=("position", "close"),
+                outputs=("signal",),
+                description=description,
+                check=check,
+                exit_fn=fn,
+                requires=requires,
+            )
+        )
+        return fn
+
+    return wrap
+
+
+def register_sizing(
+    *,
+    id: str,
+    version: str,
+    label: str,
+    params: tuple[ParamSpec, ...],
+    description: str = "",
+    check: ParamCheck | None = None,
+    requires: Requires = _no_requirements,
+) -> Callable[[SizeFn], SizeFn]:
+    """Decorator: a position sizing rule (how many shares a new entry orders)."""
+
+    def wrap(fn: SizeFn) -> SizeFn:
+        register(
+            ComponentDeclaration(
+                id=id,
+                version=version,
+                label=label,
+                uses=("sizing",),
+                params=params,
+                inputs=("equity", "close"),
+                outputs=("quantity",),
+                description=description,
+                check=check,
+                size_fn=fn,
+                requires=requires,
             )
         )
         return fn

@@ -125,3 +125,66 @@ def test_duplicate_reproduces_the_ledger(client: TestClient) -> None:
     )
     cmp = client.get("/api/compare", params={"a": original, "b": dup}).json()
     assert cmp["config_diff"] == [] and cmp["first_difference"] is None
+
+
+def test_new_strategy_options_through_the_api(client: TestClient) -> None:
+    """Exit lists, ranking and sizing are declared and accepted without any UI change."""
+    comps = {c["id"]: c for c in client.get("/api/components").json()}
+    assert comps["holding_period"]["uses"] == ["exit_rule"]
+    assert comps["percent_of_equity"]["uses"] == ["sizing"]
+    assert {"indicator_compare", "indicator_cross"} <= set(comps)
+
+    sid = _snapshot(client)
+    parent = _run(client, sid, 35)
+    cfg = rsi_strategy(35, name="RSI < 35, ranked, two exits").model_dump(mode="json")
+    cfg["exits"] = [
+        {
+            "kind": "signal",
+            "conditions": [
+                {
+                    "kind": "threshold",
+                    "indicator": {"id": "rsi", "params": {"length": 14}},
+                    "params": {"op": "above", "value": 70},
+                },
+            ],
+        },
+        {"kind": "holding_period", "params": {"sessions": 10}},
+    ]
+    cfg["rank_by"] = {"indicator": {"id": "rsi", "params": {"length": 14}}, "order": "ascending"}
+    v = client.post("/api/validate", json={"config": cfg, "snapshot_id": sid}).json()
+    assert [e["kind"] for e in v["resolved"]["exits"]] == ["signal", "holding_period"]
+    assert "when RSI(14) above 70, or after 10 sessions" in v["summary"]
+
+    r = client.post("/api/runs", json={"config": cfg, "snapshot_id": sid, "parent_id": parent})
+    job = _wait(client, r.json())
+    assert job["status"] == "complete", job
+    detail = client.get(f"/api/runs/{job['run_ids'][0]}").json()
+    assert detail["resolved"]["rank_by"]["order"] == "ascending"
+    cmp = client.get("/api/compare", params={"a": parent, "b": job["run_ids"][0]}).json()
+    changed = {d["setting"] for d in cmp["config_diff"]}
+    assert any(s.startswith("exits") for s in changed)
+    assert any(s.startswith("rank_by") for s in changed)
+    assert not any(s.startswith("exit.") for s in changed)
+
+    bad = {**cfg, "exits": [{"kind": "sma"}]}
+    r = client.post("/api/validate", json={"config": bad, "snapshot_id": sid})
+    assert r.status_code in (400, 422) and "not an exit rule" in r.text
+
+
+def test_adding_a_stop_loss_shows_the_first_trade_it_changed(client: TestClient) -> None:
+    """Backend version of the plan's check: add a stop to a saved strategy, compare."""
+    sid = _snapshot(client)
+    parent = _run(client, sid, 35)
+    cfg = rsi_strategy(35, name="RSI < 35 with a 0.1% stop").model_dump(mode="json")
+    cfg["exits"] = [
+        {"kind": "stop_loss", "params": {"pct": 0.001}},
+        {"kind": "holding_period", "params": {"sessions": 10}},
+    ]
+    r = client.post("/api/runs", json={"config": cfg, "snapshot_id": sid, "parent_id": parent})
+    job = _wait(client, r.json())
+    assert job["status"] == "complete", job
+    cmp = client.get("/api/compare", params={"a": parent, "b": job["run_ids"][0]}).json()
+    assert {d["setting"] for d in cmp["config_diff"]} >= {"exits[0].kind", "exits[0].params.pct"}
+    first = cmp["first_difference"]
+    assert first is not None
+    assert "stop_loss" in str(first)

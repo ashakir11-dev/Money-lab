@@ -520,7 +520,9 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "price_cross" | "threshold";
+            kind: "price_cross" | "threshold" | "indicator_compare" | "indicator_cross";
+            /** @description the second indicator for indicator_compare and indicator_cross */
+            other?: components["schemas"]["IndicatorRef"] | null;
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -617,10 +619,10 @@ export interface components {
             conditions?: components["schemas"]["Condition"][];
             /**
              * Kind
+             * @description 'signal' (exit when all conditions pass) or a registered exit rule id
              * @default holding_period
-             * @enum {string}
              */
-            kind: "holding_period" | "signal";
+            kind: string;
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -681,7 +683,7 @@ export interface components {
             api_version: string;
             /**
              * Engine Version
-             * @default engine/0.2.0
+             * @default engine/0.3.0
              */
             engine_version: string;
             /**
@@ -817,6 +819,20 @@ export interface components {
             /** Target Allocation */
             target_allocation?: number | null;
         };
+        /**
+         * RankBy
+         * @description Order in which a session's entry candidates claim cash and position slots.
+         */
+        RankBy: {
+            indicator: components["schemas"]["IndicatorRef"];
+            /**
+             * Order
+             * @description ascending: lowest value first (e.g. most oversold RSI)
+             * @default ascending
+             * @enum {string}
+             */
+            order: "ascending" | "descending";
+        };
         /** RunDetail */
         RunDetail: {
             /** Benchmark Return */
@@ -922,6 +938,18 @@ export interface components {
             /** Setting */
             setting: string;
         };
+        /** SizingRule */
+        SizingRule: {
+            /**
+             * Id
+             * @default percent_of_equity
+             */
+            id: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+        };
         /** SnapshotOut */
         SnapshotOut: {
             /** Adjustment */
@@ -964,11 +992,20 @@ export interface components {
             entry_fill?: components["schemas"]["EntryFill"];
             exit?: components["schemas"]["ExitRule"];
             /**
+             * Exits
+             * @description several exit rules; the first that fires sells the whole position. When given it replaces `exit`.
+             */
+            exits?: components["schemas"]["ExitRule"][] | null;
+            /**
              * Name
              * @default Untitled strategy
              */
             name: string;
             portfolio?: components["schemas"]["PortfolioSettings"];
+            /** @description order entry candidates by an indicator; default ascending symbol order */
+            rank_by?: components["schemas"]["RankBy"] | null;
+            /** @description position sizing rule; default percent_of_equity */
+            sizing?: components["schemas"]["SizingRule"] | null;
             /** Start */
             start?: string | null;
             /** Universe */
