@@ -188,3 +188,30 @@ exchange sessions; a missing bar is never filled.
   a bar. Price units.
 * **`avg_volume(length=20)`**: mean volume of the last `length` sessions including today.
   Undefined while any bar in the window is missing. Not price units.
+
+### Support, resistance, and straightness
+
+Seven indicators, version 1.0.0, in `components/levels.py` and `components/straightness.py`.
+No engine change. They count bars, so a daily bar and an hourly bar use the same rules.
+`highest_high` and `lowest_low` are unchanged: they are the edges of a window.
+
+* A turn is the first bar of an extreme. It is confirmed only after price travels
+  `min_move` usual bars away from it (default 2). The usual bar is Wilder ATR of
+  `atr_length` (default 14), the same series as `atr`. A missing high, low, or close
+  ends the run and forgets its turns.
+* Remembered turns are those confirmed within the last `lookback` bars (default 120,
+  bounds 20 to 2000). Walking from the lowest price, a turn joins the open area while
+  it is within `zone` usual bars of that area's lowest price (default zone 1, and
+  `zone` must be less than `min_move`). The area price is the median. One turn is enough.
+* **`support`** is the highest area at or below the previous close. **`resistance`** is
+  the lowest area at or above it. The same price uses the area with more turns, then
+  the more recent turn. An area equal to the previous close is both. Both are price units.
+* **`support_tests`** and **`resistance_tests`** are the turn counts. **`support_distance`**
+  is `(close - support) / ATR` and **`resistance_distance`** is `(resistance - close) / ATR`.
+  A usual bar of zero blanks the bar.
+* **`straightness(length=20)`**: `(close[t] - close[t-length])` divided by the sum of the
+  absolute close-to-close moves. +1 is a straight rise, -1 a straight drop, 0 is a flat
+  stretch. A missing close in the span leaves it blank.
+* `scripts/plot_levels.py` writes one SVG per symbol (close, support, resistance) from a
+  snapshot. It is for judging whether the default move is noise. It is not a pass/fail test.
+* Tests: `tests/test_levels.py`, `tests/test_straightness.py`.
