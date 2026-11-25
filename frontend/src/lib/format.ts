@@ -32,6 +32,23 @@ export function pp(a: unknown, b: unknown): string {
   return `${d > 0 ? "+" : ""}${d.toFixed(2)} pp`;
 }
 
+/** "Beat SPY by 3.20 pp", "Trailed SPY by 1.10 pp", or "Matched SPY". */
+export function versusSpy(strategy: unknown, spy: unknown, name = "SPY"): string {
+  if (!isNum(strategy) || !isNum(spy)) return DASH;
+  const gap = (strategy - spy) * 100;
+  const mag = `${Math.abs(gap).toFixed(2)} pp`;
+  if (Math.abs(gap) < 0.005) return `Matched ${name}`;
+  return gap > 0 ? `Beat ${name} by ${mag}` : `Trailed ${name} by ${mag}`;
+}
+
+/** Same verdict in dollars. `delta` is strategy profit minus buy-and-hold profit. */
+export function versusSpyDollars(delta: unknown, name = "SPY"): string {
+  if (!isNum(delta)) return DASH;
+  const mag = money(Math.abs(delta));
+  if (Math.abs(delta) < 0.005) return `Matched ${name}`;
+  return delta > 0 ? `Beat ${name} by ${mag}` : `Trailed ${name} by ${mag}`;
+}
+
 export function sharpe(v: unknown): string {
   return v === null || v === undefined ? "undefined" : num(v);
 }

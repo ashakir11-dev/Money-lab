@@ -8,8 +8,8 @@ import { Specimen } from "@/components/Specimen";
 import { FillsTable } from "@/components/tables";
 import { Badge, ErrorBox, Loading } from "@/components/ui";
 import { fillBreakdown, pnlSummary } from "@/lib/analysis";
-import { api, type FirstDifference, type RunMetrics, type RunSummary } from "@/lib/api";
-import { int, money, pct, plain, pp, sharpe } from "@/lib/format";
+import { api, type EquityRow, type FirstDifference, type RunMetrics, type RunSummary } from "@/lib/api";
+import { int, money, pct, plain, pp, sharpe, versusSpy, versusSpyDollars } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 
 function defaultPair(runs: RunSummary[]): [string, string] | null {
@@ -49,6 +49,54 @@ function humanSetting(path: string): string {
 function startCash(resolved: Record<string, unknown> | undefined): number {
   const pf = resolved?.portfolio as { starting_cash?: number } | undefined;
   return pf?.starting_cash ?? 100000;
+}
+
+function spyTone(symbol: string, strategy: number | null | undefined, spy: number | null | undefined): string {
+  if (symbol !== "SPY" || typeof strategy !== "number" || typeof spy !== "number") return "num";
+  return strategy >= spy ? "num pos" : "num neg";
+}
+
+function dollarTone(symbol: string, delta: number | null | undefined): string {
+  if (symbol !== "SPY" || typeof delta !== "number") return "num";
+  return delta >= 0 ? "num pos" : "num neg";
+}
+
+function benchSymbol(metrics: RunMetrics, resolved: unknown): string {
+  const fromRun = (resolved as { benchmark?: string } | undefined)?.benchmark;
+  return String(metrics.benchmark?.symbol || fromRun || "SPY").toUpperCase();
+}
+
+/** Buy-and-hold SPY on the shared date axis. One line when both runs share that path. */
+function spySeries(
+  sessions: string[],
+  byA: Map<string, EquityRow>,
+  byB: Map<string, EquityRow>,
+  symbolA: string,
+  symbolB: string,
+): { name: string; values: (number | null)[]; color: string; dashed: true }[] {
+  const aVals = sessions.map((s) => (symbolA === "SPY" ? (byA.get(s)?.benchmark_equity ?? null) : null));
+  const bVals = sessions.map((s) => (symbolB === "SPY" ? (byB.get(s)?.benchmark_equity ?? null) : null));
+  if (symbolA !== "SPY" && symbolB !== "SPY") return [];
+  const same = sessions.every((_, i) => {
+    const x = aVals[i];
+    const y = bVals[i];
+    if (typeof x !== "number" || typeof y !== "number") return true;
+    return Math.abs(x - y) < 0.05;
+  });
+  if (symbolA !== "SPY" || symbolB !== "SPY" || same) {
+    return [
+      {
+        name: "SPY",
+        values: sessions.map((_, i) => (typeof aVals[i] === "number" ? aVals[i] : bVals[i])),
+        color: "var(--series-bench)",
+        dashed: true,
+      },
+    ];
+  }
+  return [
+    { name: "SPY (A)", values: aVals, color: "var(--series-bench)", dashed: true },
+    { name: "SPY (B)", values: bVals, color: "var(--ink-2)", dashed: true },
+  ];
 }
 
 function RunPicker({
@@ -115,8 +163,10 @@ function CompareView() {
   const fd = (c?.first_difference ?? null) as FirstDifference | null;
   const ma = (c?.a.metrics ?? {}) as RunMetrics;
   const mb = (c?.b.metrics ?? {}) as RunMetrics;
-  const bench = ma.benchmark ?? {};
-  const benchName = ((c?.a.resolved as { benchmark?: string } | undefined)?.benchmark ?? "Benchmark") as string;
+  const benchA = ma.benchmark ?? {};
+  const benchB = mb.benchmark ?? {};
+  const symbolA = c ? benchSymbol(ma, c.a.resolved) : "SPY";
+  const symbolB = c ? benchSymbol(mb, c.b.resolved) : "SPY";
   const sessions = Array.from(new Set([...(eqA.data ?? []).map((e) => e.session), ...(eqB.data ?? []).map((e) => e.session)])).sort();
   const byA = new Map((eqA.data ?? []).map((e) => [e.session, e]));
   const byB = new Map((eqB.data ?? []).map((e) => [e.session, e]));
@@ -181,9 +231,16 @@ function CompareView() {
               series={[
                 { name: c.a.name, values: sessions.map((s) => byA.get(s)?.equity ?? null), color: "var(--series-1)" },
                 { name: c.b.name, values: sessions.map((s) => byB.get(s)?.equity ?? null), color: "var(--series-2)" },
+                ...spySeries(sessions, byA, byB, symbolA, symbolB),
               ]}
               pinDate={fd?.session}
-              caption={fd ? `${fd.session} · ${fd.symbol}` : undefined}
+              caption={[
+                fd ? `${fd.session} · ${fd.symbol}` : null,
+                symbolA === "SPY" ? `A ${versusSpy(ma.total_return, benchA.total_return).replace(/^./, (c) => c.toLowerCase())}` : `A benchmark is ${symbolA}, not SPY`,
+                symbolB === "SPY" ? `B ${versusSpy(mb.total_return, benchB.total_return).replace(/^./, (c) => c.toLowerCase())}` : `B benchmark is ${symbolB}, not SPY`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             >
               <FirstDifferenceReadout fd={fd} a={c.a} b={c.b} />
             </Specimen>
@@ -263,10 +320,33 @@ function CompareView() {
                     <td className="num">{pp(mb.total_return, ma.total_return)}</td>
                   </tr>
                   <tr>
-                    <td>vs {plain(benchName)}</td>
-                    <td className="num">{pp(ma.total_return, bench.total_return)}</td>
-                    <td className="num">{pp(mb.total_return, bench.total_return)}</td>
-                    <td className="num"></td>
+                    <td>SPY return</td>
+                    <td className="num">{symbolA === "SPY" ? pct(benchA.total_return) : "–"}</td>
+                    <td className="num">{symbolB === "SPY" ? pct(benchB.total_return) : "–"}</td>
+                    <td className="num">
+                      {symbolA === "SPY" && symbolB === "SPY" ? pp(benchB.total_return, benchA.total_return) : ""}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>vs SPY</td>
+                    <td className={spyTone(symbolA, ma.total_return, benchA.total_return)}>
+                      {symbolA === "SPY" ? versusSpy(ma.total_return, benchA.total_return) : `Benchmark is ${plain(symbolA)}`}
+                    </td>
+                    <td className={spyTone(symbolB, mb.total_return, benchB.total_return)}>
+                      {symbolB === "SPY" ? versusSpy(mb.total_return, benchB.total_return) : `Benchmark is ${plain(symbolB)}`}
+                    </td>
+                    <td className="num">
+                      {symbolA === "SPY" && symbolB === "SPY"
+                        ? pp(
+                            typeof mb.total_return === "number" && typeof benchB.total_return === "number"
+                              ? mb.total_return - benchB.total_return
+                              : null,
+                            typeof ma.total_return === "number" && typeof benchA.total_return === "number"
+                              ? ma.total_return - benchA.total_return
+                              : null,
+                          )
+                        : ""}
+                    </td>
                   </tr>
                   <tr>
                     <td>Max drawdown</td>
@@ -285,6 +365,18 @@ function CompareView() {
                     <td className={`num ${pnlA.total >= 0 ? "pos" : "neg"}`}>{money(pnlA.total)}</td>
                     <td className={`num ${pnlB.total >= 0 ? "pos" : "neg"}`}>{money(pnlB.total)}</td>
                     <td className="num">{money(delta(pnlA.total, pnlB.total))}</td>
+                  </tr>
+                  <tr>
+                    <td>vs SPY $</td>
+                    <td className={dollarTone(symbolA, pnlA.vsBenchmark)}>
+                      {symbolA === "SPY" ? versusSpyDollars(pnlA.vsBenchmark) : "–"}
+                    </td>
+                    <td className={dollarTone(symbolB, pnlB.vsBenchmark)}>
+                      {symbolB === "SPY" ? versusSpyDollars(pnlB.vsBenchmark) : "–"}
+                    </td>
+                    <td className="num">
+                      {symbolA === "SPY" && symbolB === "SPY" ? money(delta(pnlA.vsBenchmark, pnlB.vsBenchmark)) : ""}
+                    </td>
                   </tr>
                   <tr>
                     <td>Final equity</td>
@@ -345,6 +437,11 @@ function CompareView() {
                 </tbody>
               </table>
             </div>
+            <p className="caption">
+              SPY is buy-and-hold of the S&P 500 ETF on each run&apos;s own dates, starting cash, and trading costs. Beat
+              SPY means that run finished ahead of the S&P. The B − A column on vs SPY is how much more B beat the S&P
+              than A did.
+            </p>
           </section>
 
           {detailed ? (

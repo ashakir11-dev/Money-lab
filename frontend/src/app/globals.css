@@ -1214,6 +1214,48 @@ pre.json {
 .stack-block .source-row + .cond {
   margin-top: 8px;
 }
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 0;
+}
+@media (min-width: 860px) {
+  .stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.stat {
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.stat-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.stat dt {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.stat dd {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.stat p {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
 .date-range {
   display: grid;
   grid-template-columns: 1fr 1fr;

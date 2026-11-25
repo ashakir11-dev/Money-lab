@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { DEMO_FORK, Spark, Specimen } from "@/components/Specimen";
 import { Mark, RailIcon } from "@/components/Mark";
 import { api, type EquityRow, type FirstDifference, type RunSummary } from "@/lib/api";
-import { pct } from "@/lib/format";
+import { pct, versusSpy } from "@/lib/format";
 import { useAsync, useInterval } from "@/lib/hooks";
 
 const RAIL = [
@@ -58,8 +58,10 @@ export default function HomePage() {
             dates,
             a: align(parent, dates, "equity"),
             b: align(self, dates, "equity"),
+            spy: align(self, dates, "benchmark_equity"),
             aName: list.find((r) => r.id === run.parent_id)?.name ?? "Parent",
             bName: run.name,
+            caption: versusSpy(run.total_return, run.benchmark_return),
             pin: fd?.session ?? null,
             pinHref: `/compare?a=${encodeURIComponent(run.parent_id)}&b=${encodeURIComponent(run.id)}`,
             wellHref: `/report?id=${encodeURIComponent(run.id)}`,
@@ -73,8 +75,10 @@ export default function HomePage() {
         dates,
         a: self.map((e) => e.equity),
         b: self.map((e) => e.benchmark_equity ?? null),
+        spy: null as (number | null)[] | null,
         aName: run.name,
         bName: "SPY",
+        caption: versusSpy(run.total_return, run.benchmark_return),
         pin: null as string | null,
         pinHref: undefined as string | undefined,
         wellHref: `/report?id=${encodeURIComponent(run.id)}`,
@@ -121,11 +125,14 @@ export default function HomePage() {
               color: specimen.data.pin ? "var(--series-2)" : "var(--series-bench)",
               dashed: !specimen.data.pin,
             },
+            ...(specimen.data.spy
+              ? [{ name: "SPY", values: specimen.data.spy, color: "var(--series-bench)", dashed: true }]
+              : []),
           ]}
           pinDate={specimen.data.pin}
           pinHref={specimen.data.pinHref}
           wellHref={specimen.data.wellHref}
-          caption={specimen.data.bName}
+          caption={specimen.data.caption}
         />
       ) : runs.loading || specimen.loading ? (
         <div className="specimen-well specimen-wait" />
@@ -164,6 +171,15 @@ export default function HomePage() {
                   <Spark values={sparks.data?.[r.id] ?? []} color={r.id === newest?.id ? "var(--series-2)" : "var(--series-1)"} />
                   <strong>{r.name}</strong>
                   <span className={`num ${(r.total_return ?? 0) >= 0 ? "pos" : "neg"}`}>{pct(r.total_return, true)}</span>
+                  {r.benchmark_return != null ? (
+                    <span
+                      className={`num ${
+                        typeof r.total_return === "number" && r.total_return >= r.benchmark_return ? "pos" : "neg"
+                      }`}
+                    >
+                      {versusSpy(r.total_return, r.benchmark_return)}
+                    </span>
+                  ) : null}
                 </Link>
               ))}
               {(runs.data ?? []).length > strip.length ? (
