@@ -28,6 +28,7 @@ from moneylab.api.jobs import Job, JobRunner
 from moneylab.components.registry import list_components
 from moneylab.data.snapshot import list_snapshots, read_import_file, snapshot_name
 from moneylab.describe import data_source, strategy_summary
+from moneylab.engine.chart import ChartRejected, assemble_chart
 from moneylab.engine.config import StrategyConfig, VersionMismatch, check_versions
 from moneylab.service import Lab
 
@@ -226,6 +227,43 @@ class FillRow(BaseModel):
     decision_id: int | None = None
     sessions_waited: int | None = None
     note: str | None = None
+
+
+class CandleOut(BaseModel):
+    open: float
+    high: float
+    low: float
+    close: float
+
+
+class IndicatorSeriesOut(BaseModel):
+    key: str
+    price_scale: bool
+    values: list[float | None]
+
+
+class ChartFillOut(BaseModel):
+    session: str
+    side: Literal["buy", "sell"]
+    price: float
+
+
+class ChartSignalOut(BaseModel):
+    session: str
+    action: str
+    reason: str
+    conditions: list[dict[str, Any]]
+    values: dict[str, Any]
+
+
+class TradeChartOut(BaseModel):
+    symbol: str
+    timeframe: str
+    sessions: list[str]
+    candles: list[CandleOut | None]
+    series: list[IndicatorSeriesOut]
+    fill: ChartFillOut
+    signal: ChartSignalOut
 
 
 class DecisionPage(BaseModel):
@@ -566,6 +604,49 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     def fills(run_id: str) -> list[dict[str, Any]]:
         _detail(lab, run_id)
         return records(lab.store.ledgers(run_id).fills)
+
+    @app.get("/api/runs/{run_id}/chart", response_model=TradeChartOut, tags=["runs"])
+    def trade_chart(run_id: str, decision_id: Annotated[int, Query()]) -> Any:
+        """Candles and indicator lines around one fill. ``decision_id`` is the fill's."""
+        try:
+            full = lab.store.get(run_id)
+        except KeyError:
+            raise HTTPException(404, f"run {run_id} not found") from None
+        led = lab.store.ledgers(run_id)
+        decisions = led.decisions
+        if "decision_id" not in decisions.columns or decisions.empty:
+            raise HTTPException(404, f"decision {decision_id} not found")
+        matched = decisions[decisions["decision_id"] == decision_id]
+        if matched.empty:
+            raise HTTPException(404, f"decision {decision_id} not found")
+        fills_frame = led.fills
+        if "decision_id" not in fills_frame.columns or fills_frame.empty:
+            raise HTTPException(404, f"decision {decision_id} not found")
+        matched_fills = fills_frame[fills_frame["decision_id"] == decision_id]
+        if matched_fills.empty:
+            raise HTTPException(404, f"decision {decision_id} not found")
+        if len(matched_fills) > 1:
+            raise HTTPException(422, f"decision {decision_id} has more than one fill")
+        resolved = full["resolved"]
+        sid = full["snapshot_id"]
+        if not (lab.settings.snapshot_dir / f"{sid}.parquet").is_file():
+            raise HTTPException(404, f"snapshot {sid} not found")
+        try:
+            data = lab.market_data(
+                sid,
+                [*list(resolved["universe"]), resolved["benchmark"]],
+                resolved["start"],
+                resolved["end"],
+            )
+        except FileNotFoundError:
+            raise HTTPException(404, f"snapshot {sid} not found") from None
+        try:
+            decision = {str(k): v for k, v in matched.iloc[0].to_dict().items()}
+            fill = {str(k): v for k, v in matched_fills.iloc[0].to_dict().items()}
+            payload = assemble_chart(resolved, data, decision, fill)
+        except ChartRejected as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return payload
 
     @app.get("/api/runs/{run_id}/decisions", response_model=DecisionPage, tags=["runs"])
     def decisions(

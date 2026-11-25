@@ -5,8 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
+from moneylab.api.app import create_app
 from moneylab.demo import FIXTURE, rsi_strategy
 from moneylab.engine.chart import ChartRejected, assemble_chart, chart_window
 from moneylab.service import Lab
@@ -119,3 +122,84 @@ def test_signal_off_the_grid_is_rejected(tmp_path: Path) -> None:
     match = "signal session 1999-01-01 is not on the run's bar grid"
     with pytest.raises(ChartRejected, match=match):
         assemble_chart(resolved, data, decision, buy.to_dict())
+
+
+def _client(lab: Lab, tmp_path: Path) -> TestClient:
+    app = create_app(lab, web_dir=tmp_path / "no-web")
+    return TestClient(app)
+
+
+def test_chart_route_returns_the_buy(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    fills = lab.store.ledgers(run_id).fills
+    buy = fills[fills["side"] == "buy"].iloc[0]
+    with _client(lab, tmp_path) as client:
+        response = client.get(
+            f"/api/runs/{run_id}/chart",
+            params={"decision_id": int(buy["decision_id"])},
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["symbol"] == buy["symbol"]
+    assert body["fill"]["side"] == "buy"
+    assert body["fill"]["session"] in body["sessions"]
+    assert body["signal"]["session"] in body["sessions"]
+    rsi = next(s for s in body["series"] if s["key"] == "rsi(length=14)")
+    assert rsi["price_scale"] is False
+    at = body["sessions"].index(body["signal"]["session"])
+    stored = lab.store.ledgers(run_id).decisions
+    stored = stored[stored["decision_id"] == int(buy["decision_id"])].iloc[0]
+    assert rsi["values"][at] == stored["values"]["rsi(length=14)"]
+
+
+def test_chart_route_unknown_run(tmp_path: Path) -> None:
+    lab, _run_id = _lab(tmp_path)
+    with _client(lab, tmp_path) as client:
+        response = client.get("/api/runs/missing/chart", params={"decision_id": 1})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "run missing not found"
+
+
+def test_chart_route_unknown_decision(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    with _client(lab, tmp_path) as client:
+        response = client.get(f"/api/runs/{run_id}/chart", params={"decision_id": 999999})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "decision 999999 not found"
+
+
+def test_chart_route_decision_without_a_fill(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    led = lab.store.ledgers(run_id)
+    filled = {int(v) for v in led.fills["decision_id"]}
+    open_ids = [int(v) for v in led.decisions["decision_id"] if int(v) not in filled]
+    assert open_ids, "the demo run should record a decision that does not fill"
+    with _client(lab, tmp_path) as client:
+        response = client.get(f"/api/runs/{run_id}/chart", params={"decision_id": open_ids[0]})
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"decision {open_ids[0]} not found"
+
+
+def test_chart_route_duplicate_fill(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    path = lab.store.run_dir(run_id) / "fills.parquet"
+    fills = pd.read_parquet(path)
+    did = int(fills.iloc[0]["decision_id"])
+    pd.concat([fills, fills.iloc[[0]]], ignore_index=True).to_parquet(path, index=False)
+    with _client(lab, tmp_path) as client:
+        response = client.get(f"/api/runs/{run_id}/chart", params={"decision_id": did})
+    assert response.status_code == 422
+    assert response.json()["detail"] == f"decision {did} has more than one fill"
+
+
+def test_chart_route_missing_snapshot(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    full = lab.store.get(run_id)
+    sid = full["snapshot_id"]
+    for suffix in (".parquet", ".json"):
+        (lab.settings.snapshot_dir / f"{sid}{suffix}").unlink()
+    did = int(lab.store.ledgers(run_id).fills.iloc[0]["decision_id"])
+    with _client(lab, tmp_path) as client:
+        response = client.get(f"/api/runs/{run_id}/chart", params={"decision_id": did})
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"snapshot {sid} not found"
