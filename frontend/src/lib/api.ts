@@ -15,7 +15,7 @@ export type Defaults = S["Defaults"];
 export type Snapshot = S["SnapshotOut"];
 export type Watchlist = S["WatchlistOut"];
 export type WatchlistIn = S["WatchlistIn"];
-export type TiingoImport = S["TiingoImport"];
+export type EquiblesImport = S["EquiblesImport"];
 export type CsvImport = S["CsvImport"];
 export type StrategyConfig = S["StrategyConfig"];
 export type Condition = S["Condition"];
@@ -26,6 +26,7 @@ export type RunSummary = S["RunSummary"];
 export type RunDetail = S["RunDetail"];
 export type EquityRow = S["EquityRow"];
 export type FillRow = S["FillRow"];
+export type TradeChart = S["TradeChartOut"];
 export type DecisionPage = S["DecisionPage"];
 export type Compare = S["CompareOut"];
 export type SettingDiff = S["SettingDiff"];
@@ -125,8 +126,8 @@ export const api = {
   validate: (body: RunSubmit) =>
     post<{ resolved: Record<string, unknown>; summary: string }>("/api/validate", body),
   snapshots: () => request<Snapshot[]>("/api/snapshots"),
-  importTiingo: (body: TiingoImport) => post<Snapshot>("/api/snapshots/tiingo", body),
   importCsv: (body: CsvImport) => post<Snapshot>("/api/snapshots/csv", body),
+  importEquibles: (body: EquiblesImport) => post<Snapshot>("/api/snapshots/equibles", body),
   watchlists: () => request<Watchlist[]>("/api/watchlists"),
   saveWatchlist: (body: WatchlistIn) => post<Watchlist>("/api/watchlists", body),
   runs: () => request<RunSummary[]>("/api/runs"),
@@ -137,6 +138,8 @@ export const api = {
   run: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   equity: (id: string) => request<EquityRow[]>(`/api/runs/${encodeURIComponent(id)}/equity`),
   fills: (id: string) => request<FillRow[]>(`/api/runs/${encodeURIComponent(id)}/fills`),
+  chart: (id: string, decisionId: number) =>
+    request<TradeChart>(`/api/runs/${encodeURIComponent(id)}/chart${qs({ decision_id: decisionId })}`),
   decisions: (
     id: string,
     q: { offset?: number; limit?: number; action?: string[]; symbol?: string; session?: string } = {},

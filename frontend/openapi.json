@@ -44,6 +44,99 @@
         "title": "BatchSubmit",
         "type": "object"
       },
+      "CandleOut": {
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "open": {
+            "title": "Open",
+            "type": "number"
+          }
+        },
+        "required": [
+          "open",
+          "high",
+          "low",
+          "close"
+        ],
+        "title": "CandleOut",
+        "type": "object"
+      },
+      "ChartFillOut": {
+        "properties": {
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "session": {
+            "title": "Session",
+            "type": "string"
+          },
+          "side": {
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "side",
+          "price"
+        ],
+        "title": "ChartFillOut",
+        "type": "object"
+      },
+      "ChartSignalOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "conditions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "session": {
+            "title": "Session",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "session",
+          "action",
+          "reason",
+          "conditions",
+          "values"
+        ],
+        "title": "ChartSignalOut",
+        "type": "object"
+      },
       "CompareOut": {
         "properties": {
           "a": {
@@ -337,6 +430,63 @@
         "title": "EntryFill",
         "type": "object"
       },
+      "EquiblesImport": {
+        "description": "Symbols to fetch. A watchlist's current members are included too; ``symbols``\nare added on top (use that for the benchmark, usually SPY).",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Symbols",
+            "type": "array"
+          },
+          "timeframe": {
+            "default": "1h",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "1h",
+              "1d"
+            ],
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "watchlist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchlist"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "EquiblesImport",
+        "type": "object"
+      },
       "EquityRow": {
         "properties": {
           "benchmark_equity": {
@@ -583,6 +733,39 @@
           "id"
         ],
         "title": "IndicatorRef",
+        "type": "object"
+      },
+      "IndicatorSeriesOut": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "price_scale": {
+            "title": "Price Scale",
+            "type": "boolean"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "price_scale",
+          "values"
+        ],
+        "title": "IndicatorSeriesOut",
         "type": "object"
       },
       "JobOut": {
@@ -1527,48 +1710,61 @@
         "title": "StrategyConfig",
         "type": "object"
       },
-      "TiingoImport": {
-        "description": "Symbols to fetch. A watchlist's current members are included too; ``symbols``\nare added on top (use that for the benchmark, usually SPY).",
+      "TradeChartOut": {
         "properties": {
-          "end": {
-            "format": "date",
-            "title": "End",
-            "type": "string"
+          "candles": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CandleOut"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Candles",
+            "type": "array"
           },
-          "label": {
-            "default": "",
-            "title": "Label",
-            "type": "string"
+          "fill": {
+            "$ref": "#/components/schemas/ChartFillOut"
           },
-          "start": {
-            "format": "date",
-            "title": "Start",
-            "type": "string"
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/IndicatorSeriesOut"
+            },
+            "title": "Series",
+            "type": "array"
           },
-          "symbols": {
+          "sessions": {
             "items": {
               "type": "string"
             },
-            "title": "Symbols",
+            "title": "Sessions",
             "type": "array"
           },
-          "watchlist": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Watchlist"
+          "signal": {
+            "$ref": "#/components/schemas/ChartSignalOut"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
           }
         },
         "required": [
-          "start",
-          "end"
+          "symbol",
+          "timeframe",
+          "sessions",
+          "candles",
+          "series",
+          "fill",
+          "signal"
         ],
-        "title": "TiingoImport",
+        "title": "TradeChartOut",
         "type": "object"
       },
       "ValidationError": {
@@ -2049,7 +2245,7 @@
     },
     "/api/paper/{paper_id}/fetch": {
       "post": {
-        "description": "Fetch the sessions newer than the account's snapshot from Tiingo and deliver them.",
+        "description": "Fetch completed bars after the account's frontier from Equibles and deliver them.",
         "operationId": "paper_fetch_api_paper__paper_id__fetch_post",
         "parameters": [
           {
@@ -2300,6 +2496,58 @@
           }
         },
         "summary": "Run Detail",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/chart": {
+      "get": {
+        "description": "Candles and indicator lines around one fill. ``decision_id`` is the fill's.",
+        "operationId": "trade_chart_api_runs__run_id__chart_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision_id",
+            "required": true,
+            "schema": {
+              "title": "Decision Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradeChartOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trade Chart",
         "tags": [
           "runs"
         ]
@@ -2623,15 +2871,15 @@
         ]
       }
     },
-    "/api/snapshots/tiingo": {
+    "/api/snapshots/equibles": {
       "post": {
-        "description": "Fetch daily bars, splits and dividends from Tiingo. The key stays on the server.",
-        "operationId": "import_tiingo_api_snapshots_tiingo_post",
+        "description": "Fetch raw bars and splits from Equibles. The key stays on the server.",
+        "operationId": "import_equibles_api_snapshots_equibles_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TiingoImport"
+                "$ref": "#/components/schemas/EquiblesImport"
               }
             }
           },
@@ -2659,7 +2907,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Tiingo",
+        "summary": "Import Equibles",
         "tags": [
           "data"
         ]

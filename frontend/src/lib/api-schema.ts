@@ -206,7 +206,7 @@ export interface paths {
         put?: never;
         /**
          * Paper Fetch
-         * @description Fetch the sessions newer than the account's snapshot from Tiingo and deliver them.
+         * @description Fetch completed bars after the account's frontier from Equibles and deliver them.
          */
         post: operations["paper_fetch_api_paper__paper_id__fetch_post"];
         delete?: never;
@@ -285,6 +285,26 @@ export interface paths {
         };
         /** Run Detail */
         get: operations["run_detail_api_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/chart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trade Chart
+         * @description Candles and indicator lines around one fill. ``decision_id`` is the fill's.
+         */
+        get: operations["trade_chart_api_runs__run_id__chart_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -402,7 +422,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/snapshots/tiingo": {
+    "/api/snapshots/equibles": {
         parameters: {
             query?: never;
             header?: never;
@@ -412,10 +432,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Import Tiingo
-         * @description Fetch daily bars, splits and dividends from Tiingo. The key stays on the server.
+         * Import Equibles
+         * @description Fetch raw bars and splits from Equibles. The key stays on the server.
          */
-        post: operations["import_tiingo_api_snapshots_tiingo_post"];
+        post: operations["import_equibles_api_snapshots_equibles_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -472,6 +492,46 @@ export interface components {
             parent_ids?: (string | null)[] | null;
             /** Snapshot Id */
             snapshot_id: string;
+        };
+        /** CandleOut */
+        CandleOut: {
+            /** Close */
+            close: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Open */
+            open: number;
+        };
+        /** ChartFillOut */
+        ChartFillOut: {
+            /** Price */
+            price: number;
+            /** Session */
+            session: string;
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "buy" | "sell";
+        };
+        /** ChartSignalOut */
+        ChartSignalOut: {
+            /** Action */
+            action: string;
+            /** Conditions */
+            conditions: {
+                [key: string]: unknown;
+            }[];
+            /** Reason */
+            reason: string;
+            /** Session */
+            session: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
         };
         /** CompareOut */
         CompareOut: {
@@ -598,6 +658,38 @@ export interface components {
              */
             kind: "next_open" | "next_range" | "dip";
         };
+        /**
+         * EquiblesImport
+         * @description Symbols to fetch. A watchlist's current members are included too; ``symbols``
+         *     are added on top (use that for the benchmark, usually SPY).
+         */
+        EquiblesImport: {
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Symbols */
+            symbols?: string[];
+            /**
+             * Timeframe
+             * @default 1h
+             * @enum {string}
+             */
+            timeframe: "1min" | "5min" | "15min" | "30min" | "1h" | "1d";
+            /** Watchlist */
+            watchlist?: string | null;
+        };
         /** EquityRow */
         EquityRow: {
             /** Benchmark Equity */
@@ -701,6 +793,15 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+        };
+        /** IndicatorSeriesOut */
+        IndicatorSeriesOut: {
+            /** Key */
+            key: string;
+            /** Price Scale */
+            price_scale: boolean;
+            /** Values */
+            values: (number | null)[];
         };
         /** JobOut */
         JobOut: {
@@ -1026,31 +1127,20 @@ export interface components {
             /** Universe */
             universe: string[];
         };
-        /**
-         * TiingoImport
-         * @description Symbols to fetch. A watchlist's current members are included too; ``symbols``
-         *     are added on top (use that for the benchmark, usually SPY).
-         */
-        TiingoImport: {
-            /**
-             * End
-             * Format: date
-             */
-            end: string;
-            /**
-             * Label
-             * @default
-             */
-            label: string;
-            /**
-             * Start
-             * Format: date
-             */
-            start: string;
-            /** Symbols */
-            symbols?: string[];
-            /** Watchlist */
-            watchlist?: string | null;
+        /** TradeChartOut */
+        TradeChartOut: {
+            /** Candles */
+            candles: (components["schemas"]["CandleOut"] | null)[];
+            fill: components["schemas"]["ChartFillOut"];
+            /** Series */
+            series: components["schemas"]["IndicatorSeriesOut"][];
+            /** Sessions */
+            sessions: string[];
+            signal: components["schemas"]["ChartSignalOut"];
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1566,6 +1656,39 @@ export interface operations {
             };
         };
     };
+    trade_chart_api_runs__run_id__chart_get: {
+        parameters: {
+            query: {
+                decision_id: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradeChartOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     decisions_api_runs__run_id__decisions_get: {
         parameters: {
             query?: {
@@ -1749,7 +1872,7 @@ export interface operations {
             };
         };
     };
-    import_tiingo_api_snapshots_tiingo_post: {
+    import_equibles_api_snapshots_equibles_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1758,7 +1881,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TiingoImport"];
+                "application/json": components["schemas"]["EquiblesImport"];
             };
         };
         responses: {

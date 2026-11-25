@@ -48,10 +48,10 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
     setError(undefined);
     try {
       onDone(
-        await api.importTiingo(
+        await api.importEquibles(
           picked
-            ? { watchlist: picked.name, symbols: symbolsOf(extras), start, end, label }
-            : { symbols: symbolsOf(symbols), start, end, label },
+            ? { watchlist: picked.name, symbols: symbolsOf(extras), start, end, label, timeframe: "1h" }
+            : { symbols: symbolsOf(symbols), start, end, label, timeframe: "1h" },
         ),
       );
     } catch (err) {

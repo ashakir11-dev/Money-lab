@@ -135,6 +135,7 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
     name: d.name || "Untitled strategy",
     universe: splitSymbols(d.universe),
     benchmark: d.benchmark.trim().toUpperCase() || "SPY",
+    timeframe: "1h",
     start: d.start || null,
     end: d.end || null,
     entry: d.entry.map((c) => toCondition(c, comps)),
