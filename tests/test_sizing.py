@@ -334,3 +334,10 @@ def test_volatility_strategy_paper_trades_like_the_historical_engine(tmp_path: P
         ("2023-04-05", "buy", 74, 74.91, 2.77, 94_453.89),
         ("2023-04-20", "sell", 74, 76.82, 2.84, 100_135.73),
     ]
+
+
+def test_atr_key_is_the_engine_key() -> None:
+    """The volatility rule looks ATR up under the same key the engine stores it by."""
+    from moneylab.components.sizing import atr_key
+
+    assert atr_key(14) == "atr(length=14)"

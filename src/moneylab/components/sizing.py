@@ -9,7 +9,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from moneylab.components.registry import ParamSpec, SizingContext, register_sizing
+from moneylab.components.registry import (
+    ParamSpec,
+    SizingContext,
+    indicator_key,
+    register_sizing,
+)
 
 
 @register_sizing(
@@ -28,7 +33,7 @@ def fixed_dollar(ctx: SizingContext, params: dict[str, Any]) -> int:
 
 def atr_key(length: int) -> str:
     """The key under which the engine passes ATR(length) in ``SizingContext.values``."""
-    return f"atr(length={int(length)})"
+    return indicator_key({"id": "atr", "params": {"length": int(length)}})
 
 
 @register_sizing(

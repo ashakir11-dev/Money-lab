@@ -21,7 +21,7 @@ import pandas as pd
 ParamType = Literal["int", "float", "choice"]
 Use = Literal["indicator", "entry", "exit", "filter", "exit_rule", "sizing"]
 
-# An indicator receives the full close/open/high/low frame for one symbol (indexed by
+# An indicator receives the full open/high/low/close/volume frame for one symbol (indexed by
 # session) and its parameters, and returns one value per session. Values must only use
 # data up to and including that session.
 IndicatorFn = Callable[[pd.DataFrame, dict[str, Any]], pd.Series]
@@ -74,6 +74,16 @@ class SizingContext:
 ExitFn = Callable[[ExitContext, dict[str, Any]], tuple[str, dict[str, Any]] | None]
 # A sizing rule returns the whole number of shares to order (0 records zero_quantity).
 SizeFn = Callable[[SizingContext, dict[str, Any]], int]
+
+
+def indicator_key(ref: dict[str, Any]) -> str:
+    """The stable key of a resolved indicator ref, e.g. ``atr(length=14)``.
+
+    The engine stores indicator values under this key (in decision ``values`` and in
+    ``ExitContext.values`` / ``SizingContext.values``); rules look their inputs up with it.
+    """
+    args = ",".join(f"{k}={v}" for k, v in sorted(ref["params"].items()))
+    return f"{ref['id']}({args})"
 
 
 def _no_requirements(params: dict[str, Any]) -> list[dict[str, Any]]:

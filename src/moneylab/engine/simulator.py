@@ -23,7 +23,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from moneylab.components.registry import ExitContext, SizingContext, get_component
+from moneylab.components.registry import (
+    ExitContext,
+    SizingContext,
+    get_component,
+    indicator_key,
+)
 from moneylab.data.snapshot import MarketData
 from moneylab.engine.config import required_indicators, resolved_exits, resolved_sizing
 
@@ -38,8 +43,7 @@ DECISION_ACTIONS = (ENTER, EXIT, SKIP)
 
 
 def _ind_key(ind: dict[str, Any]) -> str:
-    args = ",".join(f"{k}={v}" for k, v in sorted(ind["params"].items()))
-    return f"{ind['id']}({args})"
+    return indicator_key(ind)
 
 
 def _cond_label(c: dict[str, Any]) -> str:
@@ -601,6 +605,10 @@ class Account:
                 self._record(day, sym, SKIP, "max_positions", conditions=res, values=vals)
                 continue
             assert self._size_fn is not None
+            size_inputs = {k: float(view.indicators[sym][k][i]) for k in self._size_keys}
+            if size_inputs:
+                # Record what the sizing rule saw, so its quantity can be checked.
+                vals = {**vals, **{k: _f(v) for k, v in size_inputs.items()}}
             qty = int(
                 self._size_fn(
                     SizingContext(
@@ -608,7 +616,7 @@ class Account:
                         close=float(c),
                         equity=equity,
                         target_allocation=self.target,
-                        values={k: float(view.indicators[sym][k][i]) for k in self._size_keys},
+                        values=size_inputs,
                     ),
                     self.sizing["params"],
                 )
