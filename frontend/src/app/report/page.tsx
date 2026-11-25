@@ -203,6 +203,9 @@ function ReportView() {
           </>
         ) : null}
       </p>
+      <p className="plain-summary" data-testid="run-summary">
+        {r.summary}
+      </p>
 
       {eq.length >= 2 ? (
         <Specimen
@@ -270,8 +273,8 @@ function ReportView() {
           {b.invested_session ? (
             <>
               {" "}
-              · {benchName} bought {int(b.shares)} shares at {money(b.price)} on {b.invested_session} (cost {money(b.cost)}, cash left{" "}
-              {money(b.cash_left)})
+              · {benchName} bought {int(b.shares)} shares at the {b.invested_session} open for {money(b.price)} each (
+              {money((b.shares ?? 0) * (b.price ?? 0))} invested, {money(b.cost)} in trading costs, {money(b.cash_left)} cash left)
             </>
           ) : null}
           {wl?.created_at ? (

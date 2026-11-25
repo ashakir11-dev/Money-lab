@@ -178,6 +178,61 @@ test("report page: benchmark purchase, open positions and watchlist selection da
   assert.deepEqual(errors, []);
 });
 
+test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule reach the run", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/builder?from=${original}`);
+  await page.getByTestId("run-backtest").waitFor();
+
+  // Entry rule 3: EMA(20) above SMA. Non-price indicators may only pair with themselves.
+  await page.getByTestId("add-condition").click();
+  const rule = page.locator('[data-testid^="condition-"]').last();
+  await rule.getByTestId("kind-select").selectOption("indicator_compare");
+  await rule.getByTestId("indicator-select").selectOption("rsi");
+  const rsiPartners = await rule.getByTestId("other-select").locator("option").evaluateAll((os) => os.map((o) => o.value));
+  assert.deepEqual(rsiPartners, ["rsi"]);
+  await rule.getByTestId("indicator-select").selectOption("ema");
+  await rule.getByTestId("other-select").selectOption("sma");
+  await rule.getByTestId("other-param-length").fill("50");
+  assert.match(await rule.locator(".cond-sentence").innerText(), /EMA\(20\) above SMA\(50\)/);
+
+  // An 8% stop loss next to the 10-session hold; percent shown, fraction sent.
+  await page.getByTestId("add-price-exit").selectOption("stop_loss");
+  const stop = page.getByTestId("price-exit-stop_loss-pct");
+  assert.equal(Number(await stop.inputValue()), 8);
+  await stop.fill("5");
+
+  await page.getByTestId("sizing-volatility").click();
+  await page.getByTestId("sizing-risk_fraction").waitFor();
+  await page.getByTestId("rank-indicator").selectOption("rsi");
+  await page.getByTestId("rank-ascending").click();
+
+  const summary = page.getByTestId("builder-summary");
+  await page.waitForFunction(
+    () => /trailing|stop loss/.test(document.querySelector('[data-testid="builder-summary"]')?.textContent ?? ""),
+    null,
+    { timeout: 10000 },
+  );
+  const text = await summary.innerText();
+  assert.match(text, /EMA\(20\) above SMA\(50\)/);
+  assert.match(text, /5% below the buy price \(stop loss\)/);
+  assert.match(text, /risk 1% of equity on a 2 x ATR\(14\) stop/);
+  assert.match(text, /buys the lowest RSI\(14\) first/);
+
+  await page.getByTestId("run-backtest").click();
+  await page.getByTestId("open-new-run").click({ timeout: 60000 });
+  await page.getByTestId("run-summary").waitFor();
+  assert.match(await page.getByTestId("run-summary").innerText(), /5% below the buy price \(stop loss\)/);
+
+  // Duplicating the new run brings every new setting back into the builder.
+  await page.getByRole("link", { name: /duplicate and edit/i }).click();
+  await page.getByTestId("price-exit-stop_loss-pct").waitFor();
+  assert.equal(Number(await page.getByTestId("price-exit-stop_loss-pct").inputValue()), 5);
+  assert.equal(await page.getByTestId("rank-indicator").inputValue(), "rsi");
+  assert.equal(await page.getByTestId("sizing-volatility").getAttribute("class"), "on");
+  assert.equal(await page.locator('[data-testid^="condition-"]').last().getByTestId("other-select").inputValue(), "sma");
+  assert.deepEqual(errors, []);
+});
+
 test("paper trading page: start, deliver sessions (one twice), see the account, replay", async () => {
   const { page, errors } = await newPage();
   const lines = fs.readFileSync(FIXTURE, "utf8").trim().split("\n");

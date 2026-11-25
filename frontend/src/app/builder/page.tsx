@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { ConditionEditor, defaultsOf, type CondDraft, type Value } from "@/components/ConditionEditor";
+import { ConditionEditor, PAIRED, SchemaParams, defaultsOf, type CondDraft, type Value } from "@/components/ConditionEditor";
 import { Mark } from "@/components/Mark";
 import { Specimen } from "@/components/Specimen";
 import { ErrorBox, JobStatus, Loading } from "@/components/ui";
@@ -12,6 +12,9 @@ import { useAsync, useDebounced } from "@/lib/hooks";
 import { SECTORS, sectorSymbols } from "@/lib/sectors";
 
 type FillKind = "next_open" | "next_range" | "dip";
+type RuleDraft = { kind: string; params: Record<string, Value> };
+/** Exits the builder handles through its own controls (signal conditions and max hold). */
+const OWN_EXITS = new Set(["signal", "holding_period"]);
 
 type Draft = {
   name: string;
@@ -29,6 +32,13 @@ type Draft = {
   dipPct: string;
   maxHold: string;
   exitConds: CondDraft[];
+  /** Price exits (stop loss, take profit, trailing stop...); the first exit that fires sells. */
+  guards: RuleDraft[];
+  sizingId: string;
+  sizingParams: Record<string, Value>;
+  rankInd: string;
+  rankParams: Record<string, Value>;
+  rankOrder: "ascending" | "descending";
   startingCash: string;
   targetPct: string;
   maxPositions: string;
@@ -51,6 +61,12 @@ const EMPTY: Draft = {
   dipPct: "2",
   maxHold: "10",
   exitConds: [],
+  guards: [],
+  sizingId: "percent_of_equity",
+  sizingParams: {},
+  rankInd: "",
+  rankParams: {},
+  rankOrder: "ascending",
   startingCash: "",
   targetPct: "",
   maxPositions: "",
@@ -83,11 +99,33 @@ const splitSymbols = (s: string) =>
     .filter(Boolean);
 
 function toCondition(c: CondDraft, comps: Map<string, Component>): Condition {
-  return {
+  const out: Condition = {
     kind: c.kind,
     indicator: { id: c.indicator, params: cleanParams(comps.get(c.indicator), c.indParams) },
     params: cleanParams(comps.get(c.kind), c.params),
   };
+  if (PAIRED.has(c.kind) && c.other) {
+    out.other = { id: c.other, params: cleanParams(comps.get(c.other), c.otherParams ?? {}) };
+  }
+  return out;
+}
+
+/**
+ * The signal / max-hold exit, plus any price exits. Without price exits only `exit` is
+ * sent, so configs built before price exits existed keep their exact shape.
+ */
+function exitsOf(d: Draft, comps: Map<string, Component>): Pick<StrategyConfig, "exit" | "exits"> {
+  const hold = d.maxHold.trim() === "" ? null : Number(d.maxHold);
+  const guards = d.guards.map((g) => ({ kind: g.kind, params: cleanParams(comps.get(g.kind), g.params), conditions: [] }));
+  const primary = d.exitConds.length
+    ? { kind: "signal", params: hold ? { max_sessions: hold } : {}, conditions: d.exitConds.map((c) => toCondition(c, comps)) }
+    : hold || !guards.length
+      ? { kind: "holding_period", params: { sessions: hold ?? 10 }, conditions: [] }
+      : null;
+  if (!guards.length) return { exit: primary! };
+  // Price exits go first so a session where both fire is reported as the stop.
+  const exits = primary ? [...guards, primary] : guards;
+  return { exit: exits[0], exits };
 }
 
 function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
@@ -106,17 +144,13 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
       above_pct: d.fillKind === "next_range" && d.rangeAbove.trim() !== "" ? Number(d.rangeAbove) / 100 : null,
       dip_pct: d.fillKind === "dip" && d.dipPct.trim() !== "" ? Number(d.dipPct) / 100 : null,
     },
-    exit: (() => {
-      const hold = d.maxHold.trim() === "" ? null : Number(d.maxHold);
-      if (d.exitConds.length) {
-        return {
-          kind: "signal" as const,
-          params: hold ? { max_sessions: hold } : {},
-          conditions: d.exitConds.map((c) => toCondition(c, comps)),
-        };
-      }
-      return { kind: "holding_period" as const, params: { sessions: hold ?? 10 }, conditions: [] };
-    })(),
+    ...exitsOf(d, comps),
+    ...(d.sizingId && d.sizingId !== "percent_of_equity"
+      ? { sizing: { id: d.sizingId, params: cleanParams(comps.get(d.sizingId), d.sizingParams) } }
+      : {}),
+    ...(d.rankInd
+      ? { rank_by: { indicator: { id: d.rankInd, params: cleanParams(comps.get(d.rankInd), d.rankParams) }, order: d.rankOrder } }
+      : {}),
     portfolio: {
       starting_cash: num(d.startingCash),
       target_allocation: target === null ? null : target / 100,
@@ -126,7 +160,9 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
   };
 }
 
-type ResolvedCond = { kind: CondDraft["kind"]; indicator: { id: string; params?: Record<string, Value> }; params?: Record<string, Value> };
+type ResolvedRef = { id: string; params?: Record<string, Value> };
+type ResolvedCond = { kind: CondDraft["kind"]; indicator: ResolvedRef; other?: ResolvedRef | null; params?: Record<string, Value> };
+type ResolvedExit = { kind?: string; params?: Record<string, Value>; conditions?: ResolvedCond[] };
 type Resolved = {
   name?: string;
   universe?: string[];
@@ -135,7 +171,10 @@ type Resolved = {
   end?: string | null;
   entry?: ResolvedCond[];
   entry_fill?: { kind?: FillKind; below_pct?: number | null; above_pct?: number | null; dip_pct?: number | null };
-  exit?: { kind?: string; params?: Record<string, Value>; conditions?: ResolvedCond[] };
+  exit?: ResolvedExit;
+  exits?: ResolvedExit[];
+  sizing?: { id?: string; params?: Record<string, Value> };
+  rank_by?: { indicator: ResolvedRef; order?: "ascending" | "descending" } | null;
   watchlist?: { name?: string };
   portfolio?: { starting_cash?: number; target_allocation?: number; max_positions?: number; cost_bps_per_side?: number };
 };
@@ -146,8 +185,11 @@ function fromResolved(r: Resolved): Draft {
     indicator: c.indicator.id,
     indParams: { ...(c.indicator.params ?? {}) },
     params: { ...(c.params ?? {}) },
+    ...(c.other ? { other: c.other.id, otherParams: { ...(c.other.params ?? {}) } } : {}),
   });
   const p = r.portfolio ?? {};
+  const all = r.exits?.length ? r.exits : r.exit ? [r.exit] : [];
+  const main = all.find((e) => OWN_EXITS.has(e.kind ?? "holding_period"));
   return {
     ...EMPTY,
     name: `${r.name ?? "Strategy"} (copy)`,
@@ -160,8 +202,14 @@ function fromResolved(r: Resolved): Draft {
     rangeBelow: r.entry_fill?.below_pct != null ? String(+(r.entry_fill.below_pct * 100).toFixed(6)) : "2",
     rangeAbove: r.entry_fill?.above_pct != null ? String(+(r.entry_fill.above_pct * 100).toFixed(6)) : "2",
     dipPct: r.entry_fill?.dip_pct != null ? String(+(r.entry_fill.dip_pct * 100).toFixed(6)) : "2",
-    maxHold: String(r.exit?.params?.max_sessions ?? r.exit?.params?.sessions ?? ""),
-    exitConds: (r.exit?.conditions ?? []).map(cond),
+    maxHold: String(main?.params?.max_sessions ?? main?.params?.sessions ?? ""),
+    exitConds: (main?.conditions ?? []).map(cond),
+    guards: all.filter((e) => !OWN_EXITS.has(e.kind ?? "holding_period")).map((e) => ({ kind: e.kind ?? "", params: { ...(e.params ?? {}) } })),
+    sizingId: r.sizing?.id ?? "percent_of_equity",
+    sizingParams: { ...(r.sizing?.params ?? {}) },
+    rankInd: r.rank_by?.indicator.id ?? "",
+    rankParams: { ...(r.rank_by?.indicator.params ?? {}) },
+    rankOrder: r.rank_by?.order ?? "ascending",
     universeSource: r.watchlist?.name ? "watchlist" : "custom",
     watchlist: r.watchlist?.name ?? "",
     startingCash: p.starting_cash != null ? String(p.starting_cash) : "",
@@ -319,6 +367,17 @@ function Builder() {
   const dflt = defaults.data;
 
   const parentDates = (parentEq.data ?? []).map((e) => e.session);
+  const all = comps.data ?? [];
+  const guardKinds = all.filter((c) => c.uses.includes("exit_rule") && !OWN_EXITS.has(c.id));
+  const sizers = all.filter((c) => c.uses.includes("sizing"));
+  const rankable = all.filter((c) => c.uses.includes("indicator"));
+  const sizer = byId.get(draft.sizingId);
+  const usedGuards = new Set(draft.guards.map((g) => g.kind));
+
+  function addGuard(kind: string) {
+    if (!kind) return;
+    setDraft((d) => ({ ...d, guards: [...d.guards, { kind, params: defaultsOf(byId.get(kind)) }] }));
+  }
 
   return (
     <div className="bench">
@@ -513,6 +572,52 @@ function Builder() {
             <button onClick={() => addCond("exitConds")}>Add condition</button>
           </div>
           <p className="caption">Optional. Without an exit signal, the max hold below (or the default) closes the position.</p>
+          <div className="section-head" style={{ marginTop: 16 }}>
+            <h3>Price exits</h3>
+            <select
+              data-testid="add-price-exit"
+              aria-label="Add a price exit"
+              value=""
+              onChange={(e) => addGuard(e.target.value)}
+              style={{ width: "auto" }}
+              disabled={guardKinds.every((c) => usedGuards.has(c.id))}
+            >
+              <option value="">Add price exit…</option>
+              {guardKinds.map((c) => (
+                <option key={c.id} value={c.id} disabled={usedGuards.has(c.id)} title={c.description}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="caption">Checked at each close, alongside the rules above; whichever fires first sells the whole position at the next open.</p>
+          {draft.guards.map((g, i) => {
+            const schema = byId.get(g.kind);
+            return (
+              <div className="cond" key={`${g.kind}-${i}`} data-testid={`price-exit-${g.kind}`}>
+                <div className="cond-head">
+                  <strong>{schema?.label ?? g.kind}</strong>
+                  <span className="cond-sentence">{schema?.description}</span>
+                  <button
+                    className="link"
+                    type="button"
+                    aria-label={`Remove ${schema?.label ?? g.kind}`}
+                    onClick={() => setDraft((d) => ({ ...d, guards: d.guards.filter((_, j) => j !== i) }))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="cond-params">
+                  <SchemaParams
+                    schema={schema}
+                    values={g.params}
+                    prefix={`price-exit-${g.kind}`}
+                    onChange={(v) => setDraft((d) => ({ ...d, guards: d.guards.map((x, j) => (j === i ? { ...x, params: v } : x)) }))}
+                  />
+                </div>
+              </div>
+            );
+          })}
           {draft.exitConds.map((c, i) => (
             <ConditionEditor
               key={i}
@@ -528,8 +633,28 @@ function Builder() {
 
         <section className="stack-block">
           <h2>Position size</h2>
+          <div className="source-row" role="group" aria-label="Sizing method">
+            {sizers.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                data-testid={`sizing-${c.id}`}
+                title={c.description}
+                className={draft.sizingId === c.id ? "on" : undefined}
+                onClick={() => setDraft((d) => ({ ...d, sizingId: c.id, sizingParams: defaultsOf(c) }))}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {sizer?.description ? <p className="help">{sizer.description}</p> : null}
+          {sizer?.params.length ? (
+            <div className="cond-params">
+              <SchemaParams schema={sizer} values={draft.sizingParams} prefix="sizing" onChange={(v) => set("sizingParams", v)} />
+            </div>
+          ) : null}
           <div className="field">
-            <label htmlFor="target">Percent of equity per position</label>
+            <label htmlFor="target">{draft.sizingId === "percent_of_equity" ? "Percent of equity per position" : "Largest position (percent of equity)"}</label>
             <input id="target" type="number" value={draft.targetPct} placeholder={dflt ? String(dflt.target_allocation * 100) : ""} onChange={(e) => set("targetPct", e.target.value)} />
           </div>
         </section>
@@ -540,6 +665,50 @@ function Builder() {
             <label htmlFor="maxpos">Max positions at once</label>
             <input id="maxpos" type="number" value={draft.maxPositions} placeholder={dflt ? String(dflt.max_positions) : ""} onChange={(e) => set("maxPositions", e.target.value)} />
           </div>
+          <div className="field">
+            <label htmlFor="rank">When more names qualify than there is room for, buy first</label>
+            <select
+              id="rank"
+              data-testid="rank-indicator"
+              value={draft.rankInd}
+              onChange={(e) => {
+                const id = e.target.value;
+                setDraft((d) => ({ ...d, rankInd: id, rankParams: defaultsOf(byId.get(id)) }));
+              }}
+            >
+              <option value="">By symbol, A to Z</option>
+              {rankable.map((c) => (
+                <option key={c.id} value={c.id} title={c.description}>
+                  By {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {draft.rankInd ? (
+            <>
+              <div className="source-row" role="group" aria-label="Ranking order">
+                {(
+                  [
+                    ["ascending", "Lowest first"],
+                    ["descending", "Highest first"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    data-testid={`rank-${id}`}
+                    className={draft.rankOrder === id ? "on" : undefined}
+                    onClick={() => set("rankOrder", id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="cond-params">
+                <SchemaParams schema={byId.get(draft.rankInd)} values={draft.rankParams} prefix="rank" onChange={(v) => set("rankParams", v)} />
+              </div>
+            </>
+          ) : null}
         </section>
 
         <section className="stack-block">
