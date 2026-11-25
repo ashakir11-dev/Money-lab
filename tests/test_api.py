@@ -169,3 +169,22 @@ def test_new_strategy_options_through_the_api(client: TestClient) -> None:
     bad = {**cfg, "exits": [{"kind": "sma"}]}
     r = client.post("/api/validate", json={"config": bad, "snapshot_id": sid})
     assert r.status_code in (400, 422) and "not an exit rule" in r.text
+
+
+def test_adding_a_stop_loss_shows_the_first_trade_it_changed(client: TestClient) -> None:
+    """Backend version of the plan's check: add a stop to a saved strategy, compare."""
+    sid = _snapshot(client)
+    parent = _run(client, sid, 35)
+    cfg = rsi_strategy(35, name="RSI < 35 with a 0.1% stop").model_dump(mode="json")
+    cfg["exits"] = [
+        {"kind": "stop_loss", "params": {"pct": 0.001}},
+        {"kind": "holding_period", "params": {"sessions": 10}},
+    ]
+    r = client.post("/api/runs", json={"config": cfg, "snapshot_id": sid, "parent_id": parent})
+    job = _wait(client, r.json())
+    assert job["status"] == "complete", job
+    cmp = client.get("/api/compare", params={"a": parent, "b": job["run_ids"][0]}).json()
+    assert {d["setting"] for d in cmp["config_diff"]} >= {"exits[0].kind", "exits[0].params.pct"}
+    first = cmp["first_difference"]
+    assert first is not None
+    assert "stop_loss" in str(first)
