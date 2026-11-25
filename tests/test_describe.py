@@ -19,6 +19,7 @@ def test_data_source_labels() -> None:
 def test_strategy_summary_reads_like_a_sentence() -> None:
     text = strategy_summary(resolve(rsi_strategy(30), Settings()))
     assert text == (
-        "Buy when close crosses above SMA(20) and RSI(14) below 30 at the next open; sell after 10 sessions. "
+        "Buy when close crosses above SMA(20) and RSI(14) below 30 at the next open; "
+        "sell after 10 sessions. "
         "Trades 4 symbols against SPY, 10% of equity per position."
     )
