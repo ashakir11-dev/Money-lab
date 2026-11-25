@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from moneylab.data.bars import session_label
+
 import numpy as np
 import pandas as pd
 
@@ -505,7 +507,7 @@ class Account:
         return open_px, "", False
 
     def _fill_at_open(self, view: MarketView, i: int) -> None:
-        day = view.sessions[i].date().isoformat()
+        day = session_label(view.sessions[i])
         cost_rate = self.cost_rate
         for side in ("sell", "buy"):
             for sym in sorted(s for s, o in self.pending.items() if o.side == side):
@@ -581,7 +583,7 @@ class Account:
         equity = _cents(self.cash + pos_value)
         self.equity_rows.append(
             {
-                "session": view.sessions[i].date().isoformat(),
+                "session": session_label(view.sessions[i]),
                 "cash": self.cash,
                 "positions_value": _cents(pos_value),
                 "equity": equity,
@@ -591,7 +593,7 @@ class Account:
         return equity
 
     def _decide_exits(self, view: MarketView, i: int) -> int:
-        day = view.sessions[i].date().isoformat()
+        day = session_label(view.sessions[i])
         exiting = 0
         for sym in sorted(self.positions):
             if sym in self.pending:
@@ -616,7 +618,7 @@ class Account:
 
     def _decide_entries(self, view: MarketView, i: int, equity: float, exiting: int) -> None:
         """Entry decisions in ascending symbol order (documented tie-break)."""
-        day = view.sessions[i].date().isoformat()
+        day = session_label(view.sessions[i])
         cost_rate = self.cost_rate
         committed = sum(
             o.qty * o.decision_close * (1 + cost_rate)
@@ -795,7 +797,7 @@ def _benchmark(
         [start if k < j else _cents(cash + shares * float(closes[k])) for k in range(n)]
     )
     return values, {
-        "invested_session": sessions[j].date().isoformat(),
+        "invested_session": session_label(sessions[j]),
         "price": round(px, 6),
         "shares": shares,
         "cost": cost,

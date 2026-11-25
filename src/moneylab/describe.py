@@ -25,12 +25,12 @@ def _fixture_names() -> set[str]:
 def data_source(source: str | None, label: str = "") -> DataSource:
     """Classify a snapshot/run source string.
 
-    ``tiingo`` is real end-of-day market history; a file under ``fixtures/data`` is
+    ``equibles`` is real market history; a file under ``fixtures/data`` is
     the hand-designed demo data; any other file is the person's own import.
     """
     src = source or ""
-    if src == "tiingo":
-        return DataSource("real", "Real data · Tiingo", "Real end-of-day prices from Tiingo")
+    if src == "equibles":
+        return DataSource("real", "Real data · Equibles", "Real prices from Equibles")
     if src.startswith("file:"):
         name = src[len("file:") :].split("+", 1)[0]
         if name in _fixture_names():

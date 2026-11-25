@@ -48,6 +48,7 @@ def strategy(entry: list[Condition], **kw: Any) -> StrategyConfig:
         name="fixture",
         universe=kw.pop("universe", ["XA"]),
         benchmark="XA",
+        timeframe="1d",
         entry=entry,
         portfolio=PortfolioSettings(
             starting_cash=1000, target_allocation=0.5, cost_bps_per_side=0, **port

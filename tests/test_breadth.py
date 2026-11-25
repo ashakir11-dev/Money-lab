@@ -51,6 +51,7 @@ def _config(value: float, universe: list[str] = UNIVERSE) -> StrategyConfig:
         name="SMA20 cross + breadth filter",
         universe=universe,
         benchmark="SPY",
+        timeframe="1d",
         entry=[
             Condition(
                 kind="price_cross",

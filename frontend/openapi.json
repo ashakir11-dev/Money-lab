@@ -1041,6 +1041,10 @@
             "title": "Snapshot Id",
             "type": "string"
           },
+          "snapshot_name": {
+            "title": "Snapshot Name",
+            "type": "string"
+          },
           "source_kind": {
             "enum": [
               "real",
@@ -1092,6 +1096,7 @@
           "created_at",
           "status",
           "snapshot_id",
+          "snapshot_name",
           "source_kind",
           "source_label",
           "summary",
@@ -1222,6 +1227,10 @@
             "title": "Snapshot Id",
             "type": "string"
           },
+          "snapshot_name": {
+            "title": "Snapshot Name",
+            "type": "string"
+          },
           "source_kind": {
             "enum": [
               "real",
@@ -1273,6 +1282,7 @@
           "created_at",
           "status",
           "snapshot_id",
+          "snapshot_name",
           "source_kind",
           "source_label",
           "summary",
@@ -1349,6 +1359,11 @@
             "title": "Last Date",
             "type": "string"
           },
+          "name": {
+            "description": "typed label, or source, timeframe, universe and dates",
+            "title": "Name",
+            "type": "string"
+          },
           "rows": {
             "title": "Rows",
             "type": "integer"
@@ -1384,6 +1399,7 @@
           "source_kind",
           "source_label",
           "label",
+          "name",
           "adjustment",
           "created_at",
           "symbols",
@@ -1482,6 +1498,19 @@
               }
             ],
             "title": "Start"
+          },
+          "timeframe": {
+            "default": "1h",
+            "enum": [
+              "1min",
+              "5min",
+              "15min",
+              "30min",
+              "1h",
+              "1d"
+            ],
+            "title": "Timeframe",
+            "type": "string"
           },
           "universe": {
             "items": {

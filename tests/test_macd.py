@@ -139,6 +139,7 @@ def _config(**macd_params: object) -> StrategyConfig:
         name="SMA20 cross + MACD histogram > 0",
         universe=UNIVERSE,
         benchmark="SPY",
+        timeframe="1d",
         entry=[
             Condition(
                 kind="price_cross",

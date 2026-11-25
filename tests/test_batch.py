@@ -71,6 +71,7 @@ def _variants() -> list[StrategyConfig]:
         return StrategyConfig(
             name=name,
             universe=SYMBOLS,
+            timeframe="1d",
             entry=entry,
             exit=exit,
             portfolio=PortfolioSettings(**port),  # type: ignore[arg-type]

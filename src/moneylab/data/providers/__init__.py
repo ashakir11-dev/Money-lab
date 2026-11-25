@@ -11,9 +11,10 @@ from moneylab.data.providers.base import (
     ProviderRateLimited,
     new_sessions,
 )
-from moneylab.data.providers.tiingo import TiingoProvider
+from moneylab.data.providers.equibles import EquiblesProvider
 
 __all__ = [
+    "EquiblesProvider",
     "NewSessions",
     "Provider",
     "ProviderAuthError",
@@ -21,6 +22,5 @@ __all__ = [
     "ProviderHistory",
     "ProviderNotFound",
     "ProviderRateLimited",
-    "TiingoProvider",
     "new_sessions",
 ]

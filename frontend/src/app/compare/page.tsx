@@ -203,8 +203,8 @@ function CompareView() {
         <>
           {c.data_differs ? (
             <p className="notice">
-              Different price data. A: <Badge kind={c.a.source_kind}>{c.a.source_label}</Badge> B:{" "}
-              <Badge kind={c.b.source_kind}>{c.b.source_label}</Badge>
+              Different price data. A: <Badge kind={c.a.source_kind}>{c.a.source_label}</Badge> {c.a.snapshot_name}{" "}
+              B: <Badge kind={c.b.source_kind}>{c.b.source_label}</Badge> {c.b.snapshot_name}
             </p>
           ) : null}
 

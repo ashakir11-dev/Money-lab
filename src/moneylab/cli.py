@@ -68,11 +68,16 @@ def fetch(
         str,
         typer.Option(help="fetch this watchlist's current members; SYMBOLS are added"),
     ] = "",
+    timeframe: str = typer.Option("1h", help="1min, 5min, 15min, 30min, 1h, or 1d"),
 ) -> None:
-    """Fetch daily history from Tiingo (needs TIINGO_API_KEY) as an immutable snapshot."""
+    """Fetch history from Equibles (needs EQUIBLES_API_KEY) as an immutable snapshot.
+
+    1d is resampled from hourly bars. Any other timeframe is stored as those bars.
+    """
     from datetime import date
 
     from moneylab.data.providers import ProviderError
+    from moneylab.data.snapshot import snapshot_name
     from moneylab.service import Lab
 
     try:
@@ -83,25 +88,25 @@ def fetch(
             label,
             refresh=refresh,
             watchlist=watchlist or None,
+            timeframe=timeframe,
         )
     except (ProviderError, ValueError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from None
     p = snap.meta.get("provenance", {})
     typer.echo(
+        f"{snapshot_name(snap.meta)}\n"
         f"snapshot {snap.id}: {len(snap.meta['symbols'])} symbols, {snap.meta['rows']} rows, "
         f"{snap.meta['first_date']}..{snap.meta['last_date']} "
         f"(source {snap.meta['source']}, adjustment {snap.meta['adjustment']}, "
+        f"timeframe {snap.meta.get('timeframe', '1d')}, "
         f"http requests {p.get('http_requests', '?')}, cache hits {p.get('cache_hits', '?')})"
     )
-    spread = p.get("tiingo_adj_ratio_spread")
-    if spread:
-        typer.echo(f"Tiingo adjClose vs lab adjustment, relative spread: {spread}")
 
 
 @app.command("new-sessions")
 def new_sessions_cmd(snapshot_id: str) -> None:
-    """Show sessions Tiingo has that are newer than SNAPSHOT_ID (nothing is stored)."""
+    """Show sessions Equibles has that are newer than SNAPSHOT_ID (nothing is stored)."""
     from moneylab.data.providers import ProviderError
     from moneylab.service import Lab
 
@@ -219,7 +224,7 @@ def paper_advance(
     paper_id: str,
     end: str = typer.Option("", help="last session to fetch (default: today)"),
 ) -> None:
-    """Fetch completed sessions after the account's frontier from Tiingo and ingest them."""
+    """Fetch completed sessions after the account's frontier from Equibles and ingest them."""
     from datetime import date
 
     from moneylab.data.providers import ProviderError

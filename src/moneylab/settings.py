@@ -16,11 +16,11 @@ class Settings(BaseSettings):
     import_dir: Path = Path("./fixtures/data")
     workers: int = Field(default=0, ge=0)
 
-    # Provider credential. Read from TIINGO_API_KEY (no MONEYLAB_ prefix) so the same
+    # Provider credential. Read from EQUIBLES_API_KEY (no MONEYLAB_ prefix) so the same
     # environment secret works for any tool. SecretStr keeps it out of reprs and logs.
-    tiingo_api_key: SecretStr | None = Field(default=None, validation_alias="TIINGO_API_KEY")
+    equibles_api_key: SecretStr | None = Field(default=None, validation_alias="EQUIBLES_API_KEY")
 
-    @field_validator("tiingo_api_key", mode="before")
+    @field_validator("equibles_api_key", mode="before")
     @classmethod
     def _blank_key_is_none(cls, v: object) -> object:
         return None if isinstance(v, str) and not v.strip() else v

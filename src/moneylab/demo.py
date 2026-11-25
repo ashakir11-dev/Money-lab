@@ -17,6 +17,7 @@ def rsi_strategy(threshold: float, name: str | None = None) -> StrategyConfig:
         name=name or f"SMA20 cross + RSI14 < {threshold:g}",
         universe=UNIVERSE,
         benchmark="SPY",
+        timeframe="1d",
         entry=[
             Condition(
                 kind="price_cross",

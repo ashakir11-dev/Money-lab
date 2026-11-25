@@ -136,6 +136,7 @@ class StrategyConfig(BaseModel):
     name: str = "Untitled strategy"
     universe: list[str]
     benchmark: str = "SPY"
+    timeframe: Literal["1min", "5min", "15min", "30min", "1h", "1d"] = "1h"
     start: date | None = None
     end: date | None = None
     entry: list[Condition]
@@ -299,6 +300,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
         "name": config.name,
         "universe": list(config.universe),
         "benchmark": config.benchmark.upper(),
+        "timeframe": config.timeframe,
         "start": config.start.isoformat() if config.start else None,
         "end": config.end.isoformat() if config.end else None,
         "entry": [_resolve_condition(c, "entry") for c in config.entry],
@@ -373,6 +375,7 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         name=resolved["name"],
         universe=resolved["universe"],
         benchmark=resolved["benchmark"],
+        timeframe=resolved.get("timeframe", "1d"),
         start=resolved["start"],
         end=resolved["end"],
         entry=[cond(c) for c in resolved["entry"]],

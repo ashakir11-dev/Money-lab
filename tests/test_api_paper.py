@@ -103,7 +103,7 @@ def test_tiingo_import_uses_a_watchlist_as_the_symbol_feed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A watchlist supplies the symbols. Extra symbols are added. The snapshot records
-    which version was used, and an empty label takes the watchlist's name."""
+    which version was used. An empty label is named from that configuration."""
     monkeypatch.setenv("TIINGO_API_KEY", TEST_KEY)
     fake = FakeTiingo(payloads_from_csv())
 
@@ -127,7 +127,8 @@ def test_tiingo_import_uses_a_watchlist_as_the_symbol_feed(
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["symbols"] == ["AAA", "BBB", "SPY"]
-        assert body["label"] == "core"
+        assert body["label"] == ""
+        assert body["name"].startswith("tiingo · ") and "core v1" in body["name"]
         recorded_list = lab.snapshot(body["id"]).meta["provenance"]["watchlist"]
         assert recorded_list["name"] == "core"
         assert recorded_list["version"] == 1
@@ -146,6 +147,7 @@ def test_tiingo_import_uses_a_watchlist_as_the_symbol_feed(
         assert named.status_code == 200, named.text
         assert named.json()["symbols"] == ["DDD"]
         assert named.json()["label"] == "mine"
+        assert named.json()["name"] == "mine"
 
 
 def test_tiingo_import_rejects_a_missing_watchlist_before_calling_tiingo(

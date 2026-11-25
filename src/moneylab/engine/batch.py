@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from moneylab.data.bars import session_label
 from moneylab.data.snapshot import MarketData
 from moneylab.engine.config import config_hash
 from moneylab.engine.reporting import metrics
@@ -64,8 +65,8 @@ def run_one(
         "snapshot_id": snap.id,
         "source": snap.source,
         "adjustment": snap.adjustment,
-        "first_session": data.sessions[0].date().isoformat(),
-        "last_session": data.sessions[-1].date().isoformat(),
+        "first_session": session_label(data.sessions[0]),
+        "last_session": session_label(data.sessions[-1]),
     }
     return out, result, m
 

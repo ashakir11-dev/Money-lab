@@ -20,6 +20,7 @@ def test_macd_strategy_paper_trades_like_the_historical_engine(tmp_path: Path) -
     cfg = StrategyConfig(
         name="SMA20 cross + MACD histogram > 0",
         universe=UNIVERSE,
+        timeframe="1d",
         entry=[
             Condition(
                 kind="price_cross",

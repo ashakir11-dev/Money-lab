@@ -13,7 +13,8 @@ import pandas as pd
 
 from moneylab.data.actions import POLICY as ACTION_POLICY
 from moneylab.data.actions import adjust, read_actions
-from moneylab.data.providers import NewSessions, Provider, TiingoProvider, new_sessions
+from moneylab.data.bars import resample_daily, session_label
+from moneylab.data.providers import NewSessions, Provider, EquiblesProvider, new_sessions
 from moneylab.data.providers.base import empty_actions, empty_bars
 from moneylab.data.snapshot import (
     DEFAULT_ADJUSTMENT,
@@ -22,6 +23,7 @@ from moneylab.data.snapshot import (
     load_snapshot,
     normalise,
     read_import_file,
+    save_intraday_snapshot,
     save_snapshot,
 )
 from moneylab.engine.batch import Job, SnapshotInfo, run_jobs, run_one
@@ -68,11 +70,11 @@ class Lab:
             actions=actions,
         )
 
-    def provider(self, name: str = "tiingo") -> Provider:
-        """A live provider built from settings. Tiingo is the one implemented today."""
-        if name == "tiingo":
-            return TiingoProvider(self.settings.tiingo_api_key, cache_dir=self.settings.cache_dir)
-        raise ValueError(f"unknown provider {name!r}; available: tiingo")
+    def provider(self, name: str = "equibles") -> Provider:
+        """The live Equibles provider built from settings."""
+        if name == "equibles":
+            return EquiblesProvider(self.settings.equibles_api_key, cache_dir=self.settings.cache_dir)
+        raise ValueError(f"unknown provider {name!r}; available: equibles")
 
     def import_provider(
         self,
@@ -84,19 +86,20 @@ class Lab:
         provider: Provider | None = None,
         refresh: bool = False,
         watchlist: str | None = None,
+        timeframe: str = "1h",
     ) -> Snapshot:
-        """Fetch raw history and actions from a provider, adjust them through the same
-        path as the file adapter, and store an immutable snapshot with its provenance.
+        """Fetch raw Equibles bars and splits, adjust, and store a snapshot.
 
-        With ``watchlist``, that list's current members are fetched too. ``symbols`` are
-        added on top. The snapshot records the watchlist version it used. An empty label
-        takes the watchlist's name.
+        ``1d`` is resampled from the hourly bars. Any other timeframe is stored
+        as those bars. Dividends are not requested. An empty label leaves the
+        display name to be read from the source, timeframe, universe and dates.
         """
         syms, wl = self._fetch_symbols(symbols, watchlist)
-        if not label and wl is not None:
-            label = wl["name"]
         prov = provider or self.provider()
-        hist = prov.fetch_history(syms, start, end, refresh=refresh)
+        hist = prov.fetch_history(syms, start, end, refresh=refresh, timeframe=timeframe)
+        if hist.raw.empty:
+            raise ValueError("the provider returned no bars for this request")
+        adjusted = adjust(hist.raw, hist.actions)
         if wl is not None:
             hist.provenance["watchlist"] = {
                 "name": wl["name"],
@@ -104,11 +107,25 @@ class Lab:
                 "label": wl["label"],
                 "created_at": wl["created_at"],
             }
-        return save_snapshot(
-            hist.adjusted(),
+        adjustment = "split_adjusted_from_raw"
+        if timeframe == "1d":
+            return save_snapshot(
+                resample_daily(adjusted),
+                self.settings.snapshot_dir,
+                source=prov.name,
+                adjustment=adjustment,
+                label=label,
+                provenance=hist.provenance,
+                raw=hist.raw,
+                actions=hist.actions,
+                timeframe="1d",
+            )
+        return save_intraday_snapshot(
+            adjusted,
             self.settings.snapshot_dir,
             source=prov.name,
-            adjustment=ACTION_POLICY,
+            timeframe=timeframe,
+            adjustment=adjustment,
             label=label,
             provenance=hist.provenance,
             raw=hist.raw,
@@ -225,13 +242,17 @@ class Lab:
         key = (snapshot_id, tuple(sorted(set(symbols))), start, end)
         if key not in self._data_cache:
             snap = self.snapshot(snapshot_id)
-            self._data_cache[key] = MarketData.build(snap.bars, list(key[1]), start, end)
+            tf = snap.meta.get("timeframe", "1d")
+            self._data_cache[key] = MarketData.build(
+                snap.bars, list(key[1]), start, end, timeframe=tf
+            )
         return self._data_cache[key]
 
     def execute(
         self, resolved: dict[str, Any], snapshot_id: str, parent_id: str | None = None
     ) -> str:
         snap = self.snapshot(snapshot_id)
+        _require_timeframe(resolved, snap)
         data = self.market_data(
             snap.id,
             resolved["universe"] + [resolved["benchmark"]],
@@ -278,6 +299,8 @@ class Lab:
         resolved = [resolve(c, self.settings) for c in configs]
         lap("resolve")
         snap = self.snapshot(snapshot_id)
+        for r in resolved:
+            _require_timeframe(r, snap)
         groups: dict[tuple[str | None, str | None], set[str]] = {}
         for r in resolved:
             groups.setdefault((r["start"], r["end"]), set()).update(
@@ -368,16 +391,19 @@ class Lab:
     ) -> dict[str, Any]:
         """Fetch completed sessions after the account's frontier and ingest them.
 
-        Uses the same Tiingo path as ``fetch_new_sessions``. Corporate actions in the
-        window refuse the advance: start a new run and paper account instead (see
-        docs/paper-trading.md). Duplicate deliveries of already-accepted sessions are
-        recorded as duplicates and do not reprocess.
+        Daily accounts get one event per session date, resampled from hourly bars
+        when the provider returned those bars. Other accounts get one event per
+        grid slot, including an empty slot where nothing traded. A slot that is
+        not yet final is absent from the provider result, and nothing after the
+        last final bar is delivered. A split in the window refuses the advance.
         """
         acct = self.paper.store.account(paper_id)
+        tf = acct["resolved"].get("timeframe") or "1d"
         st = self.paper_status(paper_id)
-        after = date.fromisoformat(st["latest_processed"] or acct["start_session"])
+        frontier = st["latest_processed"] or acct["start_session"]
+        after = date.fromisoformat(str(frontier)[:10])
         prov = provider or self.provider()
-        hist = prov.fetch_sessions(acct["symbols"], after, end)
+        hist = _fetch_sessions(prov, acct["symbols"], after, end, tf)
         actions = hist.actions if not hist.actions.empty else empty_actions()
         if not actions.empty:
             raise ValueError(
@@ -385,26 +411,93 @@ class Lab:
                 "save a new run, and start a new paper account "
                 "(see docs/paper-trading.md)"
             )
-        bars = normalise(hist.raw) if not hist.raw.empty else empty_bars()
+        received_at = datetime.now(UTC).isoformat()
+        bars = _bars_after(hist.raw, frontier, tf)
         if bars.empty:
             return {
                 "paper_id": paper_id,
-                "after": after.isoformat(),
+                "after": frontier,
                 "sessions": [],
                 "ingested": [],
                 "status": self.paper_status(paper_id),
             }
-        received_at = datetime.now(UTC).isoformat()
-        ingested = self.paper_ingest_sessions(paper_id, bars, received_at=received_at)
+        if tf == "1d":
+            ingested = self.paper_ingest_sessions(paper_id, bars, received_at=received_at)
+        else:
+            ingested = _ingest_grid(self, paper_id, bars, frontier, tf, received_at)
         sessions = sorted({r["session"] for r in ingested if r.get("session")})
         return {
             "paper_id": paper_id,
-            "after": after.isoformat(),
+            "after": frontier,
             "sessions": sessions,
             "ingested": ingested,
             "status": self.paper_status(paper_id),
         }
 
 
+def _require_timeframe(resolved: dict[str, Any], snap: Snapshot) -> None:
+    run_tf = resolved.get("timeframe", "1d")
+    snap_tf = snap.meta.get("timeframe", "1d")
+    if run_tf != snap_tf:
+        raise ValueError(
+            f"strategy timeframe {run_tf} does not match snapshot {snap.id} ({snap_tf})"
+        )
+
+
 def _snap_info(snap: Snapshot) -> SnapshotInfo:
     return SnapshotInfo(snap.id, snap.meta["source"], snap.meta["adjustment"])
+
+
+def _fetch_sessions(prov: Provider, symbols: list[str], after: date, end: date | None, timeframe: str) -> Any:
+    try:
+        return prov.fetch_sessions(symbols, after, end, timeframe=timeframe)  # type: ignore[call-arg]
+    except TypeError:
+        return prov.fetch_sessions(symbols, after, end)
+
+
+def _bars_after(raw: pd.DataFrame, frontier: str, timeframe: str) -> pd.DataFrame:
+    """Bars strictly after the frontier. Hourly rows become a daily resample when asked."""
+    if raw is None or raw.empty:
+        return empty_bars()
+    if "bar_start" not in raw.columns:
+        bars = normalise(raw)
+        cutoff = date.fromisoformat(str(frontier)[:10])
+        return bars[bars["date"].dt.date > cutoff].reset_index(drop=True)
+    adjusted = adjust(raw, empty_actions())
+    labels = pd.to_datetime(adjusted["bar_start"]).map(session_label)
+    adjusted = adjusted.loc[labels > frontier].reset_index(drop=True)
+    if adjusted.empty or timeframe != "1d":
+        return adjusted
+    daily = normalise(resample_daily(adjusted))
+    cutoff = date.fromisoformat(str(frontier)[:10])
+    return daily[daily["date"].dt.date > cutoff].reset_index(drop=True)
+
+
+def _ingest_grid(
+    lab: Lab,
+    paper_id: str,
+    bars: pd.DataFrame,
+    frontier: str,
+    timeframe: str,
+    received_at: str,
+) -> list[dict[str, Any]]:
+    from moneylab.paper.desk import next_session
+
+    labels = pd.to_datetime(bars["bar_start"]).map(session_label)
+    horizon = labels.max()
+    ingested: list[dict[str, Any]] = []
+    cur = frontier
+    while True:
+        nxt = next_session(cur, timeframe)
+        if nxt > horizon:
+            break
+        chunk = bars.loc[labels == nxt]
+        if chunk.empty:
+            result = lab.paper.ingest(paper_id, bars.iloc[0:0].copy(), received_at, session=nxt)
+        else:
+            result = lab.paper.ingest(paper_id, chunk, received_at)
+        ingested.append(result.as_dict())
+        if result.status == "rejected":
+            break
+        cur = nxt
+    return ingested

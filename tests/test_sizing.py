@@ -126,6 +126,7 @@ def strategy(universe: list[str], sizing: SizingRule, cash: float) -> StrategyCo
         name="sizing fixture",
         universe=universe,
         benchmark=universe[0],
+        timeframe="1d",
         entry=[ALWAYS],
         exit=ExitRule(kind="holding_period", params={"sessions": 50}),
         portfolio=PortfolioSettings(

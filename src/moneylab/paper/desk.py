@@ -31,12 +31,23 @@ from typing import Any
 import exchange_calendars as xcals
 import pandas as pd
 
+from moneylab.data.bars import (
+    label_in_range,
+    minutes_of,
+    on_grid,
+    regular_starts,
+    session_label,
+)
 from moneylab.data.snapshot import (
     COLUMNS,
+    INTRADAY_COLUMNS,
     MarketData,
     content_id,
+    intraday_content_id,
     load_snapshot,
     normalise,
+    normalise_intraday,
+    save_intraday_snapshot,
     save_snapshot,
 )
 from moneylab.engine.config import VersionMismatch, check_versions
@@ -81,9 +92,59 @@ def xnys_sessions(lo: str | pd.Timestamp, hi: str | pd.Timestamp) -> list[str]:
     return [t.date().isoformat() for t in idx]
 
 
-def next_session(session: str) -> str:
-    t = pd.Timestamp(session)
-    return xnys_sessions(t + timedelta(days=1), t + timedelta(days=15))[0]
+def account_timeframe(resolved: dict[str, Any]) -> str:
+    return str(resolved.get("timeframe") or "1d")
+
+
+def next_session(session: str, timeframe: str = "1d") -> str:
+    """Next session id. Daily accounts step by NYSE date. Others step one grid slot."""
+    if timeframe == "1d":
+        t = pd.Timestamp(session[:10])
+        return xnys_sessions(t + timedelta(days=1), t + timedelta(days=15))[0]
+    minutes = minutes_of(timeframe)
+    ts = datetime.fromisoformat(session)
+    labels = [session_label(s) for s in regular_starts(ts.date(), minutes)]
+    if session in labels:
+        i = labels.index(session)
+        if i + 1 < len(labels):
+            return labels[i + 1]
+    nxt = xnys_sessions(
+        pd.Timestamp(ts.date()) + timedelta(days=1), pd.Timestamp(ts.date()) + timedelta(days=15)
+    )[0]
+    return session_label(regular_starts(date.fromisoformat(nxt), minutes)[0])
+
+
+def is_bar_session(session: str, timeframe: str = "1d") -> bool:
+    if timeframe == "1d":
+        return is_session(session[:10])
+    if "T" not in session:
+        return False
+    try:
+        ts = datetime.fromisoformat(session)
+    except ValueError:
+        return False
+    return on_grid(ts, minutes_of(timeframe)) and is_session(ts.date().isoformat())
+
+
+def grid_labels(first: str, last: str, timeframe: str) -> list[str]:
+    """Session ids from ``first`` through ``last`` inclusive, on this timeframe's grid."""
+    if timeframe == "1d":
+        return xnys_sessions(first[:10], last[:10])
+    minutes = minutes_of(timeframe)
+    out: list[str] = []
+    for day in xnys_sessions(first[:10], last[:10]):
+        for start in regular_starts(date.fromisoformat(day), minutes):
+            label = session_label(start)
+            if label_in_range(label, first, last):
+                out.append(label)
+    return out
+
+
+def last_slot_on_or_before(d: str | date, timeframe: str) -> str:
+    if timeframe == "1d":
+        return last_session_on_or_before(d)
+    sess = last_session_on_or_before(d)
+    return session_label(regular_starts(date.fromisoformat(sess), minutes_of(timeframe))[-1])
 
 
 def last_session_on_or_before(d: str | date) -> str:
@@ -104,8 +165,54 @@ def canonical_csv(df: pd.DataFrame) -> str:
     return df.to_csv(index=False, float_format="%.6f", date_format="%Y-%m-%d")
 
 
-def parse_event(content: str) -> pd.DataFrame:
-    return normalise(pd.read_csv(io.StringIO(content)))
+def parse_event(content: str, timeframe: str = "1d") -> pd.DataFrame:
+    if content.startswith("session,"):
+        cols = COLUMNS if timeframe == "1d" else INTRADAY_COLUMNS
+        return pd.DataFrame(columns=cols)
+    frame = pd.read_csv(io.StringIO(content))
+    if timeframe == "1d":
+        return normalise(frame)
+    return normalise_intraday(frame)
+
+
+def _intraday_csv(df: pd.DataFrame) -> str:
+    view = df[INTRADAY_COLUMNS].copy()
+    view["bar_start"] = pd.to_datetime(view["bar_start"]).dt.strftime("%Y-%m-%dT%H:%M")
+    view["date"] = pd.to_datetime(view["date"]).dt.strftime("%Y-%m-%d")
+    return view.to_csv(index=False, float_format="%.6f")
+
+
+def _prepare_intraday(
+    frame: pd.DataFrame,
+    symbols: list[str],
+    timeframe: str,
+    session: str | None,
+    raw: str,
+    raw_id: str,
+) -> tuple[pd.DataFrame | None, str, str | None, str, str]:
+    if frame.empty:
+        if not session:
+            return None, raw_id, None, "empty event", raw
+        content = f"session,{session}\n"
+        eid = hashlib.sha256(content.encode()).hexdigest()[:16]
+        return pd.DataFrame(columns=INTRADAY_COLUMNS), eid, session, "", content
+    if "bar_start" not in frame.columns:
+        return None, raw_id, None, "missing column(s) ['bar_start']", raw
+    try:
+        df = normalise_intraday(frame)
+    except (ValueError, TypeError) as e:
+        return None, raw_id, None, f"invalid bars: {e}", raw
+    starts = sorted({session_label(t) for t in pd.to_datetime(df["bar_start"])})
+    if len(starts) != 1:
+        return None, raw_id, None, f"an event holds one session, got {len(starts)}", raw
+    slot = starts[0]
+    if not is_bar_session(slot, timeframe):
+        return None, raw_id, slot, f"{slot} is not on the {timeframe} grid", raw
+    df = df[df["symbol"].isin(symbols)].reset_index(drop=True)
+    content = _intraday_csv(df) if not df.empty else raw
+    if df.empty:
+        return None, raw_id, slot, "no bars for this account's symbols", content
+    return df, intraday_content_id(df), slot, "", content
 
 
 def _plain(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -218,30 +325,62 @@ class PaperDesk:
         check_versions(resolved)
         snap = load_snapshot(run["snapshot_id"], self.settings.snapshot_dir)
         symbols = sorted(set(resolved["universe"]) | {resolved["benchmark"]})
+        tf = account_timeframe(resolved)
         first = run["resolved"]["data"]["first_session"]
-        snap_last = snap.bars["date"].max().date().isoformat()
-        start = last_session_on_or_before(start_date or snap_last)
-        if start > snap_last:
-            raise ValueError(
-                f"start {start} is after the snapshot's last bar {snap_last}; "
-                "the history must cover the start session"
-            )
-        if start < first:
-            raise ValueError(f"start {start} is before the run's first session {first}")
         bars = snap.bars
-        hist = bars[
-            bars["symbol"].isin(symbols)
-            & (bars["date"] >= pd.Timestamp(first))
-            & (bars["date"] <= pd.Timestamp(start))
-        ]
-        history = save_snapshot(
-            hist,
-            self.history_dir,
-            source=f"paper-history:{snap.id}",
-            adjustment=snap.meta["adjustment"],
-            label=f"{snap.id} from {first} to {start}",
-        )
-        data = MarketData.build(history.bars, symbols, first, start)  # validates coverage
+        if tf == "1d":
+            snap_last = bars["date"].max().date().isoformat()
+            start = last_session_on_or_before(start_date or snap_last)
+            if start > snap_last:
+                raise ValueError(
+                    f"start {start} is after the snapshot's last bar {snap_last}; "
+                    "the history must cover the start session"
+                )
+            if start < first:
+                raise ValueError(f"start {start} is before the run's first session {first}")
+            hist = bars[
+                bars["symbol"].isin(symbols)
+                & (bars["date"] >= pd.Timestamp(first))
+                & (bars["date"] <= pd.Timestamp(start))
+            ]
+            history = save_snapshot(
+                hist,
+                self.history_dir,
+                source=f"paper-history:{snap.id}",
+                adjustment=snap.meta["adjustment"],
+                label=f"{snap.id} from {first} to {start}",
+            )
+        else:
+            if "bar_start" not in bars.columns:
+                raise ValueError(f"snapshot {snap.id} has no bar_start column for {tf}")
+            last_bar = session_label(pd.to_datetime(bars["bar_start"]).max())
+            if start_date is None:
+                start = last_bar
+            elif "T" in str(start_date):
+                start = str(start_date)[:16]
+            else:
+                start = last_slot_on_or_before(start_date, tf)
+            if start > last_bar:
+                raise ValueError(
+                    f"start {start} is after the snapshot's last bar {last_bar}; "
+                    "the history must cover the start session"
+                )
+            if start < first:
+                raise ValueError(f"start {start} is before the run's first session {first}")
+            labels = pd.to_datetime(bars["bar_start"]).map(session_label)
+            hist = bars[
+                bars["symbol"].isin(symbols)
+                & labels.map(lambda s: label_in_range(s, first, start))
+            ].copy()
+            history = save_intraday_snapshot(
+                hist,
+                self.history_dir,
+                source=f"paper-history:{snap.id}",
+                timeframe=tf,
+                adjustment=snap.meta["adjustment"],
+                label=f"{snap.id} from {first} to {start}",
+            )
+        data = MarketData.build(history.bars, symbols, first, start, timeframe=tf)
         acc = Account(resolved)
         acc.last_index = len(data.sessions) - 1  # history sessions count as processed
         paper_id = "paper-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
@@ -267,14 +406,25 @@ class PaperDesk:
 
     # Ingest ---------------------------------------------------------------------------
     def ingest(
-        self, paper_id: str, frame: pd.DataFrame, received_at: str | None = None
+        self,
+        paper_id: str,
+        frame: pd.DataFrame,
+        received_at: str | None = None,
+        session: str | None = None,
     ) -> IngestResult:
-        """Record one delivered session and process whatever is now ready."""
+        """Record one delivered session and process whatever is now ready.
+
+        ``session`` names an empty grid slot. An empty hour is accepted so the
+        account can advance through a slot where nothing traded.
+        """
         acct = self.store.account(paper_id)
+        tf = account_timeframe(acct["resolved"])
         now = datetime.now(UTC).isoformat()
-        df, event_id, session, why, content = self._prepare(frame, acct["symbols"])
+        df, event_id, session, why, content = self._prepare(
+            frame, acct["symbols"], timeframe=tf, session=session
+        )
         if df is not None and session is not None and not why:
-            if not is_session(session):
+            if not is_bar_session(session, tf):
                 why = f"{session} is not an XNYS session"
             elif session <= acct["start_session"]:
                 why = f"{session} is part of the history (start {acct['start_session']})"
@@ -303,7 +453,7 @@ class PaperDesk:
                 else:
                     status = CONFLICT
                     detail = f"differs from accepted event {prev['event_id']}: " + _frame_diff(
-                        parse_event(prev["content"]), df
+                        parse_event(prev["content"], tf), df
                     )
             self.store.insert_event(c, paper_id, {**ev, "status": status, "detail": detail})
         processed, blocked = self.process(paper_id)
@@ -316,7 +466,15 @@ class PaperDesk:
     def ingest_sessions(
         self, paper_id: str, frame: pd.DataFrame, received_at: str | None = None
     ) -> list[IngestResult]:
-        """Split a multi-session frame by date and ingest each session in date order."""
+        """Split a multi-session frame and ingest each session in order."""
+        acct = self.store.account(paper_id)
+        tf = account_timeframe(acct["resolved"])
+        if tf != "1d" and "bar_start" in frame.columns and not frame.empty:
+            labels = pd.to_datetime(frame["bar_start"]).map(session_label)
+            return [
+                self.ingest(paper_id, frame.loc[labels == lab].copy(), received_at)
+                for lab in sorted(set(labels))
+            ]
         dates = pd.to_datetime(frame["date"]).dt.normalize()
         return [
             self.ingest(paper_id, frame[dates == d], received_at) for d in sorted(dates.unique())
@@ -324,11 +482,16 @@ class PaperDesk:
 
     @staticmethod
     def _prepare(
-        frame: pd.DataFrame, symbols: list[str]
+        frame: pd.DataFrame,
+        symbols: list[str],
+        timeframe: str = "1d",
+        session: str | None = None,
     ) -> tuple[pd.DataFrame | None, str, str | None, str, str]:
         """(normalised bars | None, event id, session | None, rejection reason, content)."""
         raw = frame.to_csv(index=False)
         raw_id = hashlib.sha256(raw.encode()).hexdigest()[:16]
+        if timeframe != "1d":
+            return _prepare_intraday(frame, symbols, timeframe, session, raw, raw_id)
         missing = [c for c in COLUMNS if c not in frame.columns]
         if missing:
             return None, raw_id, None, f"missing column(s) {missing}", raw
@@ -359,7 +522,7 @@ class PaperDesk:
         while True:
             last = self.store.last_session(paper_id)
             prev = last["session"] if last else None
-            nxt = next_session(prev or acct["start_session"])
+            nxt = next_session(prev or acct["start_session"], account_timeframe(acct["resolved"]))
             events = self.store.accepted_events(paper_id)
             if nxt not in events:
                 return done, None
@@ -390,25 +553,32 @@ class PaperDesk:
             self._history[sid] = load_snapshot(sid, self.history_dir).bars
         return self._history[sid]
 
-    def _event_bars(self, event: dict[str, Any]) -> pd.DataFrame:
+    def _event_bars(self, event: dict[str, Any], timeframe: str = "1d") -> pd.DataFrame:
         """Parsed bars of an accepted event (immutable: keyed by its content hash)."""
         eid = event["event_id"]
         if eid not in self._events:
-            self._events[eid] = parse_event(event["content"])
+            self._events[eid] = parse_event(event["content"], timeframe)
         return self._events[eid]
 
     def _input_bars(self, acct: dict[str, Any], events: list[dict[str, Any]]) -> pd.DataFrame:
-        frames = [self._history_bars(acct)] + [self._event_bars(e) for e in events]
-        return normalise(pd.concat(frames, ignore_index=True))
+        tf = account_timeframe(acct["resolved"])
+        frames = [self._history_bars(acct)] + [self._event_bars(e, tf) for e in events]
+        combined = pd.concat(frames, ignore_index=True)
+        if tf == "1d":
+            return normalise(combined)
+        return normalise_intraday(combined)
 
     def _step(
         self, acct: dict[str, Any], acc: Account, events: list[dict[str, Any]], session: str
     ) -> dict[str, Any]:
         """Run the engine's own ``Account.step`` for one session on the recorded input."""
         bars = self._input_bars(acct, events)
+        tf = account_timeframe(acct["resolved"])
         n_dec, n_fill, n_eq = len(acc.decisions), len(acc.fills), len(acc.equity_rows)
-        data = MarketData.build(bars, acct["symbols"], acct["first_session"], session)
-        if data.sessions[-1].date().isoformat() != session:
+        data = MarketData.build(
+            bars, acct["symbols"], acct["first_session"], session, timeframe=tf
+        )
+        if session_label(data.sessions[-1]) != session:
             raise RuntimeError(f"input for {session} does not end on that session")
         view = MarketView.build(acct["resolved"], data)
         idx = len(view.sessions) - 1
@@ -416,7 +586,7 @@ class PaperDesk:
         return {
             "idx": idx,
             "event_id": events[-1]["event_id"],
-            "input_content_id": content_id(bars),
+            "input_content_id": content_id(bars) if tf == "1d" else intraday_content_id(bars),
             "input": {
                 "history_snapshot_id": acct["history_snapshot_id"],
                 "event_ids": [e["event_id"] for e in events],
@@ -440,7 +610,9 @@ class PaperDesk:
         rec = next(s for s in self.store.sessions(paper_id) if s["session"] == session)
         by_id = {e["event_id"]: e for e in self.store.events(paper_id, ACCEPTED)}
         bars = self._input_bars(acct, [by_id[i] for i in rec["input"]["event_ids"]])
-        if content_id(bars) != rec["input_content_id"]:
+        tf = account_timeframe(acct["resolved"])
+        got = content_id(bars) if tf == "1d" else intraday_content_id(bars)
+        if got != rec["input_content_id"]:
             raise RuntimeError(f"input for {session} no longer matches its recorded hash")
         return bars
 
@@ -463,6 +635,7 @@ class PaperDesk:
         latest = last["session"] if last else None
         state = last["state"] if last else acct["initial_state"]
         cur = latest or acct["start_session"]
+        tf = account_timeframe(acct["resolved"])
         events = self.store.events(paper_id)
         accepted = {e["session"] for e in events if e["status"] == ACCEPTED}
         seen = [
@@ -471,12 +644,16 @@ class PaperDesk:
             if e["session"] and e["status"] in (ACCEPTED, CONFLICT) and e["session"] > cur
         ]
         if as_of is not None:
-            seen.append(last_session_on_or_before(as_of))
+            seen.append(last_slot_on_or_before(as_of, tf))
         horizon = max(seen) if seen else cur
-        expected = xnys_sessions(pd.Timestamp(cur) + timedelta(days=1), horizon)
+        if tf == "1d":
+            expected = xnys_sessions(pd.Timestamp(cur) + timedelta(days=1), horizon)
+            days = xnys_sessions(acct["first_session"], cur)
+        else:
+            expected = [s for s in grid_labels(acct["first_session"], horizon, tf) if s > cur]
+            days = grid_labels(acct["first_session"], cur, tf)
         missing = [s for s in expected if s not in accepted]
         waiting = [s for s in expected if s in accepted]
-        days = xnys_sessions(acct["first_session"], cur)
         equity = self.store.ledger_rows(paper_id, "equity")
         try:
             check_versions(acct["resolved"])
@@ -490,7 +667,7 @@ class PaperDesk:
             "start_session": acct["start_session"],
             "latest_processed": latest,
             "processed_sessions": len(sessions),
-            "next_expected": next_session(cur),
+            "next_expected": next_session(cur, tf),
             "cash": state["cash"],
             "equity": equity[-1]["equity"] if equity else state["cash"],
             "positions": {

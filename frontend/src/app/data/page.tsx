@@ -261,7 +261,7 @@ export default function DataPage() {
 
       {last ? (
         <p className="notice">
-          Imported <strong>{last.label}</strong>: {int(last.rows)} rows, {last.symbols.length} symbols, {last.first_date}{" "}
+          Imported <strong>{last.name}</strong>: {int(last.rows)} rows, {last.symbols.length} symbols, {last.first_date}{" "}
           to {last.last_date}.
         </p>
       ) : null}
@@ -290,7 +290,7 @@ export default function DataPage() {
                 {snaps.data.map((s) => (
                   <tr key={s.id}>
                     <td>
-                      {s.label}
+                      {s.name}
                       <div className="muted small">
                         <code>{s.id}</code>
                       </div>

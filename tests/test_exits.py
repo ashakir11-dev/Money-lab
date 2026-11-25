@@ -41,6 +41,7 @@ def strategy(exits: list[ExitRule], universe: list[str] | None = None) -> Strate
         name="exit fixture",
         universe=universe,
         benchmark=universe[-1],
+        timeframe="1d",
         entry=[
             Condition(kind="threshold", indicator=CLOSE, params={"op": "above", "value": 9.5}),
             Condition(kind="threshold", indicator=CLOSE, params={"op": "below", "value": 10.5}),

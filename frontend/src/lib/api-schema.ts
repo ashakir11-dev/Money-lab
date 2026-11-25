@@ -867,6 +867,8 @@ export interface components {
             sharpe: number | null;
             /** Snapshot Id */
             snapshot_id: string;
+            /** Snapshot Name */
+            snapshot_name: string;
             /**
              * Source Kind
              * @enum {string}
@@ -913,6 +915,8 @@ export interface components {
             sharpe: number | null;
             /** Snapshot Id */
             snapshot_id: string;
+            /** Snapshot Name */
+            snapshot_name: string;
             /**
              * Source Kind
              * @enum {string}
@@ -964,6 +968,11 @@ export interface components {
             label: string;
             /** Last Date */
             last_date: string;
+            /**
+             * Name
+             * @description typed label, or source, timeframe, universe and dates
+             */
+            name: string;
             /** Rows */
             rows: number;
             /** Source */
@@ -1008,6 +1017,12 @@ export interface components {
             sizing?: components["schemas"]["SizingRule"] | null;
             /** Start */
             start?: string | null;
+            /**
+             * Timeframe
+             * @default 1h
+             * @enum {string}
+             */
+            timeframe: "1min" | "5min" | "15min" | "30min" | "1h" | "1d";
             /** Universe */
             universe: string[];
         };

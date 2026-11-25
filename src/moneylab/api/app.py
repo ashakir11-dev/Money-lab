@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from moneylab import ENGINE_VERSION
 from moneylab.api.jobs import Job, JobRunner
 from moneylab.components.registry import list_components
-from moneylab.data.snapshot import list_snapshots, read_import_file
+from moneylab.data.snapshot import list_snapshots, read_import_file, snapshot_name
 from moneylab.describe import data_source, strategy_summary
 from moneylab.engine.config import StrategyConfig, VersionMismatch, check_versions
 from moneylab.service import Lab
@@ -105,6 +105,7 @@ class SnapshotOut(BaseModel):
     source_kind: Literal["real", "demo", "file"]
     source_label: str
     label: str
+    name: str = Field(description="typed label, or source, timeframe, universe and dates")
     adjustment: str
     created_at: str
     symbols: list[str]
@@ -127,7 +128,7 @@ class WatchlistOut(BaseModel):
     created_at: str
 
 
-class TiingoImport(BaseModel):
+class EquiblesImport(BaseModel):
     """Symbols to fetch. A watchlist's current members are included too; ``symbols``
     are added on top (use that for the benchmark, usually SPY)."""
 
@@ -136,9 +137,10 @@ class TiingoImport(BaseModel):
     start: date
     end: date
     label: str = ""
+    timeframe: Literal["1min", "5min", "15min", "30min", "1h", "1d"] = "1h"
 
     @model_validator(mode="after")
-    def _has_a_feed(self) -> TiingoImport:
+    def _has_a_feed(self) -> EquiblesImport:
         named = bool(self.watchlist and self.watchlist.strip())
         typed = any(s.strip() for s in self.symbols)
         if not named and not typed:
@@ -183,6 +185,7 @@ class RunSummary(BaseModel):
     created_at: str
     status: str
     snapshot_id: str
+    snapshot_name: str
     source_kind: Literal["real", "demo", "file"]
     source_label: str
     summary: str
@@ -297,6 +300,7 @@ def _snapshot_out(meta: dict[str, Any]) -> SnapshotOut:
         source_kind=ds.kind,
         source_label=ds.badge,
         label=meta.get("label", ""),
+        name=snapshot_name(meta),
         adjustment=meta.get("adjustment", ""),
         created_at=meta.get("created_at", ""),
         symbols=meta.get("symbols", []),
@@ -306,11 +310,18 @@ def _snapshot_out(meta: dict[str, Any]) -> SnapshotOut:
     )
 
 
+def _snapshot_name_for(lab: Lab, snapshot_id: str) -> str:
+    try:
+        return snapshot_name(lab.snapshot(snapshot_id).meta)
+    except (OSError, ValueError, KeyError):
+        return snapshot_id
+
+
 def _num(v: Any) -> float | None:
     return float(v) if isinstance(v, int | float) and math.isfinite(v) else None
 
 
-def _summary(row: dict[str, Any], full: dict[str, Any]) -> dict[str, Any]:
+def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> dict[str, Any]:
     m = full.get("metrics") or {}
     res = full.get("resolved") or {}
     ds = data_source((res.get("data") or {}).get("source"))
@@ -322,6 +333,7 @@ def _summary(row: dict[str, Any], full: dict[str, Any]) -> dict[str, Any]:
         "created_at": row["created_at"],
         "status": row["status"],
         "snapshot_id": row["snapshot_id"],
+        "snapshot_name": snapshot_name,
         "source_kind": ds.kind,
         "source_label": ds.badge,
         "summary": strategy_summary(res),
@@ -340,7 +352,7 @@ def _detail(lab: Lab, run_id: str) -> RunDetail:
     except KeyError:
         raise HTTPException(404, f"run {run_id} not found") from None
     return RunDetail(
-        **_summary(full, full),
+        **_summary(full, full, _snapshot_name_for(lab, full["snapshot_id"])),
         engine_version=full["engine_version"],
         config_hash=full["config_hash"],
         finished_at=full.get("finished_at"),
@@ -443,9 +455,9 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     def snapshots() -> list[SnapshotOut]:
         return [_snapshot_out(m) for m in list_snapshots(lab.settings.snapshot_dir)]
 
-    @app.post("/api/snapshots/tiingo", response_model=SnapshotOut, tags=["data"])
-    def import_tiingo(body: TiingoImport) -> SnapshotOut:
-        """Fetch daily bars, splits and dividends from Tiingo. The key stays on the server."""
+    @app.post("/api/snapshots/equibles", response_model=SnapshotOut, tags=["data"])
+    def import_equibles(body: EquiblesImport) -> SnapshotOut:
+        """Fetch raw bars and splits from Equibles. The key stays on the server."""
         try:
             snap = lab.import_provider(
                 body.symbols,
@@ -453,6 +465,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
                 body.end,
                 label=body.label,
                 watchlist=body.watchlist,
+                timeframe=body.timeframe,
             )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
@@ -481,7 +494,14 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     # Runs ----------------------------------------------------------------------------
     @app.get("/api/runs", response_model=list[RunSummary], tags=["runs"])
     def runs() -> list[dict[str, Any]]:
-        return [_summary(r, lab.store.get(r["id"])) for r in lab.store.list_runs()]
+        names: dict[str, str] = {}
+        out = []
+        for row in lab.store.list_runs():
+            full = lab.store.get(row["id"])
+            sid = full["snapshot_id"]
+            names.setdefault(sid, _snapshot_name_for(lab, sid))
+            out.append(_summary(row, full, names[sid]))
+        return out
 
     @app.post("/api/runs", response_model=JobOut, status_code=202, tags=["runs"])
     def submit_run(body: RunSubmit) -> JobOut:
@@ -641,19 +661,16 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
 
     @app.post("/api/paper/{paper_id}/fetch", response_model=list[dict[str, Any]], tags=["paper"])
     def paper_fetch(paper_id: str) -> list[dict[str, Any]]:
-        """Fetch the sessions newer than the account's snapshot from Tiingo and deliver them."""
+        """Fetch completed bars after the account's frontier from Equibles and deliver them."""
         try:
-            acct = lab.paper.store.account(paper_id)
+            lab.paper.store.account(paper_id)
         except KeyError:
             raise HTTPException(404, f"paper account {paper_id} not found") from None
         try:
-            new = lab.fetch_new_sessions(acct["snapshot_id"])
+            out = lab.paper_advance(paper_id)
         except Exception as exc:  # provider errors are shown to the person
             raise HTTPException(400, f"{type(exc).__name__}: {exc}") from exc
-        if new.bars.empty:
-            return []
-        out: list[dict[str, Any]] = jsonable(lab.paper_ingest_sessions(paper_id, new.bars))
-        return out
+        return out["ingested"]
 
     @app.post("/api/paper/{paper_id}/replay", response_model=dict[str, Any], tags=["paper"])
     def paper_replay(paper_id: str) -> dict[str, Any]:

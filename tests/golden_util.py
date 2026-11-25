@@ -75,6 +75,7 @@ def configs(universe: list[str]) -> list[StrategyConfig]:
             name=n,
             universe=universe,
             benchmark="SPY",
+            timeframe="1d",
             entry=e,
             exit=x,
             portfolio=PortfolioSettings(**p),

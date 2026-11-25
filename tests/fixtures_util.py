@@ -62,6 +62,7 @@ def level_strategy(
         name="fixture",
         universe=universe,
         benchmark=universe[0],
+        timeframe="1d",
         entry=[
             Condition(
                 kind="threshold",

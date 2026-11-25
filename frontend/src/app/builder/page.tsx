@@ -412,7 +412,7 @@ function Builder() {
               <select id="snap" data-testid="builder-snapshot" value={snapshot} onChange={(e) => pickSnapshot(e.target.value)}>
                 {(snaps.data ?? []).map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.source_label} · {s.first_date} to {s.last_date}
+                    {s.name}
                   </option>
                 ))}
               </select>

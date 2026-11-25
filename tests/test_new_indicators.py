@@ -288,6 +288,7 @@ def strategy(entry: list[Condition], hold: int = 2) -> StrategyConfig:
         name="fixture",
         universe=["XA"],
         benchmark="XA",
+        timeframe="1d",
         entry=entry,
         exit=ExitRule(params={"sessions": hold}),
         portfolio=PortfolioSettings(starting_cash=1000, target_allocation=0.5, cost_bps_per_side=0),

@@ -55,6 +55,21 @@ def _run(c: TestClient, sid: str, threshold: float, parent: str | None = None) -
     return str(job["run_ids"][0])
 
 
+def test_unlabelled_csv_snapshot_names_itself(client: TestClient) -> None:
+    r = client.post(
+        "/api/snapshots/csv",
+        json={"csv": Path(FIXTURE).read_text(), "filename": Path(FIXTURE).name},
+    )
+    assert r.status_code == 200, r.text
+    snap = r.json()
+    assert snap["label"] == ""
+    assert snap["name"] == (
+        "file:rsi_divergence.csv · 1d · AAA, BBB, CCC, DDD + 1 · 2023-01-03 → 2023-06-30"
+    )
+    detail = client.get(f"/api/runs/{_run(client, snap['id'], 30)}").json()
+    assert detail["snapshot_name"] == snap["name"]
+
+
 def test_health_and_component_schemas(client: TestClient) -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     comps = {c["id"]: c for c in client.get("/api/components").json()}
