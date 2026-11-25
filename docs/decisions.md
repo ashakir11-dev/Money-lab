@@ -117,6 +117,14 @@ each, declared with an id, version, typed parameters, defaults and limits
   highest close since the fill) and the close; never a later price. The single `exit`
   field still works and means a list of one; the resolved settings keep `exit` (the
   first rule) next to `exits` so older readers are unaffected.
+* **Price-level exits** (`components/exits.py`, each 1.0.0 with one `pct` fraction,
+  0.001 to 0.9): `stop_loss` (default 0.08) fires when close <= entry price x (1 - pct);
+  `take_profit` (default 0.15) when close >= entry price x (1 + pct); `trailing_stop`
+  (default 0.10) when close <= peak close x (1 - pct). The entry price is the fill price
+  and the peak close is the highest close from the fill session through this one. The
+  level is rounded to 10 decimals so a close exactly at it always fires. Checked at the
+  close and sold at the next open like every decision, so a gap down sells at that lower
+  open; a session with no bar never fires.
 * **Sizing.** `sizing` names a registered rule (default `percent_of_equity`, exactly
   the 0.2.0 formula). A rule returns whole shares from the decision close, the equity at
   that close and any indicators it declares it needs.
