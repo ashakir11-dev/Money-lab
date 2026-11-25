@@ -1206,6 +1206,14 @@ pre.json {
 .stack-block h2 {
   margin-bottom: 12px;
 }
+.stack-block .sub-head {
+  margin: 16px 0 4px;
+  font-size: 0.95em;
+}
+.stack-block .cond + .cond,
+.stack-block .source-row + .cond {
+  margin-top: 8px;
+}
 .date-range {
   display: grid;
   grid-template-columns: 1fr 1fr;

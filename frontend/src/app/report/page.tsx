@@ -17,7 +17,7 @@ import {
   roundTrips,
   timeInMarket,
 } from "@/lib/analysis";
-import { api, waitForJob, type DecisionRow, type Job, type RunMetrics, type RunSummary } from "@/lib/api";
+import { api, waitForJob, type DecisionRow, type Job, type RunMetrics, type RunSummary, type Watchlist } from "@/lib/api";
 import { int, money, pct, pp, sharpe, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 
@@ -113,8 +113,14 @@ function ReportView() {
   const r = run.data;
   const m = r.metrics as RunMetrics;
   const b = m.benchmark ?? {};
-  const resolved = r.resolved as { benchmark?: string; portfolio?: { starting_cash?: number }; exit?: { kind?: string } };
+  const resolved = r.resolved as {
+    benchmark?: string;
+    portfolio?: { starting_cash?: number };
+    exit?: { kind?: string };
+    watchlist?: Watchlist;
+  };
   const benchName = resolved.benchmark ?? "Benchmark";
+  const wl = resolved.watchlist;
   const eq = equity.data ?? [];
   const fillRows = fills.data ?? [];
   const br = fillBreakdown(fillRows);
@@ -258,6 +264,23 @@ function ReportView() {
         <p className="caption">
           In market {pct(inMkt)} of sessions · {benchName} stayed in. Drawdown {pct(m.max_drawdown)} vs{" "}
           {pct(b.max_drawdown)} on {benchName}.
+        </p>
+        <p className="caption">
+          Open positions at the end: {int(m.open_positions ?? 0)}
+          {b.invested_session ? (
+            <>
+              {" "}
+              · {benchName} bought {int(b.shares)} {b.shares === 1 ? "share" : "shares"} at the {b.invested_session} open for {money(b.price)} each ({money((b.shares ?? 0) * (b.price ?? 0))} invested,{" "}
+              {money(b.cost)} in trading costs, {money(b.cash_left)} cash left)
+            </>
+          ) : null}
+          {wl?.created_at ? (
+            <>
+              {" "}
+              · Watchlist {wl.name} v{wl.version} selected {wl.created_at.slice(0, 10)}: a list chosen today describes past
+              performance of today&apos;s picks
+            </>
+          ) : null}
         </p>
       </section>
 

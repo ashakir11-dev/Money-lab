@@ -76,10 +76,36 @@ def exit_text(ex: dict[str, Any]) -> str:
         sig = " or ".join(condition_text(c) for c in conds) or "a signal fires"
         cap = params.get("max_sessions")
         return f"when {sig}" + (f" or after {cap} sessions" if cap else "")
+    pct = params.get("pct")
+    if isinstance(pct, int | float):
+        if kind == "stop_loss":
+            return f"on a {pct * 100:.4g}% stop loss"
+        if kind == "take_profit":
+            return f"at a {pct * 100:.4g}% profit target"
+        if kind == "trailing_stop":
+            return f"on a {pct * 100:.4g}% trailing stop"
     args = ", ".join(
         f"{k}={v:g}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items()
     )
     return f"on {kind}" + (f" ({args})" if args else "")
+
+
+def _sizing_text(resolved: dict[str, Any]) -> str:
+    alloc = (resolved.get("portfolio") or {}).get("target_allocation")
+    sz = resolved.get("sizing") or {}
+    p = sz.get("params") or {}
+    sid = sz.get("id") or "percent_of_equity"
+    if sid == "fixed_dollar" and isinstance(p.get("amount"), int | float):
+        return f", ${p['amount']:,.0f} per position"
+    if sid == "volatility" and isinstance(p.get("risk_fraction"), int | float):
+        cap = f", capped at {alloc:.0%} of equity" if isinstance(alloc, int | float) else ""
+        return (
+            f", sized to risk {p['risk_fraction']:.2%} of equity over "
+            f"{p.get('atr_multiple', 2):g}x ATR({p.get('atr_length', 14)}){cap}"
+        )
+    if sid != "percent_of_equity":
+        return f", sized by {sid}"
+    return f", {alloc:.0%} of equity per position" if isinstance(alloc, int | float) else ""
 
 
 def strategy_summary(resolved: dict[str, Any]) -> str:
@@ -90,9 +116,12 @@ def strategy_summary(resolved: dict[str, Any]) -> str:
     exits = resolved.get("exits") or [resolved.get("exit") or {}]
     leave = ", or ".join(exit_text(ex) for ex in exits)
     uni = resolved.get("universe") or []
-    pf = resolved.get("portfolio") or {}
-    alloc = pf.get("target_allocation")
-    sizing = f", {alloc:.0%} of equity per position" if isinstance(alloc, int | float) else ""
+    sizing = _sizing_text(resolved)
+    rank = resolved.get("rank_by")
+    ranked = ""
+    if rank and rank.get("indicator"):
+        first = "lowest" if rank.get("order", "ascending") == "ascending" else "highest"
+        ranked = f" Candidates are taken {first} {_indicator(rank['indicator'])} first."
     fill = resolved.get("entry_fill") or {}
     kind = fill.get("kind") or "next_open"
     if kind == "dip":
@@ -105,5 +134,5 @@ def strategy_summary(resolved: dict[str, Any]) -> str:
     return (
         f"Buy when {enter}{how}; sell {leave}. "
         f"Trades {len(uni)} symbol{'s' if len(uni) != 1 else ''} against "
-        f"{resolved.get('benchmark', '?')}{sizing}."
+        f"{resolved.get('benchmark', '?')}{sizing}.{ranked}"
     )

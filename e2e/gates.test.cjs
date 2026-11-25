@@ -164,6 +164,45 @@ test("builder: crossings offer only price-unit indicators; MACD fast >= slow is 
   assert.deepEqual(errors.filter((e) => !/status of 422/.test(e)), []);
 });
 
+test("builder: building blocks (two-line cross, stop loss, trailing stop, volatility sizing, ranking) reach the run", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/builder?from=${original}`);
+  await page.getByTestId("add-condition").click();
+  const last = page.locator('[data-testid^="condition-"]').last();
+  await last.getByTestId("kind-select").selectOption("indicator_cross");
+  await last.getByTestId("indicator-select").selectOption("ema");
+  await last.getByTestId("other-indicator-select").selectOption("sma");
+  await page.getByTestId("exit-rule-stop_loss").click();
+  await page.getByTestId("exit-stop_loss-pct").fill("5");
+  await page.getByTestId("exit-rule-trailing_stop").click();
+  await page.getByTestId("sizing-volatility").click();
+  await page.getByTestId("rank-on").click();
+  await page.getByTestId("rank-indicator").selectOption("rsi");
+  await page.getByTestId("builder-summary").waitFor();
+  await page.getByTestId("run-backtest").click();
+  const open = page.getByTestId("open-new-run");
+  await open.waitFor({ timeout: 60000 });
+  const id = new URL(await open.getAttribute("href"), server.base).searchParams.get("id");
+  const run = await api(server.base, "GET", `/api/runs/${id}`);
+  const r = run.resolved;
+  const cross = r.entry.find((c) => c.kind === "indicator_cross");
+  assert.equal(cross.indicator.id, "ema");
+  assert.equal(cross.other.id, "sma");
+  assert.deepEqual(r.exits.map((e) => e.kind), ["holding_period", "stop_loss", "trailing_stop"]);
+  assert.equal(r.exits[1].params.pct, 0.05);
+  assert.equal(r.sizing.id, "volatility");
+  assert.equal(r.rank_by.indicator.id, "rsi");
+
+  // Duplicating brings every block back into the builder.
+  await page.goto(`${server.base}/builder?from=${id}`);
+  await page.getByTestId("exit-rule-params-stop_loss").waitFor();
+  assert.equal(await page.getByTestId("exit-stop_loss-pct").inputValue(), "5");
+  assert.equal(await page.getByTestId("exit-rule-trailing_stop").getAttribute("aria-pressed"), "true");
+  assert.match(await page.getByTestId("sizing-volatility").getAttribute("class"), /on/);
+  assert.equal(await page.getByTestId("rank-indicator").inputValue(), "rsi");
+  assert.deepEqual(errors, []);
+});
+
 test("run page: benchmark purchase, open positions and watchlist selection date", async () => {
   const { page, errors } = await newPage();
   const wl = await api(server.base, "POST", "/api/watchlists", { name: "core", symbols: ["AAA", "BBB", "CCC", "DDD"], label: "t" });
