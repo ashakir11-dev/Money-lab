@@ -18,6 +18,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -323,6 +324,14 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     )
     app.state.lab = lab
     app.state.jobs = jobs
+    # Only the Next.js dev server (``npm run dev``) is a different origin; the built
+    # dashboard is served from this app's own address.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/api/health", response_model=Health, tags=["meta"])
     def health() -> Health:

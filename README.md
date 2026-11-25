@@ -16,26 +16,37 @@ Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 for you).
 uv sync                      # create .venv and install everything, including dev tools
 cp .env.example .env         # optional: change data folder, defaults, provider key
 uv run moneylab demo         # import the offline fixture and save the RSI 30 and 35 runs
-uv run moneylab dashboard    # open http://localhost:8501
+make web                     # build the dashboard once (needs Node.js 22)
+uv run moneylab serve --open # the lab at http://127.0.0.1:8000 (API docs at /docs)
 ```
+
+`moneylab serve` is one local app: FastAPI serves the research API and the built
+Next.js dashboard (`frontend/`) from one address. Runs are submitted in the background
+and keep going if the browser tab is closed. The browser never calculates a trade; every
+number comes from the Python engine. The older Streamlit dashboard
+(`uv run moneylab dashboard`) still works until the new pages fully replace it.
+
+To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`,
+`NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000 npm run dev`. After changing the API, run
+`make api-types` to refresh `frontend/openapi.json` and the generated TypeScript types
+(CI fails if they are stale).
 
 ## Common commands
 
 | Command | What it does |
 | --- | --- |
 | `make check` | lint, format check, type check and all tests |
+| `make web` / `make e2e` | build the Next.js dashboard / run the browser checks (gates 1 and 3) |
+| `uv run python scripts/benchmark_browser.py` | gate 2 in the browser: submit to visible comparison, writes `docs/benchmarks/capacity-browser.md` |
 | `uv run pytest` | all tests (about 10 seconds) |
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
-<<<<<<< HEAD
 | `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper ingest`, `paper status`, `paper replay` |
-=======
 | `uv run moneylab fetch SPY QQQ --start 2020-01-02 --end 2024-12-31` | imports daily history from Tiingo (needs `TIINGO_API_KEY`, see [providers](docs/providers.md)) |
 | `uv run moneylab new-sessions SNAPSHOT_ID` | prints sessions Tiingo has after a snapshot, in the import format |
 | `uv run moneylab watchlist NAME SYM... --label TEXT` | saves a labelled watchlist (a new version if it changed); without symbols shows it |
 | `uv run pytest -m network -q tests/test_tiingo_live.py` | live Tiingo check (deselected by default; needs the key) |
 | `uv run python scripts/make_tiingo_fixtures.py` | regenerates the recorded-style Tiingo responses |
->>>>>>> origin/claude/project-thread-7z8tbd-tiingo
 | `uv run python scripts/make_fixture.py` | regenerates the deterministic fixture |
 | `uv run python scripts/export_demo_ledgers.py OUT` | writes both demo ledgers and the comparison |
 | `uv run python scripts/make_capacity_dataset.py` | writes the 250 stocks + SPY x 5 years capacity CSV under `var/` |

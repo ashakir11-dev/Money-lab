@@ -1,4 +1,4 @@
-.PHONY: install check lint format typecheck test acceptance dashboard demo fixture
+.PHONY: install check lint format typecheck test acceptance dashboard demo fixture web api-types serve e2e
 
 install:
 	uv sync
@@ -30,3 +30,17 @@ demo:
 
 fixture:
 	uv run python scripts/make_fixture.py
+
+web:
+	npm --prefix frontend ci
+	npm --prefix frontend run build
+
+api-types:
+	uv run python scripts/export_openapi.py
+	npm --prefix frontend run gen:api
+
+serve:
+	uv run moneylab serve --open
+
+e2e:
+	node --test e2e/
