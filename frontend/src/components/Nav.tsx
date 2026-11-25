@@ -9,7 +9,9 @@ const LINKS = [
   { href: "/", label: "Runs", id: "nav-runs" },
   { href: "/builder", label: "Builder", id: "nav-builder" },
   { href: "/compare", label: "Compare", id: "nav-compare" },
+  { href: "/paper", label: "Paper trading", id: "nav-paper" },
   { href: "/data", label: "Data", id: "nav-data" },
+  { href: "/gates", label: "Gates", id: "nav-gates" },
 ];
 
 export function Nav() {

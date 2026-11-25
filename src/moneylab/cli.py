@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -11,17 +9,6 @@ import typer
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 ROOT = Path(__file__).resolve().parents[2]
-
-
-@app.command()
-def dashboard(port: int = 8501) -> None:
-    """Start the dashboard at http://localhost:PORT."""
-    target = Path(__file__).parent / "dashboard" / "app.py"
-    raise SystemExit(
-        subprocess.call(
-            [sys.executable, "-m", "streamlit", "run", str(target), "--server.port", str(port)]
-        )
-    )
 
 
 @app.command()

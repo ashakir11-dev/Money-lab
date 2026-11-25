@@ -1,0 +1,111 @@
+"""Paper trading through the API, as the dashboard's Paper trading page uses it.
+
+Start a paper account from the saved RSI < 35 run, deliver new sessions (one of them
+twice), read the latest processed session, cash and fills, and replay.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from moneylab.api.app import create_app
+from moneylab.data.snapshot import read_import_file
+from moneylab.demo import FIXTURE, rsi_strategy, run_rsi_demo
+from moneylab.service import Lab
+from tiingo_util import TEST_KEY, FakeTiingo, payloads_from_csv
+
+
+def test_paper_start_deliver_and_replay(tmp_path: Path) -> None:
+    lab = Lab.open(tmp_path / "home")
+    demo = run_rsi_demo(lab)
+    bars = read_import_file(FIXTURE)
+    new = bars[(bars["date"] > "2023-03-31") & (bars["date"] <= "2023-04-06")]
+    again = new[new["date"] == "2023-04-04"]
+
+    with TestClient(create_app(lab, web_dir=tmp_path / "no-web")) as c:
+        r = c.post("/api/paper", json={"run_id": demo["changed"], "start": "2023-03-31"})
+        assert r.status_code == 200, r.text
+        pid = r.json()["id"]
+        assert r.json()["start_session"] == "2023-03-31"
+        assert [a["id"] for a in c.get("/api/paper").json()] == [pid]
+
+        r = c.post(f"/api/paper/{pid}/sessions", json={"csv": new.to_csv(index=False)})
+        assert [x["status"] for x in r.json()] == ["accepted"] * 4
+        r = c.post(f"/api/paper/{pid}/sessions", json={"csv": again.to_csv(index=False)})
+        assert [x["status"] for x in r.json()] == ["duplicate"]
+
+        d = c.get(f"/api/paper/{pid}").json()
+        st = d["status"]
+        assert st["latest_processed"] == "2023-04-06"
+        assert st["next_expected"] == "2023-04-10"
+        assert len(st["positions"]) == 1
+        assert round(st["cash"], 2) == 89957.04
+        assert len(d["fills"]) == 1 and len(d["equity"]) == 4
+
+        rep = c.post(f"/api/paper/{pid}/replay").json()
+        assert rep["match"] is True
+
+        bad = c.post("/api/paper", json={"run_id": demo["changed"], "start": "1999-01-01"})
+        assert bad.status_code == 422
+        assert c.get("/api/paper/nope").status_code == 404
+
+
+def test_gates_endpoint_lists_six_gates(tmp_path: Path) -> None:
+    with TestClient(create_app(Lab.open(tmp_path / "home"), web_dir=tmp_path / "no")) as c:
+        gates = c.get("/api/gates").json()
+    assert [g["number"] for g in gates] == [1, 2, 3, 4, 5, 6]
+    assert all(g["evidence"] for g in gates)
+
+
+def test_tiingo_import_then_paper_fetch_delivers_the_newer_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real-data path through the API with an offline fake Tiingo: import history,
+    run, start a paper account, then fetch and process the sessions after it."""
+    monkeypatch.setenv("TIINGO_API_KEY", TEST_KEY)
+    fake = FakeTiingo(payloads_from_csv())
+
+    def provider(self: Lab, name: str = "tiingo") -> Any:
+        return fake.provider(self.settings.cache_dir)
+
+    monkeypatch.setattr(Lab, "provider", provider)
+    lab = Lab.open(tmp_path / "home")
+    with TestClient(create_app(lab, web_dir=tmp_path / "no-web")) as c:
+        r = c.post(
+            "/api/snapshots/tiingo",
+            json={"symbols": ["aaa", "BBB", "SPY"], "start": "2023-01-03", "end": "2023-03-31"},
+        )
+        assert r.status_code == 200, r.text
+        snap = r.json()
+        assert snap["source_kind"] == "real" and snap["last_date"].startswith("2023-03-31")
+        cfg = rsi_strategy(35).model_copy(update={"universe": ["AAA", "BBB"]})
+        run_id = lab.run(cfg, snap["id"])
+        pid = c.post("/api/paper", json={"run_id": run_id}).json()["id"]
+
+        got = c.post(f"/api/paper/{pid}/fetch").json()
+        assert got and {g["status"] for g in got} == {"accepted"}
+        assert got[0]["session"] == "2023-04-03"
+        st = c.get(f"/api/paper/{pid}").json()["status"]
+        assert st["latest_processed"] == got[-1]["session"]
+        # Fetching again re-delivers the same sessions: recorded as duplicates, no new fills.
+        fills = len(c.get(f"/api/paper/{pid}").json()["fills"])
+        again = c.post(f"/api/paper/{pid}/fetch").json()
+        assert {g["status"] for g in again} == {"duplicate"}
+        assert len(c.get(f"/api/paper/{pid}").json()["fills"]) == fills
+        assert c.post(f"/api/paper/{pid}/replay").json()["match"] is True
+
+
+def test_tiingo_import_without_a_key_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TIINGO_API_KEY", "")
+    with TestClient(create_app(Lab.open(tmp_path / "home"), web_dir=tmp_path / "no")) as c:
+        r = c.post(
+            "/api/snapshots/tiingo",
+            json={"symbols": ["AAA"], "start": "2023-01-03", "end": "2023-03-31"},
+        )
+    assert r.status_code == 400 and "key" in r.text.lower()

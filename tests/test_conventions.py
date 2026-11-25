@@ -5,18 +5,10 @@ Every expected number below is worked out by hand next to its assertion.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
-import pytest
-from streamlit.testing.v1 import AppTest
 
 from fixtures_util import bars, day, fills, level_strategy, run
-from moneylab.demo import rsi_strategy, run_rsi_demo
 from moneylab.engine.reporting import metrics
-from moneylab.service import Lab
-
-APP = Path(__file__).resolve().parents[1] / "src" / "moneylab" / "dashboard" / "app.py"
 
 
 def _worked_example():  # type: ignore[no-untyped-def]
@@ -72,38 +64,3 @@ def test_saved_runs_carry_benchmark_purchase_and_open_positions(demo) -> None:  
     assert m["open_positions"] == 0 and m["trades"] == 2
     b = m["benchmark"]
     assert b["symbol"] == "SPY" and b["invested_session"] and b["shares"] > 0 and b["cost"] > 0
-
-
-def test_compare_defaults_to_the_newest_run_and_its_parent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MONEYLAB_HOME", str(tmp_path / "home"))
-    lab = Lab.open()
-    demo = run_rsi_demo(lab)
-    # An unrelated run made after the parent, then a child of the original: the default
-    # comparison must be child vs original, not child vs the run just before it.
-    lab.run(rsi_strategy(40, name="unrelated"), demo["snapshot"])
-    child = lab.run(rsi_strategy(33, name="child"), demo["snapshot"], parent_id=demo["original"])
-    at = AppTest.from_file(str(APP), default_timeout=60)
-    at.session_state["page"] = "Compare"
-    at.run()
-    assert not at.exception, at.exception
-    assert at.selectbox(key="cmp.a").value == demo["original"]
-    assert at.selectbox(key="cmp.b").value == child
-
-
-def test_run_page_shows_benchmark_purchase_and_watchlist_selection_date(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MONEYLAB_HOME", str(tmp_path / "home"))
-    lab = Lab.open()
-    demo = run_rsi_demo(lab)
-    wl = lab.save_watchlist("core", ["AAA", "BBB", "CCC", "DDD"], label="test list")
-    lab.run(rsi_strategy(35, name="on a watchlist"), demo["snapshot"], watchlist="core")
-    at = AppTest.from_file(str(APP), default_timeout=60)
-    at.session_state["page"] = "Runs"
-    at.run()
-    assert not at.exception, at.exception
-    text = " ".join(c.value for c in at.caption)
-    assert "SPY bought" in text and "Open positions at the end: 0" in text
-    assert f"Watchlist core v1 selected {str(wl['created_at'])[:10]}" in text

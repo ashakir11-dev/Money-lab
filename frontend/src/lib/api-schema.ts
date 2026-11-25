@@ -83,6 +83,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/gates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gates
+         * @description The MVP acceptance gates as recorded in ``moneylab.acceptance``.
+         */
+        get: operations["gates_api_gates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -128,6 +148,107 @@ export interface paths {
         get: operations["get_job_api_jobs__job_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paper Accounts */
+        get: operations["paper_accounts_api_paper_get"];
+        put?: never;
+        /**
+         * Paper Start
+         * @description Freeze a completed run and open a paper account for the sessions after START.
+         */
+        post: operations["paper_start_api_paper_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/{paper_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Paper Detail
+         * @description Status (cash, positions, missing and conflicting data) and the ledgers.
+         */
+        get: operations["paper_detail_api_paper__paper_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/{paper_id}/fetch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paper Fetch
+         * @description Fetch the sessions newer than the account's snapshot from Tiingo and deliver them.
+         */
+        post: operations["paper_fetch_api_paper__paper_id__fetch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/{paper_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paper Replay
+         * @description Rebuild the account from its recorded inputs and compare with the live record.
+         */
+        post: operations["paper_replay_api_paper__paper_id__replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/paper/{paper_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paper Deliver
+         * @description Deliver sessions from import-format CSV text, one event per date.
+         */
+        post: operations["paper_deliver_api_paper__paper_id__sessions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -515,6 +636,19 @@ export interface components {
             /** Symbol */
             symbol: string;
         };
+        /** GateOut */
+        GateOut: {
+            /** Depends On */
+            depends_on: string;
+            /** Evidence */
+            evidence: string[];
+            /** Number */
+            number: number;
+            /** Passing */
+            passing: boolean;
+            /** Title */
+            title: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -569,6 +703,68 @@ export interface components {
             status: "queued" | "running" | "complete" | "failed";
             /** Submitted At */
             submitted_at: string;
+        };
+        /** PaperAccountOut */
+        PaperAccountOut: {
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Latest Session */
+            latest_session?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Processed Sessions
+             * @default 0
+             */
+            processed_sessions: number;
+            /** Run Id */
+            run_id: string;
+            /** Start Session */
+            start_session: string;
+        };
+        /** PaperDelivery */
+        PaperDelivery: {
+            /**
+             * Csv
+             * @description sessions in the import format: date,symbol,open,...
+             */
+            csv: string;
+        };
+        /** PaperDetail */
+        PaperDetail: {
+            /** Decisions */
+            decisions: {
+                [key: string]: unknown;
+            }[];
+            /** Equity */
+            equity: {
+                [key: string]: unknown;
+            }[];
+            /** Fills */
+            fills: {
+                [key: string]: unknown;
+            }[];
+            /** Status */
+            status: {
+                [key: string]: unknown;
+            };
+        };
+        /** PaperStart */
+        PaperStart: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Start
+             * @description last history session (default: the snapshot's last)
+             */
+            start?: string | null;
         };
         /** ParamOut */
         ParamOut: {
@@ -931,6 +1127,26 @@ export interface operations {
             };
         };
     };
+    gates_api_gates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateOut"][];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -989,6 +1205,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_accounts_api_paper_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountOut"][];
+                };
+            };
+        };
+    };
+    paper_start_api_paper_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_detail_api_paper__paper_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_fetch_api_paper__paper_id__fetch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_replay_api_paper__paper_id__replay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_deliver_api_paper__paper_id__sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperDelivery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
             /** @description Validation Error */
