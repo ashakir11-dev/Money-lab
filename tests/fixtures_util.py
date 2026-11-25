@@ -28,21 +28,25 @@ def day(i: int) -> str:
     return SESSIONS[i].date().isoformat()
 
 
-def bars(spec: dict[str, list[tuple[float, float] | None]]) -> pd.DataFrame:
-    """symbol -> per-session (open, close); None means no bar that session."""
+def bars(spec: dict[str, list[tuple[float, ...] | None]]) -> pd.DataFrame:
+    """symbol -> per-session (open, close) or (open, high, low, close); None = no bar."""
     rows = []
     for sym, days in spec.items():
         for i, oc in enumerate(days):
             if oc is None:
                 continue
-            o, c = oc
+            if len(oc) == 4:
+                o, h, low, c = oc
+            else:
+                o, c = oc[0], oc[1]
+                h, low = max(o, c), min(o, c)
             rows.append(
                 {
                     "date": SESSIONS[i],
                     "symbol": sym,
                     "open": o,
-                    "high": max(o, c),
-                    "low": min(o, c),
+                    "high": h,
+                    "low": low,
                     "close": c,
                     "volume": 1000,
                 }

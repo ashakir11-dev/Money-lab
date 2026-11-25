@@ -3,27 +3,31 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { ConditionEditor, defaultsOf, type CondDraft, type Value } from "@/components/ConditionEditor";
+import { Mark } from "@/components/Mark";
+import { Specimen } from "@/components/Specimen";
+import { ErrorBox, JobStatus, Loading } from "@/components/ui";
 import { api, type Component, type Condition, type Job, type Param, type RunSubmit, type StrategyConfig, waitForJob } from "@/lib/api";
 import { useAsync, useDebounced } from "@/lib/hooks";
-import { ErrorBox, JobStatus, Loading, PageHeader, Section } from "@/components/ui";
+import { SECTORS, sectorSymbols } from "@/lib/sectors";
 
-type Value = string | number;
-type CondDraft = {
-  kind: "price_cross" | "threshold";
-  indicator: string;
-  indParams: Record<string, Value>;
-  params: Record<string, Value>;
-};
+type FillKind = "next_open" | "next_range" | "dip";
+
 type Draft = {
   name: string;
   universe: string;
   watchlist: string;
+  universeSource: "custom" | "watchlist" | "sector";
+  sector: string;
   benchmark: string;
   start: string;
   end: string;
   entry: CondDraft[];
-  exitKind: "holding_period" | "signal";
-  exitSessions: Value;
+  fillKind: FillKind;
+  rangeBelow: string;
+  rangeAbove: string;
+  dipPct: string;
+  maxHold: string;
   exitConds: CondDraft[];
   startingCash: string;
   targetPct: string;
@@ -35,21 +39,23 @@ const EMPTY: Draft = {
   name: "My strategy",
   universe: "",
   watchlist: "",
+  universeSource: "custom",
+  sector: "",
   benchmark: "SPY",
   start: "",
   end: "",
   entry: [],
-  exitKind: "holding_period",
-  exitSessions: 10,
+  fillKind: "next_open",
+  rangeBelow: "2",
+  rangeAbove: "2",
+  dipPct: "2",
+  maxHold: "10",
   exitConds: [],
   startingCash: "",
   targetPct: "",
   maxPositions: "",
   costBps: "",
 };
-
-const defaultsOf = (c: Component | undefined): Record<string, Value> =>
-  Object.fromEntries((c?.params ?? []).map((p) => [p.name, (p.default as Value) ?? ""]));
 
 const toNumber = (p: Param | undefined, v: Value): unknown => {
   if (p && (p.type === "int" || p.type === "float")) {
@@ -94,10 +100,23 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
     start: d.start || null,
     end: d.end || null,
     entry: d.entry.map((c) => toCondition(c, comps)),
-    exit:
-      d.exitKind === "holding_period"
-        ? { kind: "holding_period", params: { sessions: Number(d.exitSessions) }, conditions: [] }
-        : { kind: "signal", params: {}, conditions: d.exitConds.map((c) => toCondition(c, comps)) },
+    entry_fill: {
+      kind: d.fillKind,
+      below_pct: d.fillKind === "next_range" && d.rangeBelow.trim() !== "" ? Number(d.rangeBelow) / 100 : null,
+      above_pct: d.fillKind === "next_range" && d.rangeAbove.trim() !== "" ? Number(d.rangeAbove) / 100 : null,
+      dip_pct: d.fillKind === "dip" && d.dipPct.trim() !== "" ? Number(d.dipPct) / 100 : null,
+    },
+    exit: (() => {
+      const hold = d.maxHold.trim() === "" ? null : Number(d.maxHold);
+      if (d.exitConds.length) {
+        return {
+          kind: "signal" as const,
+          params: hold ? { max_sessions: hold } : {},
+          conditions: d.exitConds.map((c) => toCondition(c, comps)),
+        };
+      }
+      return { kind: "holding_period" as const, params: { sessions: hold ?? 10 }, conditions: [] };
+    })(),
     portfolio: {
       starting_cash: num(d.startingCash),
       target_allocation: target === null ? null : target / 100,
@@ -115,7 +134,9 @@ type Resolved = {
   start?: string | null;
   end?: string | null;
   entry?: ResolvedCond[];
-  exit?: { kind?: Draft["exitKind"]; params?: Record<string, Value>; conditions?: ResolvedCond[] };
+  entry_fill?: { kind?: FillKind; below_pct?: number | null; above_pct?: number | null; dip_pct?: number | null };
+  exit?: { kind?: string; params?: Record<string, Value>; conditions?: ResolvedCond[] };
+  watchlist?: { name?: string };
   portfolio?: { starting_cash?: number; target_allocation?: number; max_positions?: number; cost_bps_per_side?: number };
 };
 
@@ -135,9 +156,14 @@ function fromResolved(r: Resolved): Draft {
     start: r.start ?? "",
     end: r.end ?? "",
     entry: (r.entry ?? []).map(cond),
-    exitKind: r.exit?.kind ?? "holding_period",
-    exitSessions: r.exit?.params?.sessions ?? 10,
+    fillKind: r.entry_fill?.kind ?? "next_open",
+    rangeBelow: r.entry_fill?.below_pct != null ? String(+(r.entry_fill.below_pct * 100).toFixed(6)) : "2",
+    rangeAbove: r.entry_fill?.above_pct != null ? String(+(r.entry_fill.above_pct * 100).toFixed(6)) : "2",
+    dipPct: r.entry_fill?.dip_pct != null ? String(+(r.entry_fill.dip_pct * 100).toFixed(6)) : "2",
+    maxHold: String(r.exit?.params?.max_sessions ?? r.exit?.params?.sessions ?? ""),
     exitConds: (r.exit?.conditions ?? []).map(cond),
+    universeSource: r.watchlist?.name ? "watchlist" : "custom",
+    watchlist: r.watchlist?.name ?? "",
     startingCash: p.starting_cash != null ? String(p.starting_cash) : "",
     targetPct: p.target_allocation != null ? String(+(p.target_allocation * 100).toFixed(6)) : "",
     maxPositions: p.max_positions != null ? String(p.max_positions) : "",
@@ -145,120 +171,34 @@ function fromResolved(r: Resolved): Draft {
   };
 }
 
-function ParamInput({ p, value, onChange, testid }: { p: Param; value: Value; onChange: (v: Value) => void; testid: string }) {
-  const id = `${testid}-${Math.random().toString(36).slice(2, 7)}`;
-  return (
-    <div className="field">
-      <label htmlFor={id}>{p.label || p.name}</label>
-      {p.choices && p.choices.length ? (
-        <select id={id} data-testid={testid} value={String(value)} onChange={(e) => onChange(e.target.value)}>
-          {p.choices.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          id={id}
-          data-testid={testid}
-          type={p.type === "int" || p.type === "float" ? "number" : "text"}
-          step={p.type === "int" ? 1 : "any"}
-          min={p.min ?? undefined}
-          max={p.max ?? undefined}
-          value={value ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-      {p.help ? <div className="help">{p.help}</div> : null}
-    </div>
-  );
-}
-
-function CondEditor({
-  index,
-  cond,
-  comps,
+function PctSlider({
+  id,
+  label,
+  value,
   onChange,
-  onRemove,
-  prefix,
 }: {
-  index: number;
-  cond: CondDraft;
-  comps: Component[];
-  onChange: (c: CondDraft) => void;
-  onRemove: () => void;
-  prefix: string;
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
 }) {
-  const byId = new Map(comps.map((c) => [c.id, c]));
-  const indicators = comps.filter((c) => c.uses.includes("indicator"));
-  const allowed = cond.kind === "price_cross" ? indicators.filter((c) => c.price_scale) : indicators;
-  const ind = byId.get(cond.indicator);
-  const kindSchema = byId.get(cond.kind);
-
-  function setKind(kind: CondDraft["kind"]) {
-    let indicator = cond.indicator;
-    let indParams = cond.indParams;
-    if (kind === "price_cross" && !byId.get(indicator)?.price_scale) {
-      indicator = indicators.find((c) => c.price_scale)?.id ?? indicator;
-      indParams = defaultsOf(byId.get(indicator));
-    }
-    onChange({ kind, indicator, indParams, params: defaultsOf(byId.get(kind)) });
-  }
-
-  function setIndicator(id: string) {
-    // A new indicator starts from its own declared defaults (no carried-over values).
-    onChange({ ...cond, indicator: id, indParams: defaultsOf(byId.get(id)) });
-  }
-
+  const n = Number(value);
+  const slider = Number.isFinite(n) ? Math.min(20, Math.max(0, n)) : 0;
   return (
-    <div className="cond" data-testid={`${prefix}-${index}`}>
-      <div className="cond-head">
-        <strong>
-          {prefix === "condition" ? "Entry" : "Exit"} condition {index + 1}
-        </strong>
-        <button className="link" onClick={onRemove} aria-label={`Remove condition ${index + 1}`}>
-          Remove
-        </button>
-      </div>
-      <div className="fields">
-        <div className="field">
-          <label>Type</label>
-          <select value={cond.kind} onChange={(e) => setKind(e.target.value as CondDraft["kind"])} data-testid="kind-select">
-            <option value="threshold">Indicator is above / below a value</option>
-            <option value="price_cross">Close crosses an indicator</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Indicator</label>
-          <select value={cond.indicator} onChange={(e) => setIndicator(e.target.value)} data-testid="indicator-select">
-            {allowed.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label} ({c.id} v{c.version})
-              </option>
-            ))}
-          </select>
-          {ind?.description ? <div className="help">{ind.description}</div> : null}
-        </div>
-        {(ind?.params ?? []).map((p) => (
-          <ParamInput
-            key={`${cond.indicator}-${p.name}`}
-            p={p}
-            value={cond.indParams[p.name] ?? ""}
-            testid={`param-${p.name}`}
-            onChange={(v) => onChange({ ...cond, indParams: { ...cond.indParams, [p.name]: v } })}
-          />
-        ))}
-        {(kindSchema?.params ?? []).map((p) => (
-          <ParamInput
-            key={`${cond.kind}-${p.name}`}
-            p={p}
-            value={cond.params[p.name] ?? ""}
-            testid={cond.kind === "threshold" ? `threshold-${p.name}` : `cross-${p.name}`}
-            onChange={(v) => onChange({ ...cond, params: { ...cond.params, [p.name]: v } })}
-          />
-        ))}
-      </div>
+    <div className="cond-row cond-slider">
+      <label className="cond-label" htmlFor={id}>
+        {label}
+      </label>
+      <input
+        type="range"
+        min={0}
+        max={20}
+        step={0.5}
+        value={slider}
+        aria-label={label}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <input id={id} type="number" min={0} max={50} step="any" value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -270,12 +210,15 @@ function Builder() {
   const snaps = useAsync(() => api.snapshots(), []);
   const lists = useAsync(() => api.watchlists(), []);
   const source = useAsync(() => api.run(from), [from], !!from);
+  const parentEq = useAsync(() => api.equity(from), [from], !!from);
 
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [snapshot, setSnapshot] = useState("");
   const [ready, setReady] = useState(false);
   const [job, setJob] = useState<Job>();
   const [submitError, setSubmitError] = useState<unknown>();
+  const doneId = job?.status === "complete" ? job.run_ids[0] : undefined;
+  const newEq = useAsync(() => api.equity(doneId ?? ""), [doneId], !!doneId);
 
   const byId = useMemo(() => new Map((comps.data ?? []).map((c) => [c.id, c])), [comps.data]);
 
@@ -283,9 +226,16 @@ function Builder() {
   useEffect(() => {
     if (ready || !comps.data || !snaps.data) return;
     if (from) {
-      if (!source.data) return;
-      setDraft(fromResolved(source.data.resolved as Resolved));
-      setSnapshot(source.data.snapshot_id);
+      const src = source.data;
+      if (!src) return;
+      const next = fromResolved(src.resolved as Resolved);
+      const s = snaps.data.find((x) => x.id === src.snapshot_id) ?? snaps.data[0];
+      if (s) {
+        if (!next.start) next.start = s.first_date;
+        if (!next.end) next.end = s.last_date;
+      }
+      setDraft(next);
+      setSnapshot(src.snapshot_id);
     } else {
       const sma = byId.get("sma");
       const rsi = byId.get("rsi");
@@ -293,11 +243,13 @@ function Builder() {
       setDraft({
         ...EMPTY,
         universe: first ? first.symbols.filter((s) => s !== "SPY").join(", ") : "",
+        start: first?.first_date ?? "",
+        end: first?.last_date ?? "",
         entry: [
           ...(sma ? [{ kind: "price_cross" as const, indicator: "sma", indParams: defaultsOf(sma), params: defaultsOf(byId.get("price_cross")) }] : []),
           ...(rsi ? [{ kind: "threshold" as const, indicator: "rsi", indParams: defaultsOf(rsi), params: defaultsOf(byId.get("threshold")) }] : []),
         ],
-        exitSessions: defaults.data?.exit_sessions ?? 10,
+        maxHold: String(defaults.data?.exit_sessions ?? 10),
       });
       setSnapshot(first?.id ?? "");
     }
@@ -306,7 +258,12 @@ function Builder() {
 
   const config = useMemo(() => (comps.data ? toConfig(draft, byId) : undefined), [draft, byId, comps.data]);
   const body: RunSubmit | undefined = config
-    ? { config, snapshot_id: snapshot, parent_id: from || null, watchlist: draft.watchlist || null }
+    ? {
+        config,
+        snapshot_id: snapshot,
+        parent_id: from || null,
+        watchlist: draft.universeSource === "watchlist" ? draft.watchlist || null : null,
+      }
     : undefined;
   const debounced = useDebounced(JSON.stringify(body ?? null), 400);
   const check = useAsync(
@@ -317,6 +274,23 @@ function Builder() {
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const snap = snaps.data?.find((s) => s.id === snapshot);
+  const sectorAvail = snap ? sectorSymbols(draft.sector, snap.symbols) : [];
+
+  function pickSnapshot(id: string) {
+    setSnapshot(id);
+    const s = snaps.data?.find((x) => x.id === id);
+    if (s) setDraft((d) => ({ ...d, start: s.first_date, end: s.last_date }));
+  }
+
+  function setSource(universeSource: Draft["universeSource"]) {
+    setDraft((d) => ({
+      ...d,
+      universeSource,
+      watchlist: universeSource === "watchlist" ? d.watchlist : "",
+      sector: universeSource === "sector" ? d.sector : "",
+      universe: universeSource === "custom" ? d.universe : "",
+    }));
+  }
   const busy = job?.status === "queued" || job?.status === "running";
   const newRun = job?.status === "complete" ? job.run_ids[0] : undefined;
 
@@ -344,201 +318,298 @@ function Builder() {
   if (!ready) return <Loading what="Loading the builder" />;
   const dflt = defaults.data;
 
+  const parentDates = (parentEq.data ?? []).map((e) => e.session);
+
   return (
-    <>
-      <PageHeader
-        title={from ? "Edit a copy" : "Strategy builder"}
-        lead={
-          from
-            ? `A copy of “${source.data?.name ?? from}”. Change one thing and run it; the original stays as it was and becomes this run's parent.`
-            : "Pick data, write the rules, and run a backtest. Controls come from the registered indicators, so a new indicator appears here without code changes."
-        }
-      />
-
-      <Section title="Data">
-        {snaps.data && snaps.data.length === 0 ? (
-          <p className="notice">
-            No price data yet. Import some on the <Link href="/data">Data</Link> page first.
-          </p>
-        ) : null}
-        <div className="fields">
-          <div className="field" style={{ gridColumn: "span 2" }}>
-            <label htmlFor="snap">Price snapshot</label>
-            <select id="snap" data-testid="builder-snapshot" value={snapshot} onChange={(e) => setSnapshot(e.target.value)}>
-              {(snaps.data ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.source_label} · {s.symbols.slice(0, 5).join(", ")}
-                  {s.symbols.length > 5 ? ` +${s.symbols.length - 5}` : ""} · {s.first_date} to {s.last_date} ({s.id.slice(0, 8)})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="start">Start (optional)</label>
-            <input id="start" type="date" value={draft.start} onChange={(e) => set("start", e.target.value)} min={snap?.first_date} max={snap?.last_date} />
-          </div>
-          <div className="field">
-            <label htmlFor="end">End (optional)</label>
-            <input id="end" type="date" value={draft.end} onChange={(e) => set("end", e.target.value)} min={snap?.first_date} max={snap?.last_date} />
-          </div>
+    <div className="bench">
+      {from && parentDates.length >= 2 ? (
+        <Specimen
+          dates={parentDates}
+          series={[{ name: source.data?.name ?? "Parent", values: (parentEq.data ?? []).map((e) => e.equity), color: "var(--series-1)" }]}
+          caption="Change one thing"
+        />
+      ) : newRun && (newEq.data?.length ?? 0) >= 2 ? (
+        <Specimen
+          dates={(newEq.data ?? []).map((e) => e.session)}
+          series={[{ name: draft.name, values: (newEq.data ?? []).map((e) => e.equity), color: "var(--series-2)" }]}
+        />
+      ) : !from ? (
+        <div className="bench-hero">
+          <Mark size={72} />
         </div>
-        <div className="fields">
-          <div className="field" style={{ gridColumn: "span 2" }}>
-            <label htmlFor="universe">Universe (symbols, comma or space separated)</label>
-            <input
-              id="universe"
-              data-testid="builder-universe"
-              value={draft.universe}
-              disabled={!!draft.watchlist}
-              onChange={(e) => set("universe", e.target.value)}
-              placeholder="AAPL, MSFT, NVDA"
-            />
-            {snap ? <div className="help">This snapshot has: {snap.symbols.join(", ")}</div> : null}
-          </div>
-          <div className="field">
-            <label htmlFor="wl">Or use a watchlist</label>
-            <select
-              id="wl"
-              value={draft.watchlist}
-              onChange={(e) => {
-                const name = e.target.value;
-                const w = lists.data?.find((x) => x.name === name);
-                setDraft((d) => ({ ...d, watchlist: name, universe: w ? w.members.join(", ") : d.universe }));
-              }}
-            >
-              <option value="">No watchlist</option>
-              {(lists.data ?? []).map((w) => (
-                <option key={w.name} value={w.name}>
-                  {w.name} v{w.version} ({w.members.length})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="bench">Benchmark</label>
-            <input id="bench" value={draft.benchmark} onChange={(e) => set("benchmark", e.target.value)} />
-          </div>
-        </div>
-      </Section>
+      ) : null}
 
-      <Section title="Buy when all of these are true" aside={<button data-testid="add-condition" onClick={() => addCond("entry")}>Add condition</button>}>
-        {draft.entry.length === 0 ? <p className="muted">Add at least one entry condition.</p> : null}
-        {draft.entry.map((c, i) => (
-          <CondEditor
-            key={i}
-            index={i}
-            prefix="condition"
-            cond={c}
-            comps={comps.data ?? []}
-            onChange={(n) => setDraft((d) => ({ ...d, entry: d.entry.map((x, j) => (j === i ? n : x)) }))}
-            onRemove={() => setDraft((d) => ({ ...d, entry: d.entry.filter((_, j) => j !== i) }))}
-          />
-        ))}
-      </Section>
-
-      <Section title="Sell">
-        <div className="fields">
-          <div className="field">
-            <label htmlFor="exitkind">Exit rule</label>
-            <select id="exitkind" value={draft.exitKind} onChange={(e) => set("exitKind", e.target.value as Draft["exitKind"])}>
-              <option value="holding_period">After a number of sessions</option>
-              <option value="signal">When a condition is true</option>
-            </select>
-          </div>
-          {draft.exitKind === "holding_period" ? (
-            <div className="field">
-              <label htmlFor="sessions">Sessions held (the fill day counts as day one)</label>
-              <input
-                id="sessions"
-                data-testid="exit-sessions"
-                type="number"
-                min={1}
-                value={draft.exitSessions}
-                onChange={(e) => set("exitSessions", e.target.value)}
-              />
-            </div>
+      <div className="stack">
+        <section className="stack-block">
+          <h2>Strategy</h2>
+          {snaps.data && snaps.data.length === 0 ? (
+            <p className="notice">
+              No price data yet. Import some on the <Link href="/data">Data</Link> page first.
+            </p>
           ) : null}
-        </div>
-        {draft.exitKind === "signal" ? (
-          <>
-            {draft.exitConds.map((c, i) => (
-              <CondEditor
-                key={i}
-                index={i}
-                prefix="exit-condition"
-                cond={c}
-                comps={comps.data ?? []}
-                onChange={(n) => setDraft((d) => ({ ...d, exitConds: d.exitConds.map((x, j) => (j === i ? n : x)) }))}
-                onRemove={() => setDraft((d) => ({ ...d, exitConds: d.exitConds.filter((_, j) => j !== i) }))}
-              />
-            ))}
-            <button onClick={() => addCond("exitConds")}>Add exit condition</button>
-          </>
-        ) : null}
-      </Section>
-
-      <Section title="Account">
-        <div className="fields">
-          <div className="field">
-            <label htmlFor="cash">Starting cash ($)</label>
-            <input id="cash" type="number" value={draft.startingCash} placeholder={dflt ? String(dflt.starting_cash) : ""} onChange={(e) => set("startingCash", e.target.value)} />
+          <div className="fields">
+            <div className="field" style={{ gridColumn: "span 2" }}>
+              <label htmlFor="snap">Price snapshot</label>
+              <select id="snap" data-testid="builder-snapshot" value={snapshot} onChange={(e) => pickSnapshot(e.target.value)}>
+                {(snaps.data ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.source_label} · {s.first_date} to {s.last_date}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="name">Name</label>
+              <input id="name" value={draft.name} onChange={(e) => set("name", e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="bench">Benchmark</label>
+              <input id="bench" value={draft.benchmark} onChange={(e) => set("benchmark", e.target.value)} />
+            </div>
           </div>
+          <label>Universe</label>
+          <div className="source-row">
+            {(["watchlist", "custom", "sector"] as const).map((s) => (
+              <button key={s} className={draft.universeSource === s ? "on" : undefined} onClick={() => setSource(s)}>
+                {s === "custom" ? "Custom" : s === "watchlist" ? "Watchlist" : "Sector"}
+              </button>
+            ))}
+          </div>
+          {draft.universeSource === "watchlist" ? (
+            <div className="field">
+              <label htmlFor="wl">Watchlist</label>
+              <select
+                id="wl"
+                value={draft.watchlist}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  const w = lists.data?.find((x) => x.name === name);
+                  setDraft((d) => ({ ...d, watchlist: name, universe: w ? w.members.join(", ") : d.universe }));
+                }}
+              >
+                <option value="">Choose…</option>
+                {(lists.data ?? []).map((w) => (
+                  <option key={w.name} value={w.name}>
+                    {w.name} v{w.version} ({w.members.length})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : draft.universeSource === "sector" ? (
+            <div className="field">
+              <label htmlFor="sector">Sector</label>
+              <select
+                id="sector"
+                value={draft.sector}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setDraft((d) => ({
+                    ...d,
+                    sector: id,
+                    universe: snap ? sectorSymbols(id, snap.symbols).join(", ") : "",
+                  }));
+                }}
+              >
+                <option value="">Choose…</option>
+                {SECTORS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              {draft.sector && snap && sectorAvail.length === 0 ? (
+                <div className="help">
+                  None of those names are in this snapshot. Import them on <Link href="/data">Data</Link>.
+                </div>
+              ) : draft.sector ? (
+                <div className="help">{sectorAvail.join(", ") || "None"}</div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor="universe">Symbols</label>
+              <input
+                id="universe"
+                data-testid="builder-universe"
+                value={draft.universe}
+                onChange={(e) => set("universe", e.target.value)}
+                placeholder="AAPL, MSFT, NVDA"
+              />
+              {snap ? <div className="help">In this snapshot: {snap.symbols.join(", ")}</div> : null}
+            </div>
+          )}
+          {draft.universeSource !== "custom" ? (
+            <input type="hidden" data-testid="builder-universe" value={draft.universe} readOnly />
+          ) : null}
+          <div className="date-range">
+            <div className="field">
+              <label htmlFor="start">From</label>
+              <input id="start" type="date" value={draft.start} onChange={(e) => set("start", e.target.value)} min={snap?.first_date} max={snap?.last_date} />
+            </div>
+            <div className="field">
+              <label htmlFor="end">To</label>
+              <input id="end" type="date" value={draft.end} onChange={(e) => set("end", e.target.value)} min={snap?.first_date} max={snap?.last_date} />
+            </div>
+          </div>
+        </section>
+
+        <section className="stack-block">
+          <div className="section-head">
+            <h2>Strategy config</h2>
+            <button data-testid="add-condition" onClick={() => addCond("entry")}>
+              Add condition
+            </button>
+          </div>
+          <p className="caption">Signals at the close. These rules decide whether a name is a candidate that session.</p>
+          {draft.entry.length === 0 ? <p className="muted">Add at least one rule.</p> : null}
+          {draft.entry.map((c, i) => (
+            <ConditionEditor
+              key={i}
+              index={i}
+              prefix="condition"
+              cond={c}
+              comps={comps.data ?? []}
+              onChange={(n) => setDraft((d) => ({ ...d, entry: d.entry.map((x, j) => (j === i ? n : x)) }))}
+              onRemove={() => setDraft((d) => ({ ...d, entry: d.entry.filter((_, j) => j !== i) }))}
+            />
+          ))}
+        </section>
+
+        <section className="stack-block">
+          <h2>Entry</h2>
+          <p className="caption">When a rule passes, how the buy is placed.</p>
+          <div className="source-row" role="group" aria-label="Entry fill">
+            {(
+              [
+                ["next_open", "Next open"],
+                ["next_range", "Next candle in range"],
+                ["dip", "Dip to a level"],
+              ] as const
+            ).map(([id, label]) => (
+              <button key={id} type="button" className={draft.fillKind === id ? "on" : undefined} onClick={() => set("fillKind", id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {draft.fillKind === "next_open" ? (
+            <p className="help">Fill at the next session open. The default, and what the demo path uses.</p>
+          ) : draft.fillKind === "next_range" ? (
+            <>
+              <p className="help">Fill on the next bar only if it trades inside this band around the signal close. A gap outside cancels the order.</p>
+              <PctSlider id="range-below" label="Below %" value={draft.rangeBelow} onChange={(v) => set("rangeBelow", v)} />
+              <PctSlider id="range-above" label="Above %" value={draft.rangeAbove} onChange={(v) => set("rangeAbove", v)} />
+            </>
+          ) : (
+            <>
+              <p className="help">Limit below the signal close. Waits until that session’s low prints through; a gap through fills at the open.</p>
+              <PctSlider id="dip-pct" label="Dip %" value={draft.dipPct} onChange={(v) => set("dipPct", v)} />
+            </>
+          )}
+        </section>
+
+        <section className="stack-block">
+          <div className="section-head">
+            <h2>Exits</h2>
+            <button onClick={() => addCond("exitConds")}>Add condition</button>
+          </div>
+          <p className="caption">Optional. Without an exit signal, the max hold below (or the default) closes the position.</p>
+          {draft.exitConds.map((c, i) => (
+            <ConditionEditor
+              key={i}
+              index={i}
+              prefix="exit-condition"
+              cond={c}
+              comps={comps.data ?? []}
+              onChange={(n) => setDraft((d) => ({ ...d, exitConds: d.exitConds.map((x, j) => (j === i ? n : x)) }))}
+              onRemove={() => setDraft((d) => ({ ...d, exitConds: d.exitConds.filter((_, j) => j !== i) }))}
+            />
+          ))}
+        </section>
+
+        <section className="stack-block">
+          <h2>Position size</h2>
           <div className="field">
-            <label htmlFor="target">Target per position (% of equity)</label>
+            <label htmlFor="target">Percent of equity per position</label>
             <input id="target" type="number" value={draft.targetPct} placeholder={dflt ? String(dflt.target_allocation * 100) : ""} onChange={(e) => set("targetPct", e.target.value)} />
           </div>
+        </section>
+
+        <section className="stack-block">
+          <h2>Amount of positions</h2>
           <div className="field">
-            <label htmlFor="maxpos">Max positions</label>
+            <label htmlFor="maxpos">Max positions at once</label>
             <input id="maxpos" type="number" value={draft.maxPositions} placeholder={dflt ? String(dflt.max_positions) : ""} onChange={(e) => set("maxPositions", e.target.value)} />
           </div>
-          <div className="field">
-            <label htmlFor="bps">Cost per side (basis points)</label>
-            <input id="bps" type="number" value={draft.costBps} placeholder={dflt ? String(dflt.cost_bps_per_side) : ""} onChange={(e) => set("costBps", e.target.value)} />
-          </div>
-        </div>
-        <p className="help">Empty fields use today&apos;s defaults; the run records the values it actually used.</p>
-      </Section>
+        </section>
 
-      <Section title="Run">
-        <div className="field">
-          <label htmlFor="name">Run name</label>
-          <input id="name" value={draft.name} onChange={(e) => set("name", e.target.value)} />
-        </div>
-        {check.error ? (
-          <ErrorBox error={check.error} title="Not valid yet" />
-        ) : check.data ? (
-          <p className="summary-box" data-testid="builder-summary">
-            {check.data.summary}
-          </p>
-        ) : null}
-        <div className="row" style={{ marginTop: 12 }}>
-          <button
-            className="primary"
-            data-testid="run-backtest"
-            onClick={submit}
-            disabled={busy || !snapshot || !!check.error || !draft.entry.length}
-          >
-            Run backtest
-          </button>
-          <JobStatus status={job?.status} error={job?.error} />
-          {newRun && from ? (
-            <Link
-              className="button primary"
-              data-testid="compare-with-original"
-              href={`/compare?a=${encodeURIComponent(from)}&b=${encodeURIComponent(newRun)}`}
+        <section className="stack-block">
+          <h2>Capital</h2>
+          <div className="fields">
+            <div className="field">
+              <label htmlFor="cash">Starting cash ($)</label>
+              <input id="cash" type="number" value={draft.startingCash} placeholder={dflt ? String(dflt.starting_cash) : ""} onChange={(e) => set("startingCash", e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="bps">Cost per side (bps)</label>
+              <input id="bps" type="number" value={draft.costBps} placeholder={dflt ? String(dflt.cost_bps_per_side) : ""} onChange={(e) => set("costBps", e.target.value)} />
+            </div>
+          </div>
+        </section>
+
+        <section className="stack-block">
+          <h2>Maximum hold time</h2>
+          <div className="field">
+            <label htmlFor="sessions">Sessions (optional)</label>
+            <input
+              id="sessions"
+              data-testid="exit-sessions"
+              type="number"
+              min={1}
+              value={draft.maxHold}
+              onChange={(e) => set("maxHold", e.target.value)}
+              placeholder="none"
+            />
+            <div className="help">Fill day counts as session one. With exit signals, this is a cap: signal or this many sessions, whichever first.</div>
+          </div>
+        </section>
+
+        <section className="stack-block">
+          {check.error ? (
+            <ErrorBox error={check.error} title="Not valid yet" />
+          ) : check.data ? (
+            <div className="summary-box" data-testid="builder-summary">
+              <p className="plain-summary">{check.data.summary}</p>
+            </div>
+          ) : null}
+          <div className="row" style={{ marginTop: 12 }}>
+            <button
+              className="primary"
+              data-testid="run-backtest"
+              onClick={submit}
+              disabled={busy || !snapshot || !!check.error || !draft.entry.length}
             >
-              Compare with the original run
-            </Link>
-          ) : null}
-          {newRun ? (
-            <Link className="button" href={`/run?id=${encodeURIComponent(newRun)}`} data-testid="open-new-run">
-              Open the new run
-            </Link>
-          ) : null}
-        </div>
-        <ErrorBox error={submitError} title="Could not start the run" />
-      </Section>
-    </>
+              Run backtest
+            </button>
+            <JobStatus status={job?.status} error={job?.error} />
+            {newRun && from ? (
+              <Link
+                className="button primary"
+                data-testid="compare-with-original"
+                href={`/compare?a=${encodeURIComponent(from)}&b=${encodeURIComponent(newRun)}`}
+              >
+                Compare with the original run
+              </Link>
+            ) : null}
+            {newRun ? (
+              <Link className="button" href={`/report?id=${encodeURIComponent(newRun)}`} data-testid="open-new-run">
+                Open the report
+              </Link>
+            ) : null}
+          </div>
+          <ErrorBox error={submitError} title="Could not start the run" />
+        </section>
+      </div>
+    </div>
   );
 }
 

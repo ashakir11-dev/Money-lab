@@ -70,15 +70,24 @@ def strategy_summary(resolved: dict[str, Any]) -> str:
         n = (ex.get("params") or {}).get("sessions")
         leave = f"after {n} sessions"
     else:
-        leave = "when " + (
-            " or ".join(condition_text(c) for c in ex.get("conditions") or []) or "a signal fires"
-        )
+        sig = " or ".join(condition_text(c) for c in ex.get("conditions") or []) or "a signal fires"
+        cap = (ex.get("params") or {}).get("max_sessions")
+        leave = f"when {sig}" + (f" or after {cap} sessions" if cap else "")
     uni = resolved.get("universe") or []
     pf = resolved.get("portfolio") or {}
     alloc = pf.get("target_allocation")
     sizing = f", {alloc:.0%} of equity per position" if isinstance(alloc, int | float) else ""
+    fill = resolved.get("entry_fill") or {}
+    kind = fill.get("kind") or "next_open"
+    if kind == "dip":
+        pct = fill.get("dip_pct")
+        how = f" on a {pct:.0%} dip" if isinstance(pct, int | float) else " on a dip"
+    elif kind == "next_range":
+        how = " on the next bar in range"
+    else:
+        how = " at the next open"
     return (
-        f"Buy when {enter}; sell {leave}. "
+        f"Buy when {enter}{how}; sell {leave}. "
         f"Trades {len(uni)} symbol{'s' if len(uni) != 1 else ''} against "
         f"{resolved.get('benchmark', '?')}{sizing}."
     )

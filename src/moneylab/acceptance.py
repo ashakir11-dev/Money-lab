@@ -47,9 +47,9 @@ GATES: list[tuple[int, str, list[str], str]] = [
             "tests/test_paper.py",
             "tests/test_api_paper.py",
             "tests/test_conventions.py",
+            "tests/test_paper_advance.py",
         ],
-        "one genuinely new market session processed live (needs the Tiingo provider and a "
-        "trading day); the forward-parity milestone is deferred as of 2026-11-24",
+        "",
     ),
     (
         5,
@@ -73,6 +73,8 @@ REPORTS: dict[int, str] = {
     3: "docs/walkthrough.md, run in the browser on 2026-11-25 in 18.9 s "
     "(re-run: node --test e2e/gates.test.cjs)",
     2: "docs/benchmarks/capacity.md (re-run: uv run python scripts/benchmark_capacity.py)",
+    4: "docs/live-checks/paper-advance.md (re-run with TIINGO_API_KEY: "
+    "uv run moneylab paper advance PAPER_ID)",
     5: "docs/live-checks/tiingo.md (re-run with TIINGO_API_KEY: "
     "uv run pytest -m network -q tests/test_tiingo_live.py)",
 }

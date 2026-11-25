@@ -17,7 +17,7 @@ Needs Python 3.12 with `uv`, and Node.js 22.
 
 ## Timed part (start the clock)
 
-1. On the **Runs** page, click the run "SMA20 cross + RSI14 < 30".
+1. On **Home**, click the run "SMA20 cross + RSI14 < 30".
 2. Click **Duplicate and edit**. The builder opens with a copy; the original is not changed.
 3. In **Universe**, change `AAA, BBB, CCC, DDD` to `AAA, BBB, CCC` (remove DDD).
 4. In the RSI entry condition (the second condition), change the value from `30` to `35`.

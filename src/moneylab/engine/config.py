@@ -63,6 +63,26 @@ class PortfolioSettings(BaseModel):
     cost_bps_per_side: float | None = Field(default=None, ge=0, le=500)
 
 
+class EntryFill(BaseModel):
+    """When a passing signal becomes a fill. Default is the next session open."""
+
+    kind: Literal["next_open", "next_range", "dip"] = "next_open"
+    below_pct: float | None = Field(default=None, ge=0, le=0.5)
+    above_pct: float | None = Field(default=None, ge=0, le=0.5)
+    dip_pct: float | None = Field(default=None, ge=0, le=0.5)
+
+    @model_validator(mode="after")
+    def _fill_defaults(self) -> EntryFill:
+        if self.kind == "dip" and self.dip_pct is None:
+            self.dip_pct = 0.02
+        if self.kind == "next_range":
+            if self.below_pct is None:
+                self.below_pct = 0.02
+            if self.above_pct is None:
+                self.above_pct = 0.02
+        return self
+
+
 class StrategyConfig(BaseModel):
     name: str = "Untitled strategy"
     universe: list[str]
@@ -70,6 +90,7 @@ class StrategyConfig(BaseModel):
     start: date | None = None
     end: date | None = None
     entry: list[Condition]
+    entry_fill: EntryFill = Field(default_factory=EntryFill)
     exit: ExitRule = Field(default_factory=ExitRule)
     portfolio: PortfolioSettings = Field(default_factory=PortfolioSettings)
 
@@ -89,6 +110,19 @@ class StrategyConfig(BaseModel):
         if not v:
             raise ValueError("at least one entry condition is required")
         return v
+
+
+def _fill_text(fill: EntryFill) -> str:
+    if fill.kind == "dip":
+        return (
+            f"limit {fill.dip_pct:.0%} below the signal close; waits until the low prints through"
+        )
+    if fill.kind == "next_range":
+        return (
+            f"next session bar that trades in {-(fill.below_pct or 0):.0%}…+"
+            f"{fill.above_pct or 0:.0%} of the signal close; otherwise the order is cancelled"
+        )
+    return "next eligible session open"
 
 
 def _resolve_condition(c: Condition, use: str) -> dict[str, Any]:
@@ -127,10 +161,14 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "conditions": [],
         }
     else:
+        raw_max = config.exit.params.get("max_sessions")
+        max_sessions = int(raw_max) if raw_max not in (None, "") else None
+        if max_sessions is not None and max_sessions < 1:
+            raise ValueError("max_sessions must be at least 1")
         exit_resolved = {
             "kind": "signal",
             "version": "1.0.0",
-            "params": {},
+            "params": {"max_sessions": max_sessions} if max_sessions else {},
             "conditions": [_resolve_condition(c, "exit") for c in config.exit.conditions],
         }
     p = config.portfolio
@@ -142,6 +180,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
         "end": config.end.isoformat() if config.end else None,
         "entry": [_resolve_condition(c, "entry") for c in config.entry],
         "entry_combine": "all",
+        "entry_fill": config.entry_fill.model_dump(),
         "exit": exit_resolved,
         "portfolio": {
             "starting_cash": p.starting_cash if p.starting_cash is not None else s.starting_cash,
@@ -160,7 +199,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "engine_version": ENGINE_VERSION,
             "calendar": "XNYS",
             "signal_time": "after completed close",
-            "fill": "next eligible session open",
+            "fill": _fill_text(config.entry_fill),
             "sizing": "floor(target_allocation * equity_at_decision_close / decision_close)",
             "order_of_processing": "exits before entries",
             "tie_break": "candidates processed in ascending symbol order",
@@ -191,6 +230,7 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         start=resolved["start"],
         end=resolved["end"],
         entry=[cond(c) for c in resolved["entry"]],
+        entry_fill=EntryFill(**(resolved.get("entry_fill") or {})),
         exit=ExitRule(
             kind=ex["kind"],
             params=dict(ex["params"]),
