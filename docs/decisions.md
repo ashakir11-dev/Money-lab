@@ -6,13 +6,14 @@ The spec leaves the stack open. These are the defaults chosen.
 | --- | --- | --- |
 | Language | Python 3.12, managed by uv | best ecosystem for numerical research; uv gives one-command, locked installs |
 | Storage | SQLite (run records) + Parquet (data snapshots and ledgers) | local, zero-ops, persistent; Parquet keeps 250 x 5 years compact and fast |
-| Dashboard | Streamlit | controls can be generated from component declarations at runtime; headless `AppTest` lets tests drive the real UI |
+| Dashboard | Next.js (static export) served by FastAPI | controls are generated from component declarations at runtime; TypeScript types come from the API's OpenAPI schema; Playwright drives the real UI in tests. Replaced the first Streamlit dashboard on 2026-11-25 |
 | Calendar | `exchange-calendars` (XNYS) | lookbacks and holding periods count exchange sessions |
 | Live provider | Tiingo End-of-Day (`httpx`) | free tier with raw daily bars plus dividends and splits; key goes in `TIINGO_API_KEY`; see [providers](providers.md) |
 | Tooling | ruff, mypy (strict), pytest, GitHub Actions | |
 
-No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Each layer
-(data, components, engine, reporting, store, dashboard) is tested on its own.
+The dashboard talks only to the HTTP API (`moneylab.api`), which calls
+`moneylab.service.Lab`; the browser never calculates a trade. Each layer (data,
+components, engine, reporting, store, API, dashboard) is tested on its own.
 
 ## Execution rules implemented
 

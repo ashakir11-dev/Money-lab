@@ -29,6 +29,31 @@ export type FillRow = S["FillRow"];
 export type DecisionPage = S["DecisionPage"];
 export type Compare = S["CompareOut"];
 export type SettingDiff = S["SettingDiff"];
+export type PaperAccount = S["PaperAccountOut"];
+export type PaperDetail = S["PaperDetail"];
+export type PaperStart = S["PaperStart"];
+export type Gate = S["GateOut"];
+export type PaperStatus = {
+  paper_id: string;
+  name: string;
+  run_id: string;
+  start_session: string;
+  latest_processed: string | null;
+  processed_sessions: number;
+  next_expected: string;
+  cash: number;
+  equity: number;
+  positions: Record<string, Record<string, unknown>>;
+  pending_orders: Record<string, Record<string, unknown>>;
+  missing: string[];
+  waiting: string[];
+  conflicts: Record<string, unknown>[];
+  rejected: Record<string, unknown>[];
+  duplicates: number;
+  events: number;
+  blocked: string | null;
+};
+export type Delivery = { session?: string | null; status: string; detail?: string; processed: string[] };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
@@ -117,6 +142,14 @@ export const api = {
     q: { offset?: number; limit?: number; action?: string[]; symbol?: string; session?: string } = {},
   ) => request<DecisionPage>(`/api/runs/${encodeURIComponent(id)}/decisions${qs(q)}`),
   compare: (a: string, b: string) => request<Compare>(`/api/compare${qs({ a, b })}`),
+  paperAccounts: () => request<PaperAccount[]>("/api/paper"),
+  startPaper: (body: PaperStart) => post<PaperAccount>("/api/paper", body),
+  paper: (id: string) => request<PaperDetail>(`/api/paper/${encodeURIComponent(id)}`),
+  deliverPaper: (id: string, csv: string) =>
+    post<Delivery[]>(`/api/paper/${encodeURIComponent(id)}/sessions`, { csv }),
+  fetchPaper: (id: string) => post<Delivery[]>(`/api/paper/${encodeURIComponent(id)}/fetch`),
+  replayPaper: (id: string) => post<Record<string, unknown>>(`/api/paper/${encodeURIComponent(id)}/replay`),
+  gates: () => request<Gate[]>("/api/gates"),
 };
 
 /** Poll a job every second until it completes or fails. */

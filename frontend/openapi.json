@@ -430,6 +430,42 @@
         "title": "FillRow",
         "type": "object"
       },
+      "GateOut": {
+        "properties": {
+          "depends_on": {
+            "title": "Depends On",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "passing": {
+            "title": "Passing",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "title",
+          "passing",
+          "evidence",
+          "depends_on"
+        ],
+        "title": "GateOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -559,6 +595,141 @@
           "error"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "PaperAccountOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Session"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "processed_sessions": {
+            "default": 0,
+            "title": "Processed Sessions",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "start_session": {
+            "title": "Start Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "run_id",
+          "start_session",
+          "created_at"
+        ],
+        "title": "PaperAccountOut",
+        "type": "object"
+      },
+      "PaperDelivery": {
+        "properties": {
+          "csv": {
+            "description": "sessions in the import format: date,symbol,open,...",
+            "title": "Csv",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csv"
+        ],
+        "title": "PaperDelivery",
+        "type": "object"
+      },
+      "PaperDetail": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "equity": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Equity",
+            "type": "array"
+          },
+          "fills": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Fills",
+            "type": "array"
+          },
+          "status": {
+            "additionalProperties": true,
+            "title": "Status",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "decisions",
+          "fills",
+          "equity"
+        ],
+        "title": "PaperDetail",
+        "type": "object"
+      },
+      "PaperStart": {
+        "properties": {
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "last history session (default: the snapshot's last)",
+            "title": "Start"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "PaperStart",
         "type": "object"
       },
       "ParamOut": {
@@ -1470,6 +1641,32 @@
         ]
       }
     },
+    "/api/gates": {
+      "get": {
+        "description": "The MVP acceptance gates as recorded in ``moneylab.acceptance``.",
+        "operationId": "gates_api_gates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GateOut"
+                  },
+                  "title": "Response Gates Api Gates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Gates",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -1555,6 +1752,265 @@
         "summary": "Get Job",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/paper": {
+      "get": {
+        "operationId": "paper_accounts_api_paper_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PaperAccountOut"
+                  },
+                  "title": "Response Paper Accounts Api Paper Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Paper Accounts",
+        "tags": [
+          "paper"
+        ]
+      },
+      "post": {
+        "description": "Freeze a completed run and open a paper account for the sessions after START.",
+        "operationId": "paper_start_api_paper_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaperStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Paper Start",
+        "tags": [
+          "paper"
+        ]
+      }
+    },
+    "/api/paper/{paper_id}": {
+      "get": {
+        "description": "Status (cash, positions, missing and conflicting data) and the ledgers.",
+        "operationId": "paper_detail_api_paper__paper_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "title": "Paper Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Paper Detail",
+        "tags": [
+          "paper"
+        ]
+      }
+    },
+    "/api/paper/{paper_id}/fetch": {
+      "post": {
+        "description": "Fetch the sessions newer than the account's snapshot from Tiingo and deliver them.",
+        "operationId": "paper_fetch_api_paper__paper_id__fetch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "title": "Paper Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Paper Fetch Api Paper  Paper Id  Fetch Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Paper Fetch",
+        "tags": [
+          "paper"
+        ]
+      }
+    },
+    "/api/paper/{paper_id}/replay": {
+      "post": {
+        "description": "Rebuild the account from its recorded inputs and compare with the live record.",
+        "operationId": "paper_replay_api_paper__paper_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "title": "Paper Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Paper Replay Api Paper  Paper Id  Replay Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Paper Replay",
+        "tags": [
+          "paper"
+        ]
+      }
+    },
+    "/api/paper/{paper_id}/sessions": {
+      "post": {
+        "description": "Deliver sessions from import-format CSV text, one event per date.",
+        "operationId": "paper_deliver_api_paper__paper_id__sessions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "title": "Paper Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaperDelivery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Paper Deliver Api Paper  Paper Id  Sessions Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Paper Deliver",
+        "tags": [
+          "paper"
         ]
       }
     },

@@ -3,13 +3,14 @@
 Paper mode runs a frozen, saved strategy on market sessions that arrive after it was
 frozen, with exactly the historical engine's decision and accounting logic
 (`moneylab.engine.simulator.Account.step`, unchanged). Code: `src/moneylab/paper/`.
-Tests: `tests/test_paper.py`, `tests/test_dashboard_paper.py`.
+Tests: `tests/test_paper.py`, `tests/test_api_paper.py`, and the Paper trading page in
+`e2e/gates.test.cjs`.
 
 ## Lifecycle
 
 1. **Freeze.** `Lab.start_paper(run_id, start_date=None, name="")` (CLI
    `moneylab paper start RUN_ID --start 2023-03-31`, or the dashboard's *Paper trading*
-   page) takes a completed run and stores:
+   page, `POST /api/paper`) takes a completed run and stores:
    * its resolved settings, after `check_versions` confirms every component and the
      engine still have the versions the run used (otherwise it refuses);
    * the **history**: the run's snapshot from the run's own first session to the start

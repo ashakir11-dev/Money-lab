@@ -235,6 +235,43 @@ class CompareOut(BaseModel):
     first_difference: dict[str, Any] | None
 
 
+class PaperStart(BaseModel):
+    run_id: str
+    start: date | None = Field(
+        default=None, description="last history session (default: the snapshot's last)"
+    )
+    name: str = ""
+
+
+class PaperDelivery(BaseModel):
+    csv: str = Field(description="sessions in the import format: date,symbol,open,...")
+
+
+class PaperAccountOut(BaseModel):
+    id: str
+    name: str
+    run_id: str
+    start_session: str
+    created_at: str
+    latest_session: str | None = None
+    processed_sessions: int = 0
+
+
+class PaperDetail(BaseModel):
+    status: dict[str, Any]
+    decisions: list[dict[str, Any]]
+    fills: list[dict[str, Any]]
+    equity: list[dict[str, Any]]
+
+
+class GateOut(BaseModel):
+    number: int
+    title: str
+    passing: bool
+    evidence: list[str]
+    depends_on: str
+
+
 # Builders ------------------------------------------------------------------------------
 def _job_out(job: Job) -> JobOut:
     return JobOut(**vars(job))
@@ -542,6 +579,91 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
             data_differs=da.snapshot_id != db.snapshot_id,
             first_difference=jsonable(cmp["first_difference"]),
         )
+
+    # Paper trading ---------------------------------------------------------------------
+    def _paper_detail(paper_id: str) -> PaperDetail:
+        try:
+            status = lab.paper_status(paper_id, as_of=date.today())
+        except KeyError:
+            raise HTTPException(404, f"paper account {paper_id} not found") from None
+        led = lab.paper_ledgers(paper_id)
+        return PaperDetail(
+            status=jsonable(status),
+            decisions=records(led.decisions),
+            fills=records(led.fills),
+            equity=records(led.equity),
+        )
+
+    @app.get("/api/paper", response_model=list[PaperAccountOut], tags=["paper"])
+    def paper_accounts() -> list[dict[str, Any]]:
+        return lab.paper_accounts()
+
+    @app.post("/api/paper", response_model=PaperAccountOut, tags=["paper"])
+    def paper_start(body: PaperStart) -> dict[str, Any]:
+        """Freeze a completed run and open a paper account for the sessions after START."""
+        try:
+            pid = lab.start_paper(body.run_id, body.start, body.name)
+        except Exception as exc:  # refused (version change, bad date): shown, not started
+            raise HTTPException(422, f"{type(exc).__name__}: {exc}") from exc
+        return next(a for a in lab.paper_accounts() if a["id"] == pid)
+
+    @app.get("/api/paper/{paper_id}", response_model=PaperDetail, tags=["paper"])
+    def paper_detail(paper_id: str) -> PaperDetail:
+        """Status (cash, positions, missing and conflicting data) and the ledgers."""
+        return _paper_detail(paper_id)
+
+    @app.post("/api/paper/{paper_id}/sessions", response_model=list[dict[str, Any]], tags=["paper"])
+    def paper_deliver(paper_id: str, body: PaperDelivery) -> list[dict[str, Any]]:
+        """Deliver sessions from import-format CSV text, one event per date."""
+        try:
+            frame = read_import_file(io.StringIO(body.csv))  # type: ignore[arg-type]
+            out: list[dict[str, Any]] = jsonable(lab.paper_ingest_sessions(paper_id, frame))
+        except KeyError:
+            raise HTTPException(404, f"paper account {paper_id} not found") from None
+        except Exception as exc:
+            raise HTTPException(422, f"{type(exc).__name__}: {exc}") from exc
+        return out
+
+    @app.post("/api/paper/{paper_id}/fetch", response_model=list[dict[str, Any]], tags=["paper"])
+    def paper_fetch(paper_id: str) -> list[dict[str, Any]]:
+        """Fetch the sessions newer than the account's snapshot from Tiingo and deliver them."""
+        try:
+            acct = lab.paper.store.account(paper_id)
+        except KeyError:
+            raise HTTPException(404, f"paper account {paper_id} not found") from None
+        try:
+            new = lab.fetch_new_sessions(acct["snapshot_id"])
+        except Exception as exc:  # provider errors are shown to the person
+            raise HTTPException(400, f"{type(exc).__name__}: {exc}") from exc
+        if new.bars.empty:
+            return []
+        out: list[dict[str, Any]] = jsonable(lab.paper_ingest_sessions(paper_id, new.bars))
+        return out
+
+    @app.post("/api/paper/{paper_id}/replay", response_model=dict[str, Any], tags=["paper"])
+    def paper_replay(paper_id: str) -> dict[str, Any]:
+        """Rebuild the account from its recorded inputs and compare with the live record."""
+        try:
+            out: dict[str, Any] = jsonable(lab.paper_replay(paper_id))
+        except KeyError:
+            raise HTTPException(404, f"paper account {paper_id} not found") from None
+        return out
+
+    @app.get("/api/gates", response_model=list[GateOut], tags=["meta"])
+    def gates() -> list[GateOut]:
+        """The MVP acceptance gates as recorded in ``moneylab.acceptance``."""
+        from moneylab.acceptance import GATES, REPORTS
+
+        return [
+            GateOut(
+                number=n,
+                title=title,
+                passing=not missing,
+                evidence=[*tests, *([REPORTS[n]] if n in REPORTS else [])],
+                depends_on=missing,
+            )
+            for n, title, tests, missing in GATES
+        ]
 
     # Dashboard -----------------------------------------------------------------------
     web = web_dir or Path(os.environ.get("MONEYLAB_WEB_DIR", DEFAULT_WEB_DIR))

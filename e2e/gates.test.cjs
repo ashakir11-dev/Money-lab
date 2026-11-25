@@ -143,3 +143,73 @@ test("compare opens on the newest run against its parent", async () => {
   );
   assert.deepEqual(errors, []);
 });
+
+test("builder: crossings offer only price-unit indicators; MACD fast >= slow is refused", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/builder?from=${original}`);
+  const first = page.getByTestId("condition-0").getByTestId("indicator-select");
+  await first.waitFor();
+  const crossOpts = await first.locator("option").evaluateAll((os) => os.map((o) => o.value));
+  assert.ok(!crossOpts.includes("breadth") && !crossOpts.includes("rsi"), crossOpts.join());
+  await page.getByTestId("add-condition").click();
+  const last = page.locator('[data-testid^="condition-"]').last();
+  const opts = await last.getByTestId("indicator-select").locator("option").evaluateAll((os) => os.map((o) => o.value));
+  assert.ok(opts.includes("breadth"), opts.join());
+  await last.getByTestId("indicator-select").selectOption("macd");
+  await last.getByTestId("param-fast").fill("30");
+  await last.getByTestId("param-slow").fill("10");
+  await page.getByText("Not valid yet").waitFor({ timeout: 10000 });
+  assert.equal(await page.getByTestId("run-backtest").isDisabled(), true);
+  // The refused validation is a 422 the browser logs; nothing else may fail.
+  assert.deepEqual(errors.filter((e) => !/status of 422/.test(e)), []);
+});
+
+test("run page: benchmark purchase, open positions and watchlist selection date", async () => {
+  const { page, errors } = await newPage();
+  const wl = await api(server.base, "POST", "/api/watchlists", { name: "core", symbols: ["AAA", "BBB", "CCC", "DDD"], label: "t" });
+  const job = await api(server.base, "POST", "/api/runs", { config: rsiStrategy(35), snapshot_id: snapshotId, watchlist: "core" });
+  const id = (await waitJob(server.base, job)).run_ids[0];
+  await page.goto(`${server.base}/run?id=${id}`);
+  await page.getByText(/SPY bought \d+ shares/).waitFor();
+  const text = await page.locator("main").innerText();
+  assert.match(text, /Open positions at the end: \d+/);
+  assert.ok(text.includes(`Watchlist core v1 selected ${wl.created_at.slice(0, 10)}`), text);
+  assert.deepEqual(errors, []);
+});
+
+test("paper trading page: start, deliver sessions (one twice), see the account, replay", async () => {
+  const { page, errors } = await newPage();
+  const lines = fs.readFileSync(FIXTURE, "utf8").trim().split("\n");
+  const header = lines[0];
+  const pick = (from, to) => [header, ...lines.slice(1).filter((l) => l.slice(0, 10) > from && l.slice(0, 10) <= to)].join("\n");
+  await page.goto(`${server.base}/paper`);
+  await page.getByTestId("paper-run").selectOption(original);
+  await page.getByTestId("paper-start").fill("2023-03-31");
+  await page.getByTestId("paper-create").click();
+  await page.getByTestId("paper-status").waitFor();
+  assert.equal(await page.getByTestId("paper-next").innerText(), "2023-04-03");
+
+  await page.getByTestId("paper-csv").fill(pick("2023-03-31", "2023-04-06"));
+  await page.getByTestId("paper-ingest").click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="paper-deliveries"] tr[data-status="accepted"]').length === 4);
+  await page.getByTestId("paper-csv").fill(pick("2023-04-03", "2023-04-04"));
+  await page.getByTestId("paper-ingest").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="paper-deliveries"] tr[data-status="duplicate"]'));
+  await page.waitForFunction(() => document.querySelector('[data-testid="paper-latest"]')?.textContent === "2023-04-06");
+  assert.equal(await page.getByTestId("paper-next").innerText(), "2023-04-10");
+
+  await page.getByTestId("paper-replay").click();
+  const rep = page.getByTestId("paper-replay-result");
+  await rep.waitFor();
+  assert.equal(await rep.getAttribute("data-match"), "true");
+  assert.deepEqual(errors, []);
+});
+
+test("gates page lists the six acceptance gates", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/gates`);
+  await page.getByTestId("gate-6").waitFor();
+  assert.equal(await page.locator('[data-testid^="gate-"][data-passing]').count(), 6);
+  assert.equal(await page.getByTestId("gate-3").getAttribute("data-passing"), "true");
+  assert.deepEqual(errors, []);
+});

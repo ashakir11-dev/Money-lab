@@ -23,8 +23,7 @@ uv run moneylab serve --open # the lab at http://127.0.0.1:8000 (API docs at /do
 `moneylab serve` is one local app: FastAPI serves the research API and the built
 Next.js dashboard (`frontend/`) from one address. Runs are submitted in the background
 and keep going if the browser tab is closed. The browser never calculates a trade; every
-number comes from the Python engine. The older Streamlit dashboard
-(`uv run moneylab dashboard`) still works until the new pages fully replace it.
+number comes from the Python engine.
 
 To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`,
 `NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000 npm run dev`. After changing the API, run
@@ -36,9 +35,9 @@ To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`
 | Command | What it does |
 | --- | --- |
 | `make check` | lint, format check, type check and all tests |
-| `make web` / `make e2e` | build the Next.js dashboard / run the browser checks (gates 1 and 3) |
+| `make web` / `make e2e` | build the Next.js dashboard / run the browser checks (gates 1 and 3, paper trading) |
 | `uv run python scripts/benchmark_browser.py` | gate 2 in the browser: submit to visible comparison, writes `docs/benchmarks/capacity-browser.md` |
-| `uv run pytest` | all tests (about 10 seconds) |
+| `uv run pytest` | all Python tests (about 25 seconds) |
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
 | `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper ingest`, `paper status`, `paper replay` |
@@ -54,19 +53,22 @@ To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`
 
 ## The RSI threshold demo in the dashboard
 
-1. **Data**, tab *Import a CSV file*: press *Import as new snapshot* (the path defaults
-   to the fixture).
-2. **Strategy builder**: pick AAA, BBB, CCC, DDD. The entry already has *close crosses
-   above SMA(20)*. Press *Add entry condition*: it adds *RSI(14) below 30*. Run.
-3. **Runs**: open that run, inspect the *Settings* tab, press *Duplicate this run*.
-4. In the duplicate change only the threshold 30 to 35. Run. The dashboard opens a
-   comparison with the parent on the Compare page.
-5. **Compare**: one config difference (`entry[1].params.value`: 30 to 35) and the first
-   changed decision: **AAA on 2023-04-04**, observed RSI 31.68, failing `below 30` and
-   passing `below 35`, bought 134 shares at 74.91 the next open.
+After `uv run moneylab demo` and `uv run moneylab serve --open`:
 
-`tests/test_dashboard_rsi_path.py` drives these exact steps through the real dashboard
-script, and `tests/test_rsi_divergence.py` checks both ledgers against hand calculations.
+1. **Runs**: open "SMA20 cross + RSI14 < 30" and press **Duplicate and edit**.
+2. In the builder change only the RSI threshold from 30 to 35, then **Run backtest**.
+3. Press **Compare with the original run**: one config difference
+   (`entry[1].params.value`: 30 to 35) and the first changed decision: **AAA on
+   2023-04-04**, observed RSI 31.68, failing `below 30` and passing `below 35`, bought
+   134 shares at 74.91 the next open. **Inspect** shows both accounts that day.
+
+`e2e/gates.test.cjs` drives these steps in a real browser (`make e2e`), and
+`tests/test_rsi_divergence.py` checks both ledgers against hand calculations. The timed
+version with a universe change is [docs/walkthrough.md](docs/walkthrough.md).
+
+**Paper trading** freezes a saved run and steps it on new sessions: fetch them from
+Tiingo or paste a CSV, then replay to check the record ([details](docs/paper-trading.md)).
+**Gates** shows the acceptance status.
 
 ## Demo data or real data?
 
@@ -79,9 +81,9 @@ Every snapshot, run and comparison carries a label:
 - **Imported file**: any other CSV you import.
 
 To backtest on real prices: put `TIINGO_API_KEY=...` in a `.env` file in this folder (or
-export it), start the dashboard, then **Data** > *Real prices (Tiingo)*: enter symbols
-(include your benchmark, e.g. SPY) and dates, press *Fetch from Tiingo*, then *Build a
-strategy on this data*. The sidebar shows whether a key was found.
+export it), start the lab, then on **Data** fill in *Real prices (Tiingo)*: symbols
+(include your benchmark, e.g. SPY) and dates. The new snapshot is then offered in the
+builder. Without a key the fetch is refused with a message saying so.
 
 ## Layout
 
@@ -93,8 +95,10 @@ src/moneylab/
   engine/       config resolution, the daily simulator, reporting and comparison
   paper/        paper forward testing: frozen runs stepped on delivered sessions, replay
   store.py      run history (SQLite records + Parquet ledgers)
-  service.py    the one entry point used by the dashboard, CLI and tests
-  dashboard/    Streamlit app; controls are generated from component declarations
+  service.py    the one entry point used by the API, CLI and tests
+  api/          FastAPI over the service: research API plus the built dashboard
+frontend/       Next.js dashboard (static export); controls are generated from component declarations
+e2e/            browser checks against the real server
 fixtures/data/  deterministic offline dataset
 fixtures/tiingo/ recorded-style Tiingo responses (split + dividend variant)
 docs/           decisions, file format, providers, acceptance report

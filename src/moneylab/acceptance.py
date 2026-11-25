@@ -19,9 +19,8 @@ GATES: list[tuple[int, str, list[str], str]] = [
         1,
         "No-code configuration and extensibility",
         [
-            "tests/test_dashboard_rsi_path.py",
+            "tests/test_api.py",
             "tests/test_macd.py",
-            "tests/test_dashboard_macd.py",
             "tests/test_macd_paper.py",
         ],
         "",
@@ -35,7 +34,7 @@ GATES: list[tuple[int, str, list[str], str]] = [
     (
         3,
         "Research usability",
-        ["tests/test_gate3_usability.py", "tests/test_dashboard_rsi_path.py"],
+        ["tests/test_api.py"],
         "",
     ),
     (
@@ -46,7 +45,7 @@ GATES: list[tuple[int, str, list[str], str]] = [
             "tests/test_rsi_divergence.py",
             "tests/test_account_state.py",
             "tests/test_paper.py",
-            "tests/test_dashboard_paper.py",
+            "tests/test_api_paper.py",
             "tests/test_conventions.py",
         ],
         "one genuinely new market session processed live (needs the Tiingo provider and a "
@@ -69,6 +68,8 @@ GATES: list[tuple[int, str, list[str], str]] = [
 
 # gate -> recorded evidence that is too slow or needs a secret (re-run separately)
 REPORTS: dict[int, str] = {
+    1: "e2e/gates.test.cjs: builder controls from the registry, MACD added in the browser "
+    "(re-run: make web && make e2e)",
     3: "docs/walkthrough.md, run in the browser on 2026-11-25 in 18.9 s "
     "(re-run: node --test e2e/gates.test.cjs)",
     2: "docs/benchmarks/capacity.md (re-run: uv run python scripts/benchmark_capacity.py)",

@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
-from streamlit.testing.v1 import AppTest
 
 from moneylab.components import get_component
 from moneylab.demo import FIXTURE, UNIVERSE
@@ -114,25 +111,3 @@ def test_price_cross_rejects_indicators_not_in_price_units() -> None:
         )
         with pytest.raises(ValueError, match="not in price units"):
             resolve(cfg)
-
-
-def test_dashboard_offers_breadth_for_thresholds_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MONEYLAB_HOME", str(tmp_path / "home"))
-    app = Path(__file__).resolve().parents[1] / "src" / "moneylab" / "dashboard" / "app.py"
-    at = AppTest.from_file(str(app), default_timeout=60)
-    at.run()
-    at.sidebar.radio(key="page").set_value("Data").run()
-    at.text_input(key="data.path").set_value(str(FIXTURE)).run()
-    at.button(key="data.import").click().run()
-    at.sidebar.radio(key="page").set_value("Strategy builder").run()
-    rev = int(at.session_state["draft_rev"])
-    assert at.selectbox(key=f"b{rev}.entry0.ind").options == ["Simple moving average"]
-    at.button(key=f"b{rev}.entry.add").click().run()
-    rev = int(at.session_state["draft_rev"])
-    assert "Breadth (fraction above SMA)" in at.selectbox(key=f"b{rev}.entry1.ind").options
-    at.selectbox(key=f"b{rev}.entry1.ind").set_value("breadth").run()
-    assert not at.exception, at.exception
-    rev = int(at.session_state["draft_rev"])
-    assert at.number_input(key=f"b{rev}.entry1.ind.length").value == 50
