@@ -342,6 +342,9 @@ function ReportView() {
           </>
         ) : null}
       </p>
+      <p className="plain-summary" data-testid="run-summary">
+        {r.summary}
+      </p>
 
       {eq.length >= 2 ? (
         <Specimen
@@ -359,28 +362,26 @@ function ReportView() {
       <section className="stack-block">
         <h2>Metrics</h2>
         <StatBreakdown stats={metricStats({ benchName, m, b, pnl, inMkt })} />
-        {b.invested_session || wl?.created_at ? (
-          <p className="caption">
-            {b.invested_session ? (
-              <>
-                {benchName === "SPY" ? "SPY, the S&P 500 ETF," : benchName} bought {int(b.shares)}{" "}
-                {b.shares === 1 ? "share" : "shares"} at the {b.invested_session} open for {money(b.price)} each (
-                {money((b.shares ?? 0) * (b.price ?? 0))} invested, {money(b.cost)} in trading costs, {money(b.cash_left)}{" "}
-                cash left). The dashed line is that buy-and-hold path.
-                {benchName === "SPY"
-                  ? " Beating it means this run finished ahead of the S&P."
-                  : " This run's benchmark is not SPY, so these figures do not say whether it beat the S&P."}
-              </>
-            ) : null}
-            {wl?.created_at ? (
-              <>
-                {b.invested_session ? " " : null}
-                Watchlist {wl.name} v{wl.version} selected {wl.created_at.slice(0, 10)}: a list chosen today describes past
-                performance of today&apos;s picks.
-              </>
-            ) : null}
-          </p>
-        ) : null}
+        <p className="caption" data-testid="run-facts">
+          Open positions at the end: {int(m.open_positions ?? 0)}
+          {b.invested_session ? (
+            <>
+              {" "}
+              · {benchName === "SPY" ? "SPY" : benchName} bought {int(b.shares)}{" "}
+              {b.shares === 1 ? "share" : "shares"} at the {b.invested_session} open for {money(b.price)} each (
+              {money((b.shares ?? 0) * (b.price ?? 0))} invested, {money(b.cost)} in trading costs, {money(b.cash_left)} cash left).
+              The dashed line is that buy-and-hold path.
+              {benchName === "SPY" ? " Beating it means this run finished ahead of the S&P." : ""}
+            </>
+          ) : null}
+          {wl?.created_at ? (
+            <>
+              {" "}
+              · Watchlist {wl.name} v{wl.version} selected {wl.created_at.slice(0, 10)}: a list chosen today describes past
+              performance of today&apos;s picks.
+            </>
+          ) : null}
+        </p>
       </section>
 
       {detailed ? (

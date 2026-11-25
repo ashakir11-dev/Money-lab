@@ -10,19 +10,18 @@ export type CondDraft = {
   indicator: string;
   indParams: Record<string, Value>;
   params: Record<string, Value>;
-  /** The second indicator, for indicator_compare and indicator_cross. */
+  /** Second indicator, only for indicator_compare and indicator_cross. */
   other?: string;
   otherParams?: Record<string, Value>;
 };
 
-export const PAIRED_KINDS: CondKind[] = ["indicator_compare", "indicator_cross"];
-export const isPaired = (k: CondKind) => PAIRED_KINDS.includes(k);
+export const PAIRED: ReadonlySet<string> = new Set(["indicator_compare", "indicator_cross"]);
 
 const KIND_LABEL: Record<CondKind, string> = {
   threshold: "Level",
   price_cross: "Price cross",
-  indicator_compare: "Compare two",
-  indicator_cross: "Two-line cross",
+  indicator_compare: "Compare",
+  indicator_cross: "Indicator cross",
 };
 
 const IND_SHORT: Record<string, string> = {
@@ -32,8 +31,8 @@ const IND_SHORT: Record<string, string> = {
   breadth: "Breadth",
   ema: "EMA",
   atr: "ATR",
-  roc: "ROC",
   bollinger_pctb: "Bollinger %B",
+  roc: "ROC",
   highest_high: "Highest high",
   lowest_low: "Lowest low",
   avg_volume: "Avg volume",
@@ -48,22 +47,28 @@ const PARAM_SHORT: Record<string, string> = {
   op: "When",
   direction: "When",
   output: "Output",
-  pct: "Percent %",
-  risk_fraction: "Risk %",
-  atr_length: "ATR length",
-  atr_multiple: "Stop × ATR",
-  amount: "Amount $",
+  stdevs: "Width (σ)",
+  pct: "Percent",
+  sessions: "Sessions",
+  amount: "Amount ($)",
+  risk_fraction: "Risk",
+  atr_length: "ATR lookback",
+  atr_multiple: "Stop (× ATR)",
 };
+
+/** Params the engine takes as fractions (0.08) are shown and typed as percents (8). */
+export const isFraction = (p: Param) => /fraction/i.test(p.label);
 
 export const defaultsOf = (c: Component | undefined): Record<string, Value> =>
   Object.fromEntries((c?.params ?? []).map((p) => [p.name, (p.default as Value) ?? ""]));
 
-export function shortIndicator(c: Component): string {
+function shortIndicator(c: Component): string {
   return IND_SHORT[c.id] ?? c.label;
 }
 
 function shortLabel(p: Param): string {
-  return PARAM_SHORT[p.name] ?? (p.label.replace(/\s*\([^)]*\)/g, "").trim() || p.name);
+  const base = PARAM_SHORT[p.name] ?? (p.label.replace(/\s*\([^)]*\)/g, "").trim() || p.name);
+  return isFraction(p) ? `${base} %` : base;
 }
 
 function asNum(v: Value): number | null {
@@ -82,7 +87,8 @@ function sliderWindow(p: Param, indicator: string): { min: number; max: number; 
   }
   if (p.name === "value") {
     if (indicator === "rsi") return { min: 0, max: 100, step: 1 };
-    if (indicator === "breadth") return { min: 0, max: 1, step: 0.01 };
+    if (indicator === "breadth" || indicator === "bollinger_pctb") return { min: 0, max: 1, step: 0.01 };
+    if (indicator === "roc") return { min: -0.5, max: 0.5, step: 0.01 };
     return { min: 0, max: 100, step };
   }
   return { min: lo ?? 1, max: hi != null && hi < 1e6 ? hi : 200, step };
@@ -98,15 +104,9 @@ function tag(id: string, params: Record<string, Value>, comps: Map<string, Compo
   return extra ? `${name}(${extra})` : name;
 }
 
-/** Indicators that can be paired with `primary`: two price-unit lines, or the same indicator. */
-export function pairable(primary: Component | undefined, indicators: Component[]): Component[] {
-  if (!primary) return indicators;
-  return primary.price_scale ? indicators.filter((c) => c.price_scale) : indicators.filter((c) => c.id === primary.id);
-}
-
 function sentence(cond: CondDraft, comps: Map<string, Component>): string {
   const tagged = tag(cond.indicator, cond.indParams, comps);
-  if (isPaired(cond.kind)) {
+  if (PAIRED.has(cond.kind)) {
     const other = tag(cond.other ?? "", cond.otherParams ?? {}, comps);
     return cond.kind === "indicator_cross"
       ? `${tagged} crosses ${cond.params.direction ?? ""} ${other}`
@@ -183,7 +183,66 @@ export function ParamControl({
     );
   }
 
+  if (p.type === "float" && isFraction(p)) {
+    const shown: Param = {
+      ...p,
+      label: p.label,
+      min: typeof p.min === "number" ? +(p.min * 100).toFixed(6) : p.min,
+      max: typeof p.max === "number" ? Math.min(+(p.max * 100).toFixed(6), 50) : p.max,
+    };
+    const n = asNum(value);
+    return (
+      <NumberControl
+        p={shown}
+        label={label}
+        value={n == null ? value : +(n * 100).toFixed(6)}
+        onChange={(v) => {
+          const m = asNum(v);
+          onChange(m == null ? v : +(m / 100).toFixed(8));
+        }}
+        testid={testid}
+        inputId={inputId}
+        indicator={indicator}
+        extra={extra}
+      />
+    );
+  }
   if (p.type === "int" || p.type === "float") {
+    return (
+      <NumberControl p={p} label={label} value={value} onChange={onChange} testid={testid} inputId={inputId} indicator={indicator} extra={extra} />
+    );
+  }
+
+  return (
+    <div className="cond-row">
+      <label className="cond-label" htmlFor={inputId}>
+        {label}
+      </label>
+      <input id={inputId} data-testid={testid} type="text" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function NumberControl({
+  p,
+  label,
+  value,
+  onChange,
+  testid,
+  inputId,
+  indicator,
+  extra,
+}: {
+  p: Param;
+  label: string;
+  value: Value;
+  onChange: (v: Value) => void;
+  testid: string;
+  inputId: string;
+  indicator: string;
+  extra?: ReactNode;
+}) {
+  {
     const win = sliderWindow(p, indicator);
     const n = asNum(value);
     const slider = n == null ? win.min : Math.min(win.max, Math.max(win.min, n));
@@ -219,15 +278,41 @@ export function ParamControl({
       </div>
     );
   }
+}
 
+/** Every param of one registry component, as generated controls. */
+export function SchemaParams({
+  schema,
+  values,
+  onChange,
+  prefix,
+}: {
+  schema: Component | undefined;
+  values: Record<string, Value>;
+  onChange: (v: Record<string, Value>) => void;
+  prefix: string;
+}) {
   return (
-    <div className="cond-row">
-      <label className="cond-label" htmlFor={inputId}>
-        {label}
-      </label>
-      <input id={inputId} data-testid={testid} type="text" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
-    </div>
+    <>
+      {(schema?.params ?? []).map((p) => (
+        <ParamControl
+          key={`${schema?.id}-${p.name}`}
+          p={p}
+          value={values[p.name] ?? ""}
+          testid={`${prefix}-${p.name}`}
+          inputId={`${prefix}-${p.name}`}
+          indicator={schema?.id ?? ""}
+          onChange={(v) => onChange({ ...values, [p.name]: v })}
+        />
+      ))}
+    </>
   );
+}
+
+/** Indicators that may sit on the other side of `main` (same units: both price-scale, or the same indicator). */
+export function partnersOf(main: Component | undefined, indicators: Component[]): Component[] {
+  if (!main) return [];
+  return main.price_scale ? indicators.filter((c) => c.price_scale) : indicators.filter((c) => c.id === main.id);
 }
 
 export function ConditionEditor({
@@ -247,54 +332,42 @@ export function ConditionEditor({
 }) {
   const byId = new Map(comps.map((c) => [c.id, c]));
   const indicators = comps.filter((c) => c.uses.includes("indicator"));
+  const kinds = (Object.keys(KIND_LABEL) as CondKind[]).filter((k) => byId.has(k));
+  const paired = PAIRED.has(cond.kind);
   const allowed = cond.kind === "price_cross" ? indicators.filter((c) => c.price_scale) : indicators;
   const ind = byId.get(cond.indicator);
   const kindSchema = byId.get(cond.kind);
-  const where = prefix === "condition" ? "Rule" : "Exit";
-  const paired = isPaired(cond.kind);
-  const otherChoices = pairable(ind, indicators);
+  const partners = partnersOf(ind, indicators);
   const otherInd = byId.get(cond.other ?? "");
-  const kinds = (Object.keys(KIND_LABEL) as CondKind[]).filter((k) => {
-    const c = byId.get(k);
-    return c && c.uses.includes(prefix === "condition" ? "entry" : "exit");
-  });
+  const where = prefix === "condition" ? "Rule" : "Exit";
 
-  /** A second line for a paired condition: a different price-unit line, or the same indicator. */
-  function defaultOther(primary: Component | undefined): Pick<CondDraft, "other" | "otherParams"> {
-    const choices = pairable(primary, indicators);
-    const pick = choices.find((c) => c.id !== primary?.id) ?? primary ?? choices[0];
-    const params = defaultsOf(pick);
-    if (pick && pick.id === primary?.id) {
-      const len = pick.params.find((p) => p.name === "length");
-      if (len && typeof params.length === "number") params.length = params.length * 2;
-    }
-    return { other: pick?.id, otherParams: params };
+  /** Keep `other` valid for the main indicator; default to a second copy of it. */
+  function withPartner(next: CondDraft): CondDraft {
+    if (!PAIRED.has(next.kind)) return { ...next, other: undefined, otherParams: undefined };
+    const ok = partnersOf(byId.get(next.indicator), indicators).some((c) => c.id === next.other);
+    if (ok) return next;
+    const other = byId.get(next.indicator);
+    const otherParams = defaultsOf(other);
+    // A different length makes the default pair meaningful (e.g. SMA 20 vs SMA 50).
+    if (typeof otherParams.length === "number") otherParams.length = otherParams.length * 2 + 10;
+    return { ...next, other: other?.id, otherParams };
   }
 
   function setKind(kind: CondKind) {
     let indicator = cond.indicator;
     let indParams = cond.indParams;
-    if ((kind === "price_cross" || isPaired(kind)) && !byId.get(indicator)?.price_scale) {
+    if (kind === "price_cross" && !byId.get(indicator)?.price_scale) {
       indicator = indicators.find((c) => c.price_scale)?.id ?? indicator;
       indParams = defaultsOf(byId.get(indicator));
     }
-    const base: CondDraft = { kind, indicator, indParams, params: defaultsOf(byId.get(kind)) };
-    onChange(isPaired(kind) ? { ...base, ...defaultOther(byId.get(indicator)) } : base);
+    onChange(withPartner({ ...cond, kind, indicator, indParams, params: defaultsOf(byId.get(kind)) }));
   }
 
   function setIndicator(id: string) {
-    const next: CondDraft = { ...cond, indicator: id, indParams: defaultsOf(byId.get(id)) };
-    if (paired && !pairable(byId.get(id), indicators).some((c) => c.id === cond.other)) {
-      Object.assign(next, defaultOther(byId.get(id)));
-    }
-    onChange(next);
+    onChange(withPartner({ ...cond, indicator: id, indParams: defaultsOf(byId.get(id)) }));
   }
 
-  function setOther(id: string) {
-    onChange({ ...cond, other: id, otherParams: defaultsOf(byId.get(id)) });
-  }
-
-  const pairPill = paired ? kindSchema?.params.find((x) => x.name === "op" || x.name === "direction") : undefined;
+  const pairChoice = paired ? kindSchema?.params.find((x) => x.choices && x.choices.length) : undefined;
 
   return (
     <div className="cond" data-testid={`${prefix}-${index}`}>
@@ -336,24 +409,6 @@ export function ConditionEditor({
             </option>
           ))}
         </select>
-        {paired ? (
-          <>
-            <span className="muted small">{cond.kind === "indicator_cross" ? "crosses" : "vs"}</span>
-            <select
-              className="cond-indicator"
-              value={cond.other ?? ""}
-              onChange={(e) => setOther(e.target.value)}
-              data-testid="other-indicator-select"
-              aria-label="Second indicator"
-            >
-              {otherChoices.map((c) => (
-                <option key={c.id} value={c.id} title={c.description}>
-                  {shortIndicator(c)}
-                </option>
-              ))}
-            </select>
-          </>
-        ) : null}
       </div>
       <div className="cond-params">
         {(ind?.params ?? []).map((p) => {
@@ -381,56 +436,82 @@ export function ConditionEditor({
             />
           );
         })}
-        {pairPill ? (
-          <div className="cond-row">
-            <span className="cond-label">When</span>
-            <ChoicePills
-              p={pairPill}
-              value={cond.params[pairPill.name] ?? ""}
-              testid={`pair-${pairPill.name}`}
-              onChange={(v) => onChange({ ...cond, params: { ...cond.params, [pairPill.name]: v } })}
-            />
-          </div>
-        ) : null}
-        {paired
-          ? (otherInd?.params ?? []).map((p) => (
+        {paired ? (
+          <>
+            {pairChoice ? (
+              <ParamControl
+                p={pairChoice}
+                value={cond.params[pairChoice.name] ?? ""}
+                testid={`pair-${pairChoice.name}`}
+                inputId={`${prefix}-${index}-pair-${pairChoice.name}`}
+                indicator={cond.indicator}
+                onChange={(v) => onChange({ ...cond, params: { ...cond.params, [pairChoice.name]: v } })}
+              />
+            ) : null}
+            <div className="cond-row">
+              <label className="cond-label" htmlFor={`${prefix}-${index}-other`}>
+                Than
+              </label>
+              <select
+                id={`${prefix}-${index}-other`}
+                className="cond-indicator"
+                value={cond.other ?? ""}
+                data-testid="other-select"
+                aria-label="Second indicator"
+                onChange={(e) => onChange({ ...cond, other: e.target.value, otherParams: defaultsOf(byId.get(e.target.value)) })}
+              >
+                {partners.map((c) => (
+                  <option key={c.id} value={c.id} title={c.description}>
+                    {shortIndicator(c)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(otherInd?.params ?? []).map((p) => (
               <ParamControl
                 key={`other-${cond.other}-${p.name}`}
-                p={{ ...p, name: `other_${p.name}`, label: `2nd ${shortLabel(p).toLowerCase()}` }}
+                p={p}
                 value={cond.otherParams?.[p.name] ?? ""}
                 testid={`other-param-${p.name}`}
                 inputId={`${prefix}-${index}-other-param-${p.name}`}
                 indicator={cond.other ?? ""}
                 onChange={(v) => onChange({ ...cond, otherParams: { ...(cond.otherParams ?? {}), [p.name]: v } })}
               />
-            ))
-          : null}
-        {(kindSchema?.params ?? []).map((p) => {
-          if (p.name === "op" || p.name === "direction") return null;
-          const testid = cond.kind === "threshold" ? `threshold-${p.name}` : `cross-${p.name}`;
-          const op = kindSchema?.params.find((x) => x.name === "op");
-          return (
-            <ParamControl
-              key={`${cond.kind}-${p.name}`}
-              p={p}
-              value={cond.params[p.name] ?? ""}
-              testid={testid}
-              inputId={`${prefix}-${index}-${testid}`}
-              indicator={cond.indicator}
-              extra={
-                p.name === "value" && op ? (
-                  <ChoicePills
-                    p={op}
-                    value={cond.params.op ?? ""}
-                    testid="threshold-op"
-                    onChange={(v) => onChange({ ...cond, params: { ...cond.params, op: v } })}
-                  />
-                ) : undefined
-              }
-              onChange={(v) => onChange({ ...cond, params: { ...cond.params, [p.name]: v } })}
-            />
-          );
-        })}
+            ))}
+            {!ind?.price_scale ? (
+              <p className="help">
+                {ind ? shortIndicator(ind) : "This indicator"} is not in price units, so it can only be compared with another {ind ? shortIndicator(ind) : "copy"}.
+              </p>
+            ) : null}
+          </>
+        ) : (
+          (kindSchema?.params ?? []).map((p) => {
+            if (p.name === "op" || p.name === "direction") return null;
+            const testid = cond.kind === "threshold" ? `threshold-${p.name}` : `cross-${p.name}`;
+            const op = kindSchema?.params.find((x) => x.name === "op");
+            return (
+              <ParamControl
+                key={`${cond.kind}-${p.name}`}
+                p={p}
+                value={cond.params[p.name] ?? ""}
+                testid={testid}
+                inputId={`${prefix}-${index}-${testid}`}
+                indicator={cond.indicator}
+                extra={
+                  p.name === "value" && op ? (
+                    <ChoicePills
+                      p={op}
+                      value={cond.params.op ?? ""}
+                      testid="threshold-op"
+                      onChange={(v) => onChange({ ...cond, params: { ...cond.params, op: v } })}
+                    />
+                  ) : undefined
+                }
+                onChange={(v) => onChange({ ...cond, params: { ...cond.params, [p.name]: v } })}
+              />
+            );
+          })
+        )}
       </div>
     </div>
   );
