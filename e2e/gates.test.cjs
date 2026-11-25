@@ -164,12 +164,13 @@ test("builder: crossings offer only price-unit indicators; MACD fast >= slow is 
   assert.deepEqual(errors.filter((e) => !/status of 422/.test(e)), []);
 });
 
-test("run page: benchmark purchase, open positions and watchlist selection date", async () => {
+test("report page: benchmark purchase, open positions and watchlist selection date", async () => {
   const { page, errors } = await newPage();
   const wl = await api(server.base, "POST", "/api/watchlists", { name: "core", symbols: ["AAA", "BBB", "CCC", "DDD"], label: "t" });
   const job = await api(server.base, "POST", "/api/runs", { config: rsiStrategy(35), snapshot_id: snapshotId, watchlist: "core" });
   const id = (await waitJob(server.base, job)).run_ids[0];
   await page.goto(`${server.base}/run?id=${id}`);
+  await page.waitForURL(/\/report\?id=/);
   await page.getByText(/SPY bought \d+ shares/).waitFor();
   const text = await page.locator("main").innerText();
   assert.match(text, /Open positions at the end: \d+/);
