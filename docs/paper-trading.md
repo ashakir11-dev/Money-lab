@@ -97,18 +97,29 @@ session from the state before it and gives the same decisions, fills and state.
 
 ## Feeding a real session
 
-Any source that can produce the import-format frame for one session works:
+Preferred after-close path (Tiingo, needs `TIINGO_API_KEY`):
 
 ```bash
 uv run moneylab demo                                    # or any saved run
 uv run moneylab paper start RUN_ID                      # history to the snapshot's last session
-uv run moneylab paper ingest PAPER_ID today.csv         # bars for the next XNYS session(s)
-uv run moneylab paper status PAPER_ID --as-of 2026-11-24
+uv run moneylab paper advance PAPER_ID                  # fetch + ingest sessions after the frontier
+uv run moneylab paper status PAPER_ID
 uv run moneylab paper replay PAPER_ID
 ```
 
-From code (for example a Tiingo provider returning a frame):
-`lab.paper_ingest(paper_id, frame, received_at=fetched_at)`. Deliver only completed
-sessions (after the close) and adjusted prices consistent with the history snapshot's
-adjustment policy; a later dividend or split re-adjusts history, which for paper mode
-means a new run and a new paper account.
+`Lab.paper_advance` / `moneylab paper advance` calls the provider for sessions strictly
+after the latest processed session (or the start session), ingests them in date order,
+and refuses if corporate actions appear in the window (start a new run and paper
+account instead). Re-running is safe: already-accepted sessions come back as
+`duplicate`.
+
+Any source that can produce the import-format frame for one session also works:
+
+```bash
+uv run moneylab paper ingest PAPER_ID today.csv         # bars for the next XNYS session(s)
+```
+
+From code: `lab.paper_ingest(paper_id, frame, received_at=fetched_at)` or
+`lab.paper_advance(paper_id)`. Deliver only completed sessions (after the close) and
+prices consistent with the history snapshot's adjustment policy; a later dividend or
+split re-adjusts history, which for paper mode means a new run and a new paper account.

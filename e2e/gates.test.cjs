@@ -56,7 +56,7 @@ test("gate 3: duplicate, change the RSI threshold, run, and reach the first diff
   let clicks = 0;
   const click = async (loc) => { clicks += 1; await loc.click(); };
 
-  await page.goto(`${server.base}/run?id=${original}`);
+  await page.goto(`${server.base}/report?id=${original}`);
   await click(page.getByRole("button", { name: /duplicate and edit/i }).or(page.getByRole("link", { name: /duplicate and edit/i })).first());
   await page.getByTestId("run-backtest").waitFor();
   const value = page.getByTestId("condition-1").getByTestId("threshold-value");

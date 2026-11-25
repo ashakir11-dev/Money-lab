@@ -76,6 +76,13 @@ def comparable_settings(resolved: dict[str, Any]) -> dict[str, Any]:
     out["exits"] = resolved_exits(resolved)
     out["sizing"] = resolved_sizing(resolved)
     out["rank_by"] = resolved.get("rank_by")
+    # Runs saved before entry fill options filled at the next open.
+    out["entry_fill"] = resolved.get("entry_fill") or {
+        "kind": "next_open",
+        "below_pct": None,
+        "above_pct": None,
+        "dip_pct": None,
+    }
     return out
 
 

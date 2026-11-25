@@ -20,10 +20,21 @@ export function ErrorBox({ error, title = "Something went wrong" }: { error: unk
   );
 }
 
-export function PageHeader({ title, lead, children }: { title: string; lead?: string; children?: ReactNode }) {
+export function PageHeader({
+  title,
+  lead,
+  kicker,
+  children,
+}: {
+  title: string;
+  lead?: string;
+  kicker?: string;
+  children?: ReactNode;
+}) {
   return (
     <header className="page-header">
       <div>
+        {kicker ? <div className="kicker">{kicker}</div> : null}
         <h1>{title}</h1>
         {lead ? <p className="lead">{lead}</p> : null}
       </div>

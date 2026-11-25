@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +14,13 @@ import pandas as pd
 from moneylab.data.actions import POLICY as ACTION_POLICY
 from moneylab.data.actions import adjust, read_actions
 from moneylab.data.providers import NewSessions, Provider, TiingoProvider, new_sessions
+from moneylab.data.providers.base import empty_actions, empty_bars
 from moneylab.data.snapshot import (
     DEFAULT_ADJUSTMENT,
     MarketData,
     Snapshot,
     load_snapshot,
+    normalise,
     read_import_file,
     save_snapshot,
 )
@@ -322,6 +324,52 @@ class Lab:
 
     def paper_accounts(self) -> list[dict[str, Any]]:
         return self.paper.accounts()
+
+    def paper_advance(
+        self,
+        paper_id: str,
+        *,
+        end: date | None = None,
+        provider: Provider | None = None,
+    ) -> dict[str, Any]:
+        """Fetch completed sessions after the account's frontier and ingest them.
+
+        Uses the same Tiingo path as ``fetch_new_sessions``. Corporate actions in the
+        window refuse the advance: start a new run and paper account instead (see
+        docs/paper-trading.md). Duplicate deliveries of already-accepted sessions are
+        recorded as duplicates and do not reprocess.
+        """
+        acct = self.paper.store.account(paper_id)
+        st = self.paper_status(paper_id)
+        after = date.fromisoformat(st["latest_processed"] or acct["start_session"])
+        prov = provider or self.provider()
+        hist = prov.fetch_sessions(acct["symbols"], after, end)
+        actions = hist.actions if not hist.actions.empty else empty_actions()
+        if not actions.empty:
+            raise ValueError(
+                "corporate actions in the advance window; import a fresh snapshot, "
+                "save a new run, and start a new paper account "
+                "(see docs/paper-trading.md)"
+            )
+        bars = normalise(hist.raw) if not hist.raw.empty else empty_bars()
+        if bars.empty:
+            return {
+                "paper_id": paper_id,
+                "after": after.isoformat(),
+                "sessions": [],
+                "ingested": [],
+                "status": self.paper_status(paper_id),
+            }
+        received_at = datetime.now(UTC).isoformat()
+        ingested = self.paper_ingest_sessions(paper_id, bars, received_at=received_at)
+        sessions = sorted({r["session"] for r in ingested if r.get("session")})
+        return {
+            "paper_id": paper_id,
+            "after": after.isoformat(),
+            "sessions": sessions,
+            "ingested": ingested,
+            "status": self.paper_status(paper_id),
+        }
 
 
 def _snap_info(snap: Snapshot) -> SnapshotInfo:

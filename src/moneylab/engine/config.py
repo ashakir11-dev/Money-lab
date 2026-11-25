@@ -112,6 +112,26 @@ class PortfolioSettings(BaseModel):
     cost_bps_per_side: float | None = Field(default=None, ge=0, le=500)
 
 
+class EntryFill(BaseModel):
+    """When a passing signal becomes a fill. Default is the next session open."""
+
+    kind: Literal["next_open", "next_range", "dip"] = "next_open"
+    below_pct: float | None = Field(default=None, ge=0, le=0.5)
+    above_pct: float | None = Field(default=None, ge=0, le=0.5)
+    dip_pct: float | None = Field(default=None, ge=0, le=0.5)
+
+    @model_validator(mode="after")
+    def _fill_defaults(self) -> EntryFill:
+        if self.kind == "dip" and self.dip_pct is None:
+            self.dip_pct = 0.02
+        if self.kind == "next_range":
+            if self.below_pct is None:
+                self.below_pct = 0.02
+            if self.above_pct is None:
+                self.above_pct = 0.02
+        return self
+
+
 class StrategyConfig(BaseModel):
     name: str = "Untitled strategy"
     universe: list[str]
@@ -119,6 +139,7 @@ class StrategyConfig(BaseModel):
     start: date | None = None
     end: date | None = None
     entry: list[Condition]
+    entry_fill: EntryFill = Field(default_factory=EntryFill)
     exit: ExitRule = Field(default_factory=ExitRule)
     exits: list[ExitRule] | None = Field(
         default=None,
@@ -162,6 +183,19 @@ class StrategyConfig(BaseModel):
         if not v:
             raise ValueError("at least one entry condition is required")
         return v
+
+
+def _fill_text(fill: EntryFill) -> str:
+    if fill.kind == "dip":
+        return (
+            f"limit {fill.dip_pct:.0%} below the signal close; waits until the low prints through"
+        )
+    if fill.kind == "next_range":
+        return (
+            f"next session bar that trades in {-(fill.below_pct or 0):.0%}…+"
+            f"{fill.above_pct or 0:.0%} of the signal close; otherwise the order is cancelled"
+        )
+    return "next eligible session open"
 
 
 def _resolve_condition(c: Condition, use: str) -> dict[str, Any]:
@@ -209,10 +243,18 @@ def _resolve_indicator(ref: IndicatorRef) -> dict[str, Any]:
 
 def _resolve_exit(ex: ExitRule) -> dict[str, Any]:
     if ex.kind == "signal":
+        # Optional cap: also exit after max_sessions held, even without the signal.
+        raw_max = ex.params.get("max_sessions")
+        max_sessions = int(raw_max) if raw_max not in (None, "") else None
+        if max_sessions is not None and max_sessions < 1:
+            raise ValueError("max_sessions must be at least 1")
+        unknown = set(ex.params) - {"max_sessions"}
+        if unknown:
+            raise ValueError(f"signal exit: unknown parameter(s) {sorted(unknown)}")
         return {
             "kind": "signal",
             "version": "1.0.0",
-            "params": {},
+            "params": {"max_sessions": max_sessions} if max_sessions else {},
             "conditions": [_resolve_condition(c, "exit") for c in ex.conditions],
         }
     decl = get_component(ex.kind)
@@ -261,6 +303,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
         "end": config.end.isoformat() if config.end else None,
         "entry": [_resolve_condition(c, "entry") for c in config.entry],
         "entry_combine": "all",
+        "entry_fill": config.entry_fill.model_dump(),
         # "exit" is the first exit rule, kept for readers of the single-exit shape;
         # "exits" is the full list the engine uses.
         "exit": exits[0],
@@ -284,7 +327,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "engine_version": ENGINE_VERSION,
             "calendar": "XNYS",
             "signal_time": "after completed close",
-            "fill": "next eligible session open",
+            "fill": _fill_text(config.entry_fill),
             "sizing": "the sizing rule's whole-share quantity at the decision close",
             "order_of_processing": "exits before entries",
             "exits": "the first exit rule in the list that fires sells the whole position",
@@ -333,6 +376,7 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         start=resolved["start"],
         end=resolved["end"],
         entry=[cond(c) for c in resolved["entry"]],
+        entry_fill=EntryFill(**(resolved.get("entry_fill") or {})),
         exit=exit_rule(exits[0]),
         exits=[exit_rule(e) for e in exits] if len(exits) > 1 else None,
         portfolio=PortfolioSettings(

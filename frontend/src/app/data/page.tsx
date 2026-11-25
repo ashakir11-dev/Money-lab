@@ -1,16 +1,27 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { api, type Snapshot } from "@/lib/api";
 import { int, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
-import { Badge, ErrorBox, Loading, PageHeader, Section } from "@/components/ui";
+import { Badge, ErrorBox, Loading, PageHeader, Section, Tile } from "@/components/ui";
 
 const symbolsOf = (s: string) =>
   s
     .split(/[\s,]+/)
     .map((x) => x.trim().toUpperCase())
     .filter(Boolean);
+
+function spanDays(first?: string, last?: string): string {
+  if (!first || !last) return "–";
+  const a = Date.parse(first);
+  const b = Date.parse(last);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return `${first} → ${last}`;
+  const days = Math.round((b - a) / 86400000);
+  const years = days / 365.25;
+  return years >= 1.5 ? `${years.toFixed(1)} y` : `${days} days`;
+}
 
 function TiingoForm({ onDone }: { onDone: (s: Snapshot) => void }) {
   const [symbols, setSymbols] = useState("AAPL, MSFT, SPY");
@@ -36,8 +47,8 @@ function TiingoForm({ onDone }: { onDone: (s: Snapshot) => void }) {
   return (
     <form onSubmit={submit} data-testid="tiingo-form">
       <p className="muted small">
-        Downloads split- and dividend-adjusted daily prices. The server needs a <code>TIINGO_API_KEY</code>. Include the benchmark (SPY) in
-        the list.
+        Daily prices, split- and dividend-adjusted the same way as a CSV. Needs <code>TIINGO_API_KEY</code>. Include
+        your benchmark (usually SPY).
       </p>
       <div className="field">
         <label htmlFor="tiingo-symbols">Symbols</label>
@@ -54,7 +65,7 @@ function TiingoForm({ onDone }: { onDone: (s: Snapshot) => void }) {
         </div>
         <div className="field">
           <label htmlFor="tiingo-label">Label (optional)</label>
-          <input id="tiingo-label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <input id="tiingo-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="US large-cap 2020–" />
         </div>
       </div>
       <button className="primary" type="submit" disabled={busy}>
@@ -89,7 +100,8 @@ function CsvForm({ onDone }: { onDone: (s: Snapshot) => void }) {
   return (
     <form onSubmit={submit} data-testid="csv-form">
       <p className="muted small">
-        Columns: <code>date, symbol, open, high, low, close, volume</code>. Prices should already be adjusted.
+        One row per symbol per exchange session. Columns: <code>date, symbol, open, high, low, close, volume</code>.
+        Prices should already be split- and dividend-adjusted.
       </p>
       <div className="fields">
         <div className="field">
@@ -135,22 +147,22 @@ function WatchlistForm({ onDone }: { onDone: () => void }) {
     <form onSubmit={submit} data-testid="watchlist-form">
       <div className="fields">
         <div className="field">
-          <label htmlFor="wl-name">Name</label>
+          <label htmlFor="wl-name">Watchlist name</label>
           <input id="wl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="tech-large" />
         </div>
         <div className="field">
-          <label htmlFor="wl-label">Label (optional)</label>
-          <input id="wl-label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <label htmlFor="wl-label">Why this list (optional)</label>
+          <input id="wl-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="names I actually follow" />
         </div>
       </div>
       <div className="field">
-        <label htmlFor="wl-symbols">Symbols</label>
+        <label htmlFor="wl-symbols">Members</label>
         <input id="wl-symbols" value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="AAPL MSFT NVDA" />
+        <div className="help">A run records the version it used. Saving the same name again adds a new version.</div>
       </div>
       <button type="submit" disabled={busy || !name.trim() || !symbolsOf(symbols).length}>
         {busy ? "Saving…" : "Save watchlist"}
       </button>
-      <p className="muted small">Saving under an existing name adds a new version; runs keep the version they used.</p>
       <ErrorBox error={error} title="Could not save the watchlist" />
     </form>
   );
@@ -166,23 +178,43 @@ export default function DataPage() {
     snaps.reload();
   };
 
+  const all = snaps.data ?? [];
+  const symbols = new Set(all.flatMap((s) => s.symbols));
+  const earliest = all.map((s) => s.first_date).sort()[0];
+  const latest = all.map((s) => s.last_date).sort().at(-1);
+  const rows = all.reduce((n, s) => n + (s.rows ?? 0), 0);
+
   return (
     <>
       <PageHeader
         title="Data"
-        lead="Price snapshots are frozen once imported, so a run can always be repeated on exactly the same prices."
+        lead="Frozen price snapshots and watchlists. A run always points at one snapshot, so it can be repeated on the same bars."
       />
+
+      <div className="tiles" style={{ marginBottom: 16 }}>
+        <Tile label="Snapshots" value={int(all.length)} />
+        <Tile label="Symbols" value={int(symbols.size)} sub={[...symbols].slice(0, 8).join(" ")} />
+        <Tile
+          label="Range"
+          value={earliest && latest ? `${earliest} → ${latest}` : "–"}
+          sub={spanDays(earliest, latest)}
+        />
+        <Tile label="Rows" value={int(rows)} />
+      </div>
 
       {last ? (
         <p className="notice">
-          Imported <strong>{last.label}</strong>: {int(last.rows)} rows, {last.symbols.length} symbols, {last.first_date} to {last.last_date}.
+          Imported <strong>{last.label}</strong>: {int(last.rows)} rows, {last.symbols.length} symbols, {last.first_date}{" "}
+          to {last.last_date}.
         </p>
       ) : null}
 
       <Section title="Snapshots" aside={<button onClick={snaps.reload}>Refresh</button>}>
         <ErrorBox error={snaps.error} title="Could not load snapshots" />
         {snaps.loading && !snaps.data ? <Loading /> : null}
-        {snaps.data && !snaps.data.length ? <p className="muted">No price data yet. Import some below.</p> : null}
+        {snaps.data && !snaps.data.length ? (
+          <p className="muted">No price data yet. Import from Tiingo or upload a CSV below.</p>
+        ) : null}
         {snaps.data && snaps.data.length ? (
           <div className="table-wrap">
             <table data-testid="snapshots-table">
@@ -191,7 +223,7 @@ export default function DataPage() {
                   <th>Snapshot</th>
                   <th>Source</th>
                   <th>Symbols</th>
-                  <th>Dates</th>
+                  <th>Timeframe</th>
                   <th className="num">Rows</th>
                   <th>Adjustment</th>
                   <th>Imported</th>
@@ -209,9 +241,12 @@ export default function DataPage() {
                     <td>
                       <Badge kind={s.source_kind}>{s.source_label}</Badge>
                     </td>
-                    <td className="small">{s.symbols.join(", ")}</td>
                     <td className="small">
-                      {s.first_date} to {s.last_date}
+                      {s.symbols.length} · {s.symbols.join(", ")}
+                    </td>
+                    <td className="small">
+                      {s.first_date} → {s.last_date}
+                      <div className="muted">{spanDays(s.first_date, s.last_date)}</div>
                     </td>
                     <td className="num">{int(s.rows)}</td>
                     <td className="small">{s.adjustment}</td>
@@ -224,16 +259,8 @@ export default function DataPage() {
         ) : null}
       </Section>
 
-      <div className="grid-2">
-        <Section title="Import from Tiingo">
-          <TiingoForm onDone={imported} />
-        </Section>
-        <Section title="Upload a CSV">
-          <CsvForm onDone={imported} />
-        </Section>
-      </div>
-
       <Section title="Watchlists">
+        <p className="caption">Runs record the version they used. Saving the same name again adds a new version.</p>
         <ErrorBox error={lists.error} title="Could not load watchlists" />
         {lists.data && lists.data.length ? (
           <div className="table-wrap">
@@ -262,11 +289,20 @@ export default function DataPage() {
             </table>
           </div>
         ) : lists.data ? (
-          <p className="muted">No watchlists yet.</p>
+          <p className="muted">No watchlists yet. You can still type symbols in the builder.</p>
         ) : null}
         <h3 style={{ marginTop: 16 }}>Save a watchlist</h3>
         <WatchlistForm onDone={lists.reload} />
       </Section>
+
+      <div className="grid-2">
+        <Section title="Fetch real prices (Tiingo)">
+          <TiingoForm onDone={imported} />
+        </Section>
+        <Section title="Upload a CSV">
+          <CsvForm onDone={imported} />
+        </Section>
+      </div>
     </>
   );
 }

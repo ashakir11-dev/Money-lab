@@ -73,7 +73,9 @@ def exit_text(ex: dict[str, Any]) -> str:
         return f"after {params.get('sessions')} sessions"
     if kind == "signal" or kind is None:
         conds = ex.get("conditions") or []
-        return "when " + (" and ".join(condition_text(c) for c in conds) or "a signal fires")
+        sig = " or ".join(condition_text(c) for c in conds) or "a signal fires"
+        cap = params.get("max_sessions")
+        return f"when {sig}" + (f" or after {cap} sessions" if cap else "")
     args = ", ".join(
         f"{k}={v:g}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items()
     )
@@ -91,8 +93,17 @@ def strategy_summary(resolved: dict[str, Any]) -> str:
     pf = resolved.get("portfolio") or {}
     alloc = pf.get("target_allocation")
     sizing = f", {alloc:.0%} of equity per position" if isinstance(alloc, int | float) else ""
+    fill = resolved.get("entry_fill") or {}
+    kind = fill.get("kind") or "next_open"
+    if kind == "dip":
+        pct = fill.get("dip_pct")
+        how = f" on a {pct:.0%} dip" if isinstance(pct, int | float) else " on a dip"
+    elif kind == "next_range":
+        how = " on the next bar in range"
+    else:
+        how = " at the next open"
     return (
-        f"Buy when {enter}; sell {leave}. "
+        f"Buy when {enter}{how}; sell {leave}. "
         f"Trades {len(uni)} symbol{'s' if len(uni) != 1 else ''} against "
         f"{resolved.get('benchmark', '?')}{sizing}."
     )

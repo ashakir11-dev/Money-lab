@@ -6,6 +6,7 @@ The spec leaves the stack open. These are the defaults chosen.
 | --- | --- | --- |
 | Language | Python 3.12, managed by uv | best ecosystem for numerical research; uv gives one-command, locked installs |
 | Storage | SQLite (run records) + Parquet (data snapshots and ledgers) | local, zero-ops, persistent; Parquet keeps 250 x 5 years compact and fast |
+| App / API | FastAPI (`moneylab serve`) | one local process serves the research API and background runs; OpenAPI drives typed Next.js clients |
 | Dashboard | Next.js (static export) served by FastAPI | controls are generated from component declarations at runtime; TypeScript types come from the API's OpenAPI schema; Playwright drives the real UI in tests. Replaced the first Streamlit dashboard on 2026-11-25 |
 | Calendar | `exchange-calendars` (XNYS) | lookbacks and holding periods count exchange sessions |
 | Live provider | Tiingo End-of-Day (`httpx`) | free tier with raw daily bars plus dividends and splits; key goes in `TIINGO_API_KEY`; see [providers](providers.md) |

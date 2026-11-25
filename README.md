@@ -20,7 +20,7 @@ make web                     # build the dashboard once (needs Node.js 22)
 uv run moneylab serve --open # the lab at http://127.0.0.1:8000 (API docs at /docs)
 ```
 
-`moneylab serve` is one local app: FastAPI serves the research API and the built
+`moneylab serve` is the primary lab: FastAPI serves the research API and the built
 Next.js dashboard (`frontend/`) from one address. Runs are submitted in the background
 and keep going if the browser tab is closed. The browser never calculates a trade; every
 number comes from the Python engine.
@@ -40,7 +40,7 @@ To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`
 | `uv run pytest` | all Python tests (about 25 seconds) |
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
-| `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper ingest`, `paper status`, `paper replay` |
+| `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper advance` (Tiingo after-close), `paper ingest`, `paper status`, `paper replay` |
 | `uv run moneylab fetch SPY QQQ --start 2020-01-02 --end 2024-12-31` | imports daily history from Tiingo (needs `TIINGO_API_KEY`, see [providers](docs/providers.md)) |
 | `uv run moneylab new-sessions SNAPSHOT_ID` | prints sessions Tiingo has after a snapshot, in the import format |
 | `uv run moneylab watchlist NAME SYM... --label TEXT` | saves a labelled watchlist (a new version if it changed); without symbols shows it |
@@ -55,7 +55,7 @@ To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`
 
 After `uv run moneylab demo` and `uv run moneylab serve --open`:
 
-1. **Runs**: open "SMA20 cross + RSI14 < 30" and press **Duplicate and edit**.
+1. **Home**: open "SMA20 cross + RSI14 < 30" and press **Duplicate and edit**.
 2. In the builder change only the RSI threshold from 30 to 35, then **Run backtest**.
 3. Press **Compare with the original run**: one config difference
    (`entry[1].params.value`: 30 to 35) and the first changed decision: **AAA on
@@ -94,9 +94,9 @@ src/moneylab/
   data/providers/  live provider adapters (Tiingo) sharing the file adapter's adjustment
   engine/       config resolution, the daily simulator, reporting and comparison
   paper/        paper forward testing: frozen runs stepped on delivered sessions, replay
+  api/          FastAPI research API (background runs); served with the Next.js build
   store.py      run history (SQLite records + Parquet ledgers)
   service.py    the one entry point used by the API, CLI and tests
-  api/          FastAPI over the service: research API plus the built dashboard
 frontend/       Next.js dashboard (static export); controls are generated from component declarations
 e2e/            browser checks against the real server
 fixtures/data/  deterministic offline dataset

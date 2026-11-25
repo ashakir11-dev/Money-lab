@@ -203,6 +203,34 @@ def paper_replay(paper_id: str) -> None:
     raise SystemExit(0 if out["match"] else 1)
 
 
+@paper_app.command("advance")
+def paper_advance(
+    paper_id: str,
+    end: str = typer.Option("", help="last session to fetch (default: today)"),
+) -> None:
+    """Fetch completed sessions after the account's frontier from Tiingo and ingest them."""
+    from datetime import date
+
+    from moneylab.data.providers import ProviderError
+    from moneylab.service import Lab
+
+    try:
+        out = Lab.open().paper_advance(paper_id, end=date.fromisoformat(end) if end else None)
+    except (ProviderError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from None
+    if not out["sessions"]:
+        typer.echo(f"no new sessions after {out['after']}")
+    for r in out["ingested"]:
+        note = f": {r['detail']}" if r["detail"] != r["status"] else ""
+        done = f"; processed {', '.join(r['processed'])}" if r["processed"] else ""
+        typer.echo(f"{r['session']} {r['status']}{note}{done}")
+    st = out["status"]
+    typer.echo(
+        f"latest {st['latest_processed'] or '-'}  next {st['next_expected']}  equity {st['equity']}"
+    )
+
+
 @app.command()
 def acceptance() -> None:
     """Run the acceptance checks and print each gate's status."""

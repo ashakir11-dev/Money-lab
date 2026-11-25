@@ -2,8 +2,9 @@
 
 Timeline for each exchange session ``t``:
 
-1. Pending orders fill at the open of ``t`` (exits first, then entries in ascending
-   symbol order). An order for a symbol without a bar on ``t`` waits.
+1. Pending orders fill on ``t`` (exits first, then entries in ascending symbol order).
+   Default entries fill at the open. Range and dip entries use that session's high/low.
+   An order for a symbol without a bar on ``t`` waits.
 2. Equity is marked at the close of ``t``.
 3. Signals are evaluated on data up to and including the close of ``t`` and new orders
    are queued for the next eligible open. Only data at or before ``t`` is read, so
@@ -270,6 +271,10 @@ class _Order:
     decision_idx: int
     decision_id: int
     decision_close: float = math.nan
+    fill_kind: str = "next_open"
+    limit_px: float = math.nan
+    range_lo: float = math.nan
+    range_hi: float = math.nan
 
 
 @dataclass(frozen=True)
@@ -294,6 +299,9 @@ class _ExitRule:
         self, view: MarketView, sym: str, i: int, pos: _Position, held: int, close: float
     ) -> tuple[str, dict[str, Any]] | None:
         if self.kind == "signal":
+            cap = int(self.params.get("max_sessions") or 0)
+            if cap and held >= cap:
+                return f"held {held} sessions >= {cap}", {}
             if math.isnan(close):
                 return None
             ok, res, vals = _evaluate_compiled(
@@ -333,6 +341,8 @@ class MarketView:
 
     sessions: pd.DatetimeIndex
     opens: dict[str, np.ndarray]
+    highs: dict[str, np.ndarray]
+    lows: dict[str, np.ndarray]
     closes: dict[str, np.ndarray]
     indicators: dict[str, dict[str, np.ndarray]]
     first_bar: dict[str, int]
@@ -343,6 +353,8 @@ class MarketView:
         return cls(
             sessions=data.sessions,
             opens={s: data.frames[s]["open"].to_numpy(dtype=float) for s in symbols},
+            highs={s: data.frames[s]["high"].to_numpy(dtype=float) for s in symbols},
+            lows={s: data.frames[s]["low"].to_numpy(dtype=float) for s in symbols},
             closes={s: data.frames[s]["close"].to_numpy(dtype=float) for s in symbols},
             indicators=_compute_indicators(data, required_indicators(resolved), symbols),
             first_bar=dict(data.first_bar),
@@ -368,6 +380,7 @@ class Account:
         self.exits = resolved_exits(resolved)
         self.sizing = resolved_sizing(resolved)
         self.rank = resolved.get("rank_by")
+        self.entry_fill = resolved.get("entry_fill") or {"kind": "next_open"}
         self.symbols = sorted(resolved["universe"])
         self.cash = float(port["starting_cash"])
         self.positions: dict[str, _Position] = {}
@@ -458,31 +471,86 @@ class Account:
         self._decide_entries(view, i, equity, exiting)
         self.last_index = i
 
+    def _entry_fill_price(
+        self, view: MarketView, i: int, o: _Order, open_px: float
+    ) -> tuple[float | None, str, bool]:
+        """Buy fill. ``(price, note, wait)``. Wait keeps the order; ``None`` cancels."""
+        kind = o.fill_kind or "next_open"
+        if kind == "next_open":
+            return open_px, "", False
+        low = view.lows[o.symbol][i]
+        high = view.highs[o.symbol][i]
+        if math.isnan(low) or math.isnan(high):
+            return None, "", True
+        if kind == "dip":
+            limit = o.limit_px
+            if math.isnan(limit):
+                return open_px, "", False
+            if open_px <= limit:
+                return open_px, "gapped through dip", False
+            if low <= limit:
+                return limit, "filled at dip", False
+            return None, "", True
+        if kind == "next_range":
+            lo, hi = o.range_lo, o.range_hi
+            if math.isnan(lo) or math.isnan(hi):
+                return open_px, "", False
+            if lo <= open_px <= hi:
+                return open_px, "", False
+            if high < lo or low > hi:
+                return None, "outside_range", False
+            if open_px > hi:
+                return hi, "filled at range high", False
+            return lo, "filled at range low", False
+        return open_px, "", False
+
     def _fill_at_open(self, view: MarketView, i: int) -> None:
         day = view.sessions[i].date().isoformat()
         cost_rate = self.cost_rate
         for side in ("sell", "buy"):
             for sym in sorted(s for s, o in self.pending.items() if o.side == side):
                 o = self.pending[sym]
-                px = view.opens[sym][i]
-                if math.isnan(px):
+                open_px = view.opens[sym][i]
+                if math.isnan(open_px):
                     continue  # no bar: never invent a price, wait for the next session
-                del self.pending[sym]
                 if side == "sell":
+                    del self.pending[sym]
                     pos = self.positions.pop(sym)
-                    gross = pos.qty * px
+                    gross = pos.qty * open_px
                     cost = _cents(gross * cost_rate)
                     self.cash = _cents(self.cash + gross - cost)
                     self.fills.append(
-                        _fill(day, sym, "sell", pos.qty, px, cost, self.cash, o, i - o.decision_idx)
+                        _fill(
+                            day,
+                            sym,
+                            "sell",
+                            pos.qty,
+                            open_px,
+                            cost,
+                            self.cash,
+                            o,
+                            i - o.decision_idx,
+                        )
+                    )
+                    continue
+                px, note, wait = self._entry_fill_price(view, i, o, open_px)
+                if wait:
+                    continue
+                del self.pending[sym]
+                if px is None:
+                    self._record(
+                        day,
+                        sym,
+                        SKIP,
+                        note or "entry not filled",
+                        order_qty=o.qty,
+                        open=open_px,
+                        order_decision_id=o.decision_id,
                     )
                     continue
                 qty = o.qty
-                note = ""
                 need = qty * px * (1 + cost_rate)
                 if need > self.cash:
-                    # The ordered quantity is no longer affordable at the open: skip the
-                    # whole order and keep the reason (never buy a smaller quantity).
                     self._record(
                         day,
                         sym,
@@ -649,7 +717,27 @@ class Account:
                 qty=qty,
                 est_cost=round(est, 2),
             )
-            self.pending[sym] = _Order(sym, "buy", qty, i, did, float(c))
+            fill = self.entry_fill
+            kind = str(fill.get("kind") or "next_open")
+            close_px = float(c)
+            limit = lo = hi = math.nan
+            if kind == "dip":
+                limit = close_px * (1.0 - float(fill.get("dip_pct") or 0.0))
+            elif kind == "next_range":
+                lo = close_px * (1.0 - float(fill.get("below_pct") or 0.0))
+                hi = close_px * (1.0 + float(fill.get("above_pct") or 0.0))
+            self.pending[sym] = _Order(
+                sym,
+                "buy",
+                qty,
+                i,
+                did,
+                close_px,
+                fill_kind=kind,
+                limit_px=limit,
+                range_lo=lo,
+                range_hi=hi,
+            )
             committed += est
 
     # Output --------------------------------------------------------------------
