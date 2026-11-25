@@ -90,6 +90,25 @@ test("gate 3: duplicate, change the RSI threshold, run, and reach the first diff
   assert.deepEqual(errors, []);
 });
 
+test("gate 3 walkthrough: drop DDD and change the threshold; first difference is DDD", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/run?id=${original}`);
+  await page.getByRole("button", { name: /duplicate and edit/i }).or(page.getByRole("link", { name: /duplicate and edit/i })).first().click();
+  const uni = page.getByTestId("builder-universe");
+  await uni.waitFor();
+  await page.waitForFunction(() => /DDD/.test(document.querySelector('[data-testid="builder-universe"]')?.value || ""));
+  await uni.fill("AAA, BBB, CCC");
+  await page.getByTestId("condition-1").getByTestId("threshold-value").fill("35");
+  await page.getByTestId("run-backtest").click();
+  await page.getByTestId("compare-with-original").click();
+  const card = page.getByTestId("first-difference");
+  await card.waitFor({ timeout: 60000 });
+  assert.equal(await card.getAttribute("data-session"), "2023-03-07");
+  assert.equal(await card.getAttribute("data-symbol"), "DDD");
+  assert.match(await card.innerText(), /not in this run's universe/i);
+  assert.deepEqual(errors, []);
+});
+
 test("gate 1: builder controls come from the registry schema (MACD, no UI code for it)", async () => {
   const { page, errors } = await newPage();
   const comps = await api(server.base, "GET", "/api/components");
