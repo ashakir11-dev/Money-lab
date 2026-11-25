@@ -88,6 +88,7 @@ def test_run_in_background_then_compare_with_parent(client: TestClient) -> None:
         f"/api/runs/{changed}/decisions", params={"action": ["enter"], "limit": 1}
     ).json()
     assert page["total"] == 2 and len(page["rows"]) == 1
+    assert page["rows"][0]["fill"]["qty"] == 135  # DDD bought at the next open
 
     cmp = client.get("/api/compare", params={"a": original, "b": changed}).json()
     assert cmp["is_parent"] is True and cmp["data_differs"] is False

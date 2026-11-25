@@ -507,15 +507,26 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         """Decisions in engine order. Filter by action (enter, exit, skip, no_signal,
         ineligible), symbol or session."""
         _detail(lab, run_id)
-        d = lab.store.ledgers(run_id).decisions
+        led = lab.store.ledgers(run_id)
+        d = led.decisions
         if action:
             d = d[d["action"].isin(action)]
         if symbol:
             d = d[d["symbol"] == symbol.upper()]
         if session:
             d = d[d["session"] == session]
-        page = d.iloc[offset : offset + limit]
-        return DecisionPage(total=len(d), offset=offset, limit=limit, rows=jsonable(records(page)))
+        page = jsonable(records(d.iloc[offset : offset + limit]))
+        # Each decision that led to a fill carries it (joined on decision_id).
+        f = led.fills
+        by_decision = {int(r["decision_id"]): r for r in records(f)} if "decision_id" in f else {}
+        for row in page:
+            fill = by_decision.get(row.get("decision_id"))
+            row["fill"] = (
+                {k: fill.get(k) for k in ("session", "qty", "price", "cost", "cash_after")}
+                if fill
+                else None
+            )
+        return DecisionPage(total=len(d), offset=offset, limit=limit, rows=page)
 
     @app.get("/api/compare", response_model=CompareOut, tags=["runs"])
     def compare(a: str, b: str) -> CompareOut:

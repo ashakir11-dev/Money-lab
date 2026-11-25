@@ -76,8 +76,16 @@ test("gate 3: duplicate, change the RSI threshold, run, and reach the first diff
   await click(page.getByTestId("inspect-first-difference"));
   const inspector = page.getByTestId("inspector");
   await inspector.waitFor();
+  // The observed RSI that passes 35 but not 30, and the account that day.
+  await page.waitForFunction(
+    () => /31\.68/.test(document.querySelector('[data-testid="inspector"]')?.innerText || "") &&
+      !/Loading/.test(document.querySelector('[data-testid="inspector"]')?.innerText || ""),
+    null,
+    { timeout: 30000 },
+  );
   const text = await inspector.innerText();
-  assert.match(text, /31\.68/); // the observed RSI that passes 35 but not 30
+  assert.match(text, /31\.68/);
+  assert.match(text, /100,303\.09/); // run A's cash at that close
   assert.ok(clicks <= 6, `took ${clicks} interactions`);
   assert.deepEqual(errors, []);
 });

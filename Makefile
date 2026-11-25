@@ -43,4 +43,4 @@ serve:
 	uv run moneylab serve --open
 
 e2e:
-	node --test e2e/
+	node --test e2e/*.test.cjs
