@@ -56,9 +56,12 @@ def run_one(
     """Simulate one variant on its own account. Returns (resolved + data block, result,
     metrics). Used by ``Lab.execute`` and by batch workers alike."""
     result = simulate(resolved, data)
-    m = metrics(result.equity, result.fills)
+    tf = str(resolved.get("timeframe") or "1d")
+    m = metrics(result.equity, result.fills, timeframe=tf)
     if "benchmark_equity" in result.equity:
-        m["benchmark"] = metrics(result.equity, result.fills, column="benchmark_equity")
+        m["benchmark"] = metrics(
+            result.equity, result.fills, column="benchmark_equity", timeframe=tf
+        )
         m["benchmark"].update(result.meta.get("benchmark", {}))
     out = dict(resolved)
     out["data"] = {

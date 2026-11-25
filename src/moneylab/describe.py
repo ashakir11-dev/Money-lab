@@ -44,7 +44,37 @@ def data_source(source: str | None, label: str = "") -> DataSource:
 
 
 # Strategy summary ---------------------------------------------------------------------
+def _plain(ref: dict[str, Any]) -> str | None:
+    """Plain names for indicators whose generic NAME(args) form reads badly."""
+    p = ref.get("params") or {}
+    rid = ref["id"]
+    swing = f"{p.get('left', 5)}/{p.get('right', 5)} bars"
+    if rid == "adx":
+        name = {"adx": "ADX", "plus_di": "+DI", "minus_di": "-DI"}[p.get("output", "adx")]
+        return f"{name}({p.get('length', 14)})"
+    if rid == "linreg_trend":
+        what = {"slope_pct_year": "trend slope %/yr", "tstat": "trend t-stat", "r2": "trend R²"}
+        return f"{what[p.get('output', 'slope_pct_year')]} over {p.get('length', 50)} bars"
+    if rid == "market_structure":
+        return f"market structure (swings {swing})"
+    if rid in ("swing_high", "swing_low"):
+        return f"last swing {rid.split('_')[1]} ({swing})"
+    if rid in ("support", "resistance", "support_distance", "resistance_distance"):
+        side = rid.split("_")[0]
+        turns = f"{p.get('min_move', 2):g} ATR turns"
+        if rid.endswith("_distance"):
+            return f"distance to {side} in ATRs ({turns})"
+        return f"{side} ({turns})"
+    if rid == "straightness":
+        name = "efficiency" if p.get("output") == "unsigned" else "straightness"
+        return f"{name}({p.get('length', 20)})"
+    return None
+
+
 def _indicator(ref: dict[str, Any]) -> str:
+    plain = _plain(ref)
+    if plain is not None:
+        return plain
     params = ref.get("params") or {}
     args = ", ".join(f"{v:g}" if isinstance(v, float) else str(v) for v in params.values())
     return f"{ref['id'].upper()}({args})" if args else ref["id"].upper()

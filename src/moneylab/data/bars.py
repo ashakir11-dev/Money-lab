@@ -1,8 +1,8 @@
 """Bar grid, session labels, and the hourly-to-daily resample.
 
 Equibles hourly bars start on the hour from midnight America/New_York. The regular
-session is the bars that overlap 09:30–16:00. The 09:00 bar is the half-hour
-09:30–10:00 and is kept. Daily bars are the resample of those hourly bars.
+session is the bars that overlap 09:30-16:00. The 09:00 bar is the half-hour
+09:30-10:00 and is kept. Daily bars are the resample of those hourly bars.
 """
 
 from __future__ import annotations
@@ -57,6 +57,44 @@ def on_grid(start: datetime, minutes: int) -> bool:
     return start < close and end > open_
 
 
+TRADING_DAYS_PER_YEAR = 252
+
+
+def bars_per_session(timeframe: str) -> int:
+    """Regular-session bars in one full trading day on the grid (1h: 09:00-15:00 = 7)."""
+    if timeframe == "1d":
+        return 1
+    return len(regular_starts(date(2024, 1, 2), minutes_of(timeframe)))
+
+
+def bars_per_year(timeframe: str) -> int:
+    """Bars in a year of full sessions: 252 for 1d, 252 x bars per session otherwise.
+
+    1h: 1764 (seven bars a day, the 09:00 half hour included), 30min: 3276,
+    15min: 6552, 5min: 19656, 1min: 98280.
+    """
+    return TRADING_DAYS_PER_YEAR * bars_per_session(timeframe)
+
+
+def timeframe_of_index(index: pd.Index) -> str:
+    """The bar size of a session index: ``1d`` for midnight stamps, else the smallest gap
+    between two bars on the same day. Only the timestamps are read, never prices."""
+    if not isinstance(index, pd.DatetimeIndex):
+        return "1d"
+    stamps = index
+    if stamps.size < 2 or bool((stamps == stamps.normalize()).all()):
+        return "1d"
+    same_day = stamps[1:].normalize() == stamps[:-1].normalize()
+    gaps = (stamps[1:] - stamps[:-1])[same_day]
+    if gaps.size == 0:
+        return "1d"
+    minutes = int(gaps.min().total_seconds() // 60)
+    for tf, m in MINUTES.items():
+        if m == minutes:
+            return tf
+    raise ValueError(f"no timeframe with {minutes}-minute bars")
+
+
 def regular_starts(day: date, minutes: int) -> list[datetime]:
     """Bar starts on ``day`` that overlap the regular session."""
     midnight = datetime(day.year, day.month, day.day)
@@ -99,7 +137,7 @@ def resample_daily(bars: pd.DataFrame) -> pd.DataFrame:
     for (sym, day), group in frame.groupby(["symbol", "date"], sort=True):
         rows.append(
             {
-                "date": pd.Timestamp(day),
+                "date": pd.Timestamp(str(day)),
                 "symbol": sym,
                 "open": float(group.iloc[0]["open"]),
                 "high": float(group["high"].max()),
