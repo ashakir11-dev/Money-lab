@@ -1227,18 +1227,25 @@ pre.json {
 }
 .stat {
   margin: 0;
-  padding: 12px 14px 14px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-2);
 }
+.stat:has(.stat-help-btn[aria-expanded="true"]) {
+  position: relative;
+  z-index: 2;
+}
 .stat-top {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
 }
 .stat dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-size: 0.75rem;
   font-weight: 600;
@@ -1250,11 +1257,47 @@ pre.json {
   margin: 0;
   font-size: 1.05rem;
 }
-.stat p {
-  margin: 8px 0 0;
-  color: var(--ink-2);
-  font-size: 0.9rem;
+.stat-help {
+  position: relative;
+  display: inline-flex;
+}
+.stat-help-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-3);
+  background: transparent;
+}
+.stat-help-btn:hover,
+.stat-help-btn[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.stat-help-pop {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(280px, 68vw);
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--well);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 450;
+  letter-spacing: 0;
+  text-transform: none;
   line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 .date-range {
   display: grid;

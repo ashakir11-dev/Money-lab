@@ -358,7 +358,6 @@ function ReportView() {
 
       <section className="stack-block">
         <h2>Metrics</h2>
-        <p className="caption">What each number means for this run.</p>
         <StatBreakdown stats={metricStats({ benchName, m, b, pnl, inMkt })} />
         {b.invested_session || wl?.created_at ? (
           <p className="caption">
