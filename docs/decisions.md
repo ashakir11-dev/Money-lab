@@ -98,8 +98,9 @@ components, engine, reporting, store, API, dashboard) is tested on its own.
 - Cross-sectional indicators register with `register_universe_indicator`; the simulator
   computes them over all universe frames at once. Per-symbol indicators are unchanged.
 - "Close crosses X" is only allowed when X is in price units (declared `price_scale`;
-  today only SMA). Crossing RSI, MACD or breadth is rejected at validation, and the
-  dashboard only offers price-unit indicators for crossings.
+  SMA, EMA, highest_high, lowest_low). Crossing RSI, MACD, breadth, ROC, %B or average
+  volume is rejected at validation, and the dashboard only offers price-unit
+  indicators for crossings.
 - Switching a condition's indicator in the builder redraws its controls from the new
   indicator's declared defaults instead of carrying over a same-named value.
 
@@ -165,3 +166,24 @@ that close; a quantity of 0 is recorded as `skip` / `zero_quantity`.
   `sizing.requires = [{"id": "atr", "version": "1.0.0", "params": {"length": atr_length}}]`.
 * Tests: `tests/test_sizing.py` (hand-calculated ATR, quantities and cash; validation;
   the API; paper trading equal to the historical engine).
+
+### Indicators added in engine/0.3.0
+
+Each is one new file in `src/moneylab/components/`, version 1.0.0. Lookbacks count
+exchange sessions; a missing bar is never filled.
+
+* **`ema(length=20)`**: seeded with the mean of the first `length` closes (first value
+  at index length-1), then `ema[t] = ema[t-1] + 2/(length+1) * (close[t] - ema[t-1])`.
+  A missing bar restarts the warm-up, as for RSI and MACD. Price units.
+* **`bollinger_pctb(length=20, stdevs=2.0)`**: `(close - lower) / (upper - lower)` with
+  middle = SMA(length) and bands = middle +/- stdevs x population std (ddof=0) of the
+  last `length` closes. Undefined when the bands coincide (flat window) or a gap is in
+  the window. Not price units (0 = lower band, 1 = upper band).
+* **`roc(length=20)`**: `close[t] / close[t-length] - 1` as a fraction (0.05 = +5%).
+  Undefined if either bar is missing. Not price units.
+* **`highest_high(length=20)`, `lowest_low(length=20)`**: max high / min low of the
+  `length` sessions before the current one, excluding today, so "close crosses above
+  highest_high(50)" is a real breakout. Undefined unless all `length` prior sessions have
+  a bar. Price units.
+* **`avg_volume(length=20)`**: mean volume of the last `length` sessions including today.
+  Undefined while any bar in the window is missing. Not price units.
