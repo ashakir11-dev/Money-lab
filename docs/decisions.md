@@ -23,16 +23,30 @@ No web API layer yet: the dashboard calls `moneylab.service.Lab` in-process. Eac
   order (documented tie-break).
 * Costs: `cost_bps_per_side` of gross notional, rounded half-up to the cent, on every fill.
   Cash and equity are also kept to the cent, rounded half-up.
-* Cash can never go negative. If an opening gap makes an entry unaffordable, quantity
-  is reduced to the largest affordable whole number and the fill carries a note; zero
-  shares records an `insufficient_cash_at_open` skip.
+* Cash can never go negative. If an opening gap makes the ordered quantity unaffordable
+  (quantity x open x (1 + cost) > cash), the whole order is skipped and recorded as
+  `insufficient_cash_at_open` with the ordered quantity, the open, the estimated cost and
+  the cash available. A smaller quantity is never bought (engine/0.2.0).
 * Every candidate is recorded: `enter`, `exit`, `skip` (with reason: `max_positions`,
   `insufficient_cash`, `already_held`, `zero_quantity`, `insufficient_cash_at_open`), and
   diagnostics `no_signal` (some but not all entry conditions passed) and `ineligible`
   (`warmup` or `missing_bar`). Comparisons match trading decisions (`enter`, `exit`,
   `skip`) and show the diagnostic row for the other side.
-* Holding-period exit: signalled at the close of the Nth session after the fill.
-* The benchmark is bought and held with the same starting cash over the same sessions.
+* Holding-period exit: the fill session counts as holding session one, so with N
+  sessions the exit is signalled at the close of the Nth session held (the fill session
+  plus N - 1) and filled at the next open (engine/0.2.0).
+* The benchmark is bought once with the same starting cash: whole shares at the open of
+  the first session with a bar, paying the same cost per side, the rest kept as cash,
+  and valued at each close. Its purchase session, price, shares, cost and leftover cash
+  are stored in the run's metrics and shown on the run page.
+* Metrics: drawdown from the running closing-equity peak; Sharpe from daily returns,
+  sample standard deviation, risk-free 0, annualised by sqrt(252), and undefined (shown
+  as "undefined") when returns never vary; trades are completed round trips, with
+  positions still open at the end counted separately.
+* The Compare page opens on the newest run against its parent (the experimental
+  control); a run without a parent is compared with the run before it.
+* A run on a watchlist shows the watchlist version and the date it was selected, since a
+  list chosen today describes the past performance of today's picks.
 * Metrics are computed only after a run completes, from its ledgers.
 * Corporate actions: raw prices plus an actions file (splits, cash dividends) are
   adjusted once at import (`moneylab.data.actions`); the snapshot records the policy.

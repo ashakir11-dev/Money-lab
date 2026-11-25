@@ -58,6 +58,7 @@ def run_one(
     m = metrics(result.equity, result.fills)
     if "benchmark_equity" in result.equity:
         m["benchmark"] = metrics(result.equity, result.fills, column="benchmark_equity")
+        m["benchmark"].update(result.meta.get("benchmark", {}))
     out = dict(resolved)
     out["data"] = {
         "snapshot_id": snap.id,

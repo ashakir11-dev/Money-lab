@@ -115,8 +115,9 @@ def test_hand_checked_paper_fills(traded) -> None:  # type: ignore[no-untyped-de
     #   qty = floor(0.10 x 100,000.00 / 74.56) = floor(134.12) = 134.
     # 2023-04-05 open 74.91: gross 134 x 74.91 = 10,037.94; cost 5.01897 -> 5.02;
     #   cash 100,000.00 - 10,037.94 - 5.02 = 89,957.04.
-    # 2023-04-20 close: held 10 sessions -> exit. 2023-04-21 open 77.23:
-    #   gross 10,348.82; cost 5.17441 -> 5.17; cash 89,957.04 + 10,348.82 - 5.17 = 100,300.69.
+    # 2023-04-19 close: held 10 sessions, counting the 2023-04-05 fill session as one
+    #   (2023-04-07 is a holiday) -> exit. 2023-04-20 open 76.82:
+    #   gross 10,293.88; cost 5.14694 -> 5.15; cash 89,957.04 + 10,293.88 - 5.15 = 100,245.77.
     lab: Lab = traded["lab"]
     pid = traded["papers"]["rsi35"]
     trading = [
@@ -124,14 +125,14 @@ def test_hand_checked_paper_fills(traded) -> None:  # type: ignore[no-untyped-de
         for d in rows(lab, pid, "decisions")
         if d["action"] in ("enter", "exit")
     ]
-    assert trading == [("2023-04-04", "AAA", "enter", 134), ("2023-04-20", "AAA", "exit", 134)]
+    assert trading == [("2023-04-04", "AAA", "enter", 134), ("2023-04-19", "AAA", "exit", 134)]
     cols = ("session", "symbol", "side", "qty", "price", "gross", "cost", "cash_after")
     assert [tuple(f[c] for c in cols) for f in rows(lab, pid, "fills")] == [
         ("2023-04-05", "AAA", "buy", 134, 74.91, 10037.94, 5.02, 89957.04),
-        ("2023-04-21", "AAA", "sell", 134, 77.23, 10348.82, 5.17, 100300.69),
+        ("2023-04-20", "AAA", "sell", 134, 76.82, 10293.88, 5.15, 100245.77),
     ]
     st = lab.paper_status(pid)
-    assert st["cash"] == 100300.69 and st["positions"] == {}
+    assert st["cash"] == 100245.77 and st["positions"] == {}
 
 
 def test_replay_matches_exactly_and_detects_a_tampered_record(traded) -> None:  # type: ignore[no-untyped-def]
