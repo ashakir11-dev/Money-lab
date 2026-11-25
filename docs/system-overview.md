@@ -399,9 +399,13 @@ These are the things most likely to surprise you.
    memory, not from a dated holdings file.
 5. **Price adjustment happens at import.** A dividend or split after a paper account starts
    re-adjusts history, which means starting a new run and a new paper account.
-6. **Limited building blocks.** Only SMA, RSI, MACD and breadth, two condition types, two
-   exit types, and one sizing rule (10% of equity). No stop-loss, trailing stop, volatility
-   sizing, short selling, or "rank and pick the best N".
+6. **Building blocks (updated 2026-11-25, engine/0.3.0).** Indicators: SMA, EMA, RSI, MACD,
+   ATR, Bollinger %B, rate of change, N-day high/low, average volume, breadth. Conditions:
+   thresholds, close crossing an indicator, and one indicator against another. Exits:
+   hold N sessions, signal, stop-loss, take-profit, trailing stop, combined in a list.
+   Sizing: percent of equity, fixed dollars, volatility (ATR). Entries can be ranked by an
+   indicator. Still missing: short selling and "any of" entry rules. The dashboard does
+   not show the new options yet (they are available through the API).
 7. **Research statistics live in a script, not the dashboard.** The "edge per trade versus
    SPY", t-statistic and by-year breakdown in the research note came from
    `scripts/research_rsi_spy20.py`. The Compare page shows return, drawdown, Sharpe, trades,
