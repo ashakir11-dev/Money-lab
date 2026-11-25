@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import moneylab.components  # noqa: F401  (registers built-ins)
-from moneylab import ENGINE_VERSION
+from moneylab import COMPATIBLE_ENGINE_VERSIONS, ENGINE_VERSION
 from moneylab.components.registry import get_component
 from moneylab.settings import Settings, get_settings
 
@@ -31,29 +31,78 @@ class IndicatorRef(BaseModel):
         return f"{self.id}({args})"
 
 
+ConditionKind = Literal["price_cross", "threshold", "indicator_compare", "indicator_cross"]
+PAIRED_KINDS = ("indicator_compare", "indicator_cross")
+
+
 class Condition(BaseModel):
-    kind: Literal["price_cross", "threshold"]
+    kind: ConditionKind
     indicator: IndicatorRef
     params: dict[str, Any] = Field(default_factory=dict)
+    other: IndicatorRef | None = Field(
+        default=None,
+        description="the second indicator for indicator_compare and indicator_cross",
+    )
+
+    @model_validator(mode="after")
+    def _other_matches_kind(self) -> Condition:
+        if self.kind in PAIRED_KINDS and self.other is None:
+            raise ValueError(f"{self.kind} needs a second indicator ('other')")
+        if self.kind not in PAIRED_KINDS and self.other is not None:
+            raise ValueError(f"{self.kind} does not take a second indicator")
+        return self
 
     def label(self) -> str:
         decl = get_component(self.kind)
         p = decl.resolve_params(self.params)
         if self.kind == "price_cross":
             return f"close crosses {p['direction']} {self.indicator.key()}"
+        if self.kind == "indicator_compare":
+            assert self.other is not None
+            return f"{self.indicator.key()} {p['op']} {self.other.key()}"
+        if self.kind == "indicator_cross":
+            assert self.other is not None
+            return f"{self.indicator.key()} crosses {p['direction']} {self.other.key()}"
         return f"{self.indicator.key()} {p['op']} {p['value']:g}"
 
 
 class ExitRule(BaseModel):
-    kind: Literal["holding_period", "signal"] = "holding_period"
+    kind: str = Field(
+        default="holding_period",
+        description="'signal' (exit when all conditions pass) or a registered exit rule id",
+    )
     params: dict[str, Any] = Field(default_factory=dict)
     conditions: list[Condition] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _signal_needs_conditions(self) -> ExitRule:
-        if self.kind == "signal" and not self.conditions:
-            raise ValueError("a signal exit needs at least one condition")
+    def _known_kind(self) -> ExitRule:
+        if self.kind == "signal":
+            if not self.conditions:
+                raise ValueError("a signal exit needs at least one condition")
+            return self
+        try:
+            decl = get_component(self.kind)
+        except KeyError:
+            raise ValueError(f"unknown exit rule {self.kind!r}") from None
+        if "exit_rule" not in decl.uses:
+            raise ValueError(f"{self.kind} is not an exit rule")
+        if self.conditions:
+            raise ValueError(f"{self.kind} takes no conditions (only a signal exit does)")
         return self
+
+
+class SizingRule(BaseModel):
+    id: str = "percent_of_equity"
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class RankBy(BaseModel):
+    """Order in which a session's entry candidates claim cash and position slots."""
+
+    indicator: IndicatorRef
+    order: Literal["ascending", "descending"] = Field(
+        default="ascending", description="ascending: lowest value first (e.g. most oversold RSI)"
+    )
 
 
 class PortfolioSettings(BaseModel):
@@ -71,7 +120,31 @@ class StrategyConfig(BaseModel):
     end: date | None = None
     entry: list[Condition]
     exit: ExitRule = Field(default_factory=ExitRule)
+    exits: list[ExitRule] | None = Field(
+        default=None,
+        description=(
+            "several exit rules; the first that fires sells the whole position. When "
+            "given it replaces `exit`."
+        ),
+    )
     portfolio: PortfolioSettings = Field(default_factory=PortfolioSettings)
+    sizing: SizingRule | None = Field(
+        default=None, description="position sizing rule; default percent_of_equity"
+    )
+    rank_by: RankBy | None = Field(
+        default=None,
+        description="order entry candidates by an indicator; default ascending symbol order",
+    )
+
+    @field_validator("exits")
+    @classmethod
+    def _exits_ok(cls, v: list[ExitRule] | None) -> list[ExitRule] | None:
+        if v is not None and not v:
+            raise ValueError("exits must contain at least one exit rule")
+        return v
+
+    def exit_rules(self) -> list[ExitRule]:
+        return list(self.exits) if self.exits else [self.exit]
 
     @field_validator("universe")
     @classmethod
@@ -103,38 +176,84 @@ def _resolve_condition(c: Condition, use: str) -> dict[str, Any]:
             f"close cannot cross {ind_decl.label} ({ind_decl.id}): it is not in price "
             "units. Use a threshold condition instead."
         )
-    return {
+    out: dict[str, Any] = {
         "kind": c.kind,
         "version": cond_decl.version,
         "params": cond_decl.resolve_params(c.params),
-        "indicator": {
-            "id": ind_decl.id,
-            "version": ind_decl.version,
-            "params": ind_decl.resolve_params(c.indicator.params),
-        },
+        "indicator": _resolve_indicator(c.indicator),
     }
+    if c.kind in PAIRED_KINDS:
+        assert c.other is not None
+        other_decl = get_component(c.other.id)
+        if "indicator" not in other_decl.uses:
+            raise ValueError(f"{c.other.id} is not an indicator")
+        same_units = (ind_decl.price_scale and other_decl.price_scale) or (
+            ind_decl.id == other_decl.id
+        )
+        if not same_units:
+            raise ValueError(
+                f"{ind_decl.label} ({ind_decl.id}) and {other_decl.label} ({other_decl.id}) "
+                "are not in the same units. Compare two price-unit indicators, or the same "
+                "indicator with different settings."
+            )
+        out["other"] = _resolve_indicator(c.other)
+    return out
+
+
+def _resolve_indicator(ref: IndicatorRef) -> dict[str, Any]:
+    decl = get_component(ref.id)
+    if "indicator" not in decl.uses:
+        raise ValueError(f"{ref.id} is not an indicator")
+    return {"id": decl.id, "version": decl.version, "params": decl.resolve_params(ref.params)}
+
+
+def _resolve_exit(ex: ExitRule) -> dict[str, Any]:
+    if ex.kind == "signal":
+        return {
+            "kind": "signal",
+            "version": "1.0.0",
+            "params": {},
+            "conditions": [_resolve_condition(c, "exit") for c in ex.conditions],
+        }
+    decl = get_component(ex.kind)
+    params = decl.resolve_params(ex.params)
+    out: dict[str, Any] = {
+        "kind": decl.id,
+        "version": decl.version,
+        "params": params,
+        "conditions": [],
+    }
+    req = _requirements(decl.requires(params))
+    if req:
+        out["requires"] = req
+    return out
+
+
+def _requirements(refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_resolve_indicator(IndicatorRef(id=r["id"], params=r.get("params", {}))) for r in refs]
 
 
 def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[str, Any]:
     """Validate a config and return its fully resolved, JSON-serialisable form."""
     s = settings or get_settings()
-    exit_decl = get_component("holding_period")
-    if config.exit.kind == "holding_period":
-        exit_resolved: dict[str, Any] = {
-            "kind": "holding_period",
-            "version": exit_decl.version,
-            "params": exit_decl.resolve_params(config.exit.params),
-            "conditions": [],
-        }
-    else:
-        exit_resolved = {
-            "kind": "signal",
-            "version": "1.0.0",
-            "params": {},
-            "conditions": [_resolve_condition(c, "exit") for c in config.exit.conditions],
+    exits = [_resolve_exit(e) for e in config.exit_rules()]
+    sz = config.sizing or SizingRule()
+    sz_decl = get_component(sz.id)
+    if "sizing" not in sz_decl.uses:
+        raise ValueError(f"{sz.id} is not a sizing rule")
+    sz_params = sz_decl.resolve_params(sz.params)
+    sizing: dict[str, Any] = {"id": sz_decl.id, "version": sz_decl.version, "params": sz_params}
+    sz_req = _requirements(sz_decl.requires(sz_params))
+    if sz_req:
+        sizing["requires"] = sz_req
+    rank = None
+    if config.rank_by is not None:
+        rank = {
+            "indicator": _resolve_indicator(config.rank_by.indicator),
+            "order": config.rank_by.order,
         }
     p = config.portfolio
-    return {
+    resolved: dict[str, Any] = {
         "name": config.name,
         "universe": list(config.universe),
         "benchmark": config.benchmark.upper(),
@@ -142,7 +261,12 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
         "end": config.end.isoformat() if config.end else None,
         "entry": [_resolve_condition(c, "entry") for c in config.entry],
         "entry_combine": "all",
-        "exit": exit_resolved,
+        # "exit" is the first exit rule, kept for readers of the single-exit shape;
+        # "exits" is the full list the engine uses.
+        "exit": exits[0],
+        "exits": exits,
+        "sizing": sizing,
+        "rank_by": rank,
         "portfolio": {
             "starting_cash": p.starting_cash if p.starting_cash is not None else s.starting_cash,
             "target_allocation": p.target_allocation
@@ -161,29 +285,47 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "calendar": "XNYS",
             "signal_time": "after completed close",
             "fill": "next eligible session open",
-            "sizing": "floor(target_allocation * equity_at_decision_close / decision_close)",
+            "sizing": "the sizing rule's whole-share quantity at the decision close",
             "order_of_processing": "exits before entries",
-            "tie_break": "candidates processed in ascending symbol order",
+            "exits": "the first exit rule in the list that fires sells the whole position",
+            "tie_break": (
+                "candidates processed in ascending symbol order, or by rank_by "
+                "(missing values last, ties in symbol order)"
+            ),
             "gap_affordability": (
-                "if an entry costs more than available cash at the open, quantity is reduced "
-                "to the largest affordable whole number; zero shares records a skip"
+                "if an entry costs more than available cash at the open, the whole order "
+                "is skipped (insufficient_cash_at_open); a smaller quantity is never bought"
             ),
             "missing_bars": "no trade on a session without a bar; orders wait for the next bar",
         },
     }
+    return resolved
 
 
 def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
     """Rebuild an editable config from a resolved one (used when duplicating a run)."""
 
+    def ref(r: dict[str, Any]) -> IndicatorRef:
+        return IndicatorRef(id=r["id"], params=dict(r["params"]))
+
     def cond(c: dict[str, Any]) -> Condition:
         return Condition(
             kind=c["kind"],
             params=dict(c["params"]),
-            indicator=IndicatorRef(id=c["indicator"]["id"], params=dict(c["indicator"]["params"])),
+            indicator=ref(c["indicator"]),
+            other=ref(c["other"]) if c.get("other") else None,
         )
 
-    ex = resolved["exit"]
+    def exit_rule(ex: dict[str, Any]) -> ExitRule:
+        return ExitRule(
+            kind=ex["kind"],
+            params=dict(ex["params"]),
+            conditions=[cond(c) for c in ex["conditions"]],
+        )
+
+    exits = resolved_exits(resolved)
+    sizing = resolved.get("sizing")
+    rank = resolved.get("rank_by")
     return StrategyConfig(
         name=resolved["name"],
         universe=resolved["universe"],
@@ -191,15 +333,51 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         start=resolved["start"],
         end=resolved["end"],
         entry=[cond(c) for c in resolved["entry"]],
-        exit=ExitRule(
-            kind=ex["kind"],
-            params=dict(ex["params"]),
-            conditions=[cond(c) for c in ex["conditions"]],
-        ),
+        exit=exit_rule(exits[0]),
+        exits=[exit_rule(e) for e in exits] if len(exits) > 1 else None,
         portfolio=PortfolioSettings(
             **{k: resolved["portfolio"][k] for k in PortfolioSettings.model_fields}
         ),
+        sizing=SizingRule(id=sizing["id"], params=dict(sizing["params"])) if sizing else None,
+        rank_by=RankBy(indicator=ref(rank["indicator"]), order=rank["order"]) if rank else None,
     )
+
+
+def resolved_exits(resolved: dict[str, Any]) -> list[dict[str, Any]]:
+    """The exit rules of a resolved config (runs saved before engine/0.3.0 have one)."""
+    exits: list[dict[str, Any]] = resolved.get("exits") or [resolved["exit"]]
+    return exits
+
+
+def resolved_sizing(resolved: dict[str, Any]) -> dict[str, Any]:
+    """The sizing rule of a resolved config (before engine/0.3.0: percent of equity)."""
+    default = {"id": "percent_of_equity", "version": "1.0.0", "params": {}}
+    sizing: dict[str, Any] = resolved.get("sizing") or default
+    return sizing
+
+
+def all_conditions(resolved: dict[str, Any]) -> list[dict[str, Any]]:
+    conds = list(resolved["entry"])
+    for ex in resolved_exits(resolved):
+        conds += ex["conditions"]
+    return conds
+
+
+def required_indicators(resolved: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every indicator a run needs computed: conditions (both sides), exit and sizing
+    requirements, and the ranking indicator."""
+    inds: list[dict[str, Any]] = []
+    for c in all_conditions(resolved):
+        inds.append(c["indicator"])
+        if c.get("other"):
+            inds.append(c["other"])
+    for ex in resolved_exits(resolved):
+        inds += ex.get("requires", [])
+    inds += resolved_sizing(resolved).get("requires", [])
+    rank = resolved.get("rank_by")
+    if rank:
+        inds.append(rank["indicator"])
+    return inds
 
 
 def config_hash(resolved: dict[str, Any]) -> str:
@@ -214,13 +392,15 @@ class VersionMismatch(RuntimeError):
 def check_versions(resolved: dict[str, Any]) -> None:
     """Raise if the components or engine a resolved config names have changed version."""
     problems = []
-    if resolved["execution"]["engine_version"] != ENGINE_VERSION:
-        problems.append(f"engine {resolved['execution']['engine_version']} -> {ENGINE_VERSION}")
-    conds = resolved["entry"] + resolved["exit"]["conditions"]
+    engine = resolved["execution"]["engine_version"]
+    if engine != ENGINE_VERSION and engine not in COMPATIBLE_ENGINE_VERSIONS:
+        problems.append(f"engine {engine} -> {ENGINE_VERSION}")
+    conds = all_conditions(resolved)
     items = [(c["kind"], c["version"]) for c in conds]
-    items += [(c["indicator"]["id"], c["indicator"]["version"]) for c in conds]
-    if resolved["exit"]["kind"] == "holding_period":
-        items.append(("holding_period", resolved["exit"]["version"]))
+    items += [(i["id"], i["version"]) for i in required_indicators(resolved)]
+    items += [(e["kind"], e["version"]) for e in resolved_exits(resolved) if e["kind"] != "signal"]
+    sz = resolved_sizing(resolved)
+    items.append((sz["id"], sz["version"]))
     for cid, ver in items:
         cur = get_component(cid).version
         if cur != ver:

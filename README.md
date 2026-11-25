@@ -89,7 +89,7 @@ builder. Without a key the fetch is refused with a message saying so.
 
 ```
 src/moneylab/
-  components/   declared, versioned indicators and conditions (SMA, RSI, MACD, breadth, crossings, thresholds)
+  components/   declared, versioned indicators, conditions, exit rules and sizing rules
   data/         file-import adapter, immutable content-addressed snapshots, session alignment
   data/providers/  live provider adapters (Tiingo) sharing the file adapter's adjustment
   engine/       config resolution, the daily simulator, reporting and comparison

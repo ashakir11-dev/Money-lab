@@ -155,10 +155,23 @@
           "kind": {
             "enum": [
               "price_cross",
-              "threshold"
+              "threshold",
+              "indicator_compare",
+              "indicator_cross"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "other": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndicatorRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the second indicator for indicator_compare and indicator_cross"
           },
           "params": {
             "additionalProperties": true,
@@ -323,10 +336,7 @@
           },
           "kind": {
             "default": "holding_period",
-            "enum": [
-              "holding_period",
-              "signal"
-            ],
+            "description": "'signal' (exit when all conditions pass) or a registered exit rule id",
             "title": "Kind",
             "type": "string"
           },
@@ -487,7 +497,7 @@
             "type": "string"
           },
           "engine_version": {
-            "default": "engine/0.2.0",
+            "default": "engine/0.3.0",
             "title": "Engine Version",
             "type": "string"
           },
@@ -848,6 +858,29 @@
           }
         },
         "title": "PortfolioSettings",
+        "type": "object"
+      },
+      "RankBy": {
+        "description": "Order in which a session's entry candidates claim cash and position slots.",
+        "properties": {
+          "indicator": {
+            "$ref": "#/components/schemas/IndicatorRef"
+          },
+          "order": {
+            "default": "ascending",
+            "description": "ascending: lowest value first (e.g. most oversold RSI)",
+            "enum": [
+              "ascending",
+              "descending"
+            ],
+            "title": "Order",
+            "type": "string"
+          }
+        },
+        "required": [
+          "indicator"
+        ],
+        "title": "RankBy",
         "type": "object"
       },
       "RunDetail": {
@@ -1218,6 +1251,22 @@
         "title": "SettingDiff",
         "type": "object"
       },
+      "SizingRule": {
+        "properties": {
+          "id": {
+            "default": "percent_of_equity",
+            "title": "Id",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "SizingRule",
+        "type": "object"
+      },
       "SnapshotOut": {
         "properties": {
           "adjustment": {
@@ -1318,6 +1367,21 @@
           "exit": {
             "$ref": "#/components/schemas/ExitRule"
           },
+          "exits": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExitRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "several exit rules; the first that fires sells the whole position. When given it replaces `exit`.",
+            "title": "Exits"
+          },
           "name": {
             "default": "Untitled strategy",
             "title": "Name",
@@ -1325,6 +1389,28 @@
           },
           "portfolio": {
             "$ref": "#/components/schemas/PortfolioSettings"
+          },
+          "rank_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "order entry candidates by an indicator; default ascending symbol order"
+          },
+          "sizing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SizingRule"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "position sizing rule; default percent_of_equity"
           },
           "start": {
             "anyOf": [

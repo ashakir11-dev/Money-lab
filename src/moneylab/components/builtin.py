@@ -1,4 +1,5 @@
-"""Built-in components: SMA and RSI indicators, conditions and exit rules."""
+"""Built-in components: SMA and RSI indicators, conditions, the holding-period exit and
+the default position sizing."""
 
 from __future__ import annotations
 
@@ -9,9 +10,13 @@ import pandas as pd
 
 from moneylab.components.registry import (
     ComponentDeclaration,
+    ExitContext,
     ParamSpec,
+    SizingContext,
     register,
+    register_exit,
     register_indicator,
+    register_sizing,
 )
 
 
@@ -118,13 +123,66 @@ register(
 )
 register(
     ComponentDeclaration(
-        id="holding_period",
+        id="indicator_compare",
         version="1.0.0",
-        label="Exit after N sessions",
-        uses=("exit",),
-        params=(ParamSpec("sessions", "int", 10, "Sessions held", min=1, max=500),),
-        inputs=(),
+        label="Indicator compared with another indicator",
+        uses=("entry", "exit", "filter"),
+        params=(ParamSpec("op", "choice", "above", "Comparison", choices=("above", "below")),),
+        inputs=("indicator", "other"),
         outputs=("signal",),
-        description="Signals an exit at the close of the Nth exchange session after the fill.",
+        description=(
+            "Above: indicator > other. Below: indicator < other. Both must be in the same "
+            "units: both in price units (SMA, EMA, ...), or the same indicator with "
+            "different settings."
+        ),
     )
 )
+register(
+    ComponentDeclaration(
+        id="indicator_cross",
+        version="1.0.0",
+        label="Indicator crosses another indicator",
+        uses=("entry", "exit"),
+        params=(
+            ParamSpec("direction", "choice", "above", "Direction", choices=("above", "below")),
+        ),
+        inputs=("indicator", "other"),
+        outputs=("signal",),
+        description=(
+            "Above: previous indicator <= previous other and indicator > other (for example "
+            "SMA50 crossing above SMA200). Below is the mirror image. Same unit rule as "
+            "indicator_compare."
+        ),
+    )
+)
+
+
+@register_exit(
+    id="holding_period",
+    version="1.0.0",
+    label="Exit after N sessions",
+    params=(ParamSpec("sessions", "int", 10, "Sessions held", min=1, max=500),),
+    description=(
+        "Signals an exit at the close of the Nth exchange session held; the fill session "
+        "counts as session one."
+    ),
+)
+def holding_period(ctx: ExitContext, params: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    n = int(params["sessions"])
+    if ctx.held >= n:
+        return f"held {ctx.held} sessions >= {n}", {}
+    return None
+
+
+@register_sizing(
+    id="percent_of_equity",
+    version="1.0.0",
+    label="Percent of equity",
+    params=(),
+    description=(
+        "floor(target_allocation x equity at the decision close / decision close): the "
+        "portfolio's target allocation of current equity, in whole shares."
+    ),
+)
+def percent_of_equity(ctx: SizingContext, params: dict[str, Any]) -> int:
+    return int((ctx.target_allocation * ctx.equity) // ctx.close)

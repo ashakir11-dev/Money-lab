@@ -57,14 +57,28 @@ def configs(universe: list[str]) -> list[StrategyConfig]:
     )
     extra = [
         ("G11 SMA20 cross + MACD hist > 0, hold 10", [cross(20), macd], hold(10), {}),
-        ("G12 RSI<35 + breadth > 0.5, exit RSI>60", [rsi("below", 35), breadth],
-         signal(rsi("above", 60)), {"max_positions": 4, "target_allocation": 0.3}),  # fmt: skip
-        ("G13 SMA20 cross, hold 3, 50 bps, tight cash", [cross(20)], hold(3),
-         {"target_allocation": 0.6, "max_positions": 2, "cost_bps_per_side": 50}),  # fmt: skip
+        (
+            "G12 RSI<35 + breadth > 0.5, exit RSI>60",
+            [rsi("below", 35), breadth],
+            signal(rsi("above", 60)),
+            {"max_positions": 4, "target_allocation": 0.3},
+        ),
+        (
+            "G13 SMA20 cross, hold 3, 50 bps, tight cash",
+            [cross(20)],
+            hold(3),
+            {"target_allocation": 0.6, "max_positions": 2, "cost_bps_per_side": 50},
+        ),
     ]
     out += [
-        StrategyConfig(name=n, universe=universe, benchmark="SPY", entry=e, exit=x,
-                       portfolio=PortfolioSettings(**p))  # fmt: skip
+        StrategyConfig(
+            name=n,
+            universe=universe,
+            benchmark="SPY",
+            entry=e,
+            exit=x,
+            portfolio=PortfolioSettings(**p),
+        )
         for n, e, x, p in extra
     ]
     return out

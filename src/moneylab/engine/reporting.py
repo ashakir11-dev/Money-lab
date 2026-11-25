@@ -63,10 +63,26 @@ def _flatten(d: Any, prefix: str = "") -> dict[str, Any]:
     return {prefix: d}
 
 
+def comparable_settings(resolved: dict[str, Any]) -> dict[str, Any]:
+    """A resolved config in the engine/0.3.0 shape, for comparing settings.
+
+    Runs saved before 0.3.0 have one ``exit`` and no sizing or ranking keys; they get the
+    equivalent ``exits`` list, the default sizing and no ranking. The ``exit`` key (a copy
+    of the first exit rule) is dropped so a changed exit is reported once.
+    """
+    from moneylab.engine.config import resolved_exits, resolved_sizing
+
+    out = {k: v for k, v in resolved.items() if k != "exit"}
+    out["exits"] = resolved_exits(resolved)
+    out["sizing"] = resolved_sizing(resolved)
+    out["rank_by"] = resolved.get("rank_by")
+    return out
+
+
 def config_diff(
     a: dict[str, Any], b: dict[str, Any], ignore: tuple[str, ...] = ("name",)
 ) -> list[dict[str, Any]]:
-    fa, fb = _flatten(a), _flatten(b)
+    fa, fb = _flatten(comparable_settings(a)), _flatten(comparable_settings(b))
     rows = []
     for key in sorted(set(fa) | set(fb)):
         if key.split(".")[0] in ignore:

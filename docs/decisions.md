@@ -19,9 +19,11 @@ components, engine, reporting, store, API, dashboard) is tested on its own.
 
 * Signals are evaluated after a completed close; orders fill at the next session with a
   bar for that symbol, at its open.
-* Entry size: `floor(target_allocation * equity_at_decision_close / decision_close)`.
+* Entry size: the strategy's sizing rule (default `percent_of_equity`:
+  `floor(target_allocation * equity_at_decision_close / decision_close)`).
 * Exits are filled before entries. Competing entries are processed in ascending symbol
-  order (documented tie-break).
+  order (documented tie-break), or by the strategy's `rank_by` indicator when it has one
+  (missing values last, ties in symbol order).
 * Costs: `cost_bps_per_side` of gross notional, rounded half-up to the cent, on every fill.
   Cash and equity are also kept to the cent, rounded half-up.
 * Cash can never go negative. If an opening gap makes the ordered quantity unaffordable
@@ -100,3 +102,35 @@ components, engine, reporting, store, API, dashboard) is tested on its own.
   dashboard only offers price-unit indicators for crossings.
 - Switching a condition's indicator in the builder redraws its controls from the new
   indicator's declared defaults instead of carrying over a same-named value.
+
+## Plug-in exits, sizing and ranking (engine/0.3.0)
+
+Exit rules and sizing rules are registered components, like indicators: one function
+each, declared with an id, version, typed parameters, defaults and limits
+(`register_exit`, `register_sizing` in `components/registry.py`), and listed by
+`GET /api/components` with `uses` `exit_rule` or `sizing`.
+
+* **Exits.** A strategy has a list of exits (`exits`); at each close the first rule in
+  the list that fires sells the whole position at the next open. `signal` (all its
+  conditions pass) is built in; `holding_period` is a registered rule. An exit rule sees
+  the position (quantity, entry price, sessions held with the fill session as one, the
+  highest close since the fill) and the close; never a later price. The single `exit`
+  field still works and means a list of one; the resolved settings keep `exit` (the
+  first rule) next to `exits` so older readers are unaffected.
+* **Sizing.** `sizing` names a registered rule (default `percent_of_equity`, exactly
+  the 0.2.0 formula). A rule returns whole shares from the decision close, the equity at
+  that close and any indicators it declares it needs.
+* **Ranking.** `rank_by` (an indicator and `ascending` / `descending`) orders a
+  session's entry candidates, so when signals outnumber open slots or cash the best
+  ranked ones are taken first.
+* **Two-indicator conditions.** `indicator_compare` (A above / below B) and
+  `indicator_cross` (A crosses above / below B; previous A <= previous B and A > B). Both
+  indicators must be in the same units: both in price units, or the same indicator with
+  different settings (RSI 7 vs RSI 28).
+* **Compatibility.** A strategy that uses none of the new options gives exactly the same
+  decisions, fills and equity as on engine/0.2.0: thirteen strategies on 60 synthetic
+  stocks over five years are fingerprinted in `tests/golden/ledger_hashes.json` and
+  checked by `tests/test_golden_ledgers.py`. So engine/0.2.0 is listed in
+  `COMPATIBLE_ENGINE_VERSIONS`: its runs can still be duplicated and its paper accounts
+  keep processing. Comparisons put both runs in the 0.3.0 shape first, so an old run and
+  a new one with the same settings show no exit, sizing or ranking difference.

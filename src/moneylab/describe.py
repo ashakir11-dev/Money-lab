@@ -53,6 +53,11 @@ def condition_text(cond: dict[str, Any]) -> str:
     p = cond.get("params") or {}
     if cond["kind"] == "price_cross":
         return f"close crosses {p.get('direction', 'above')} {ind}"
+    if cond["kind"] in ("indicator_compare", "indicator_cross") and cond.get("other"):
+        other = _indicator(cond["other"])
+        if cond["kind"] == "indicator_cross":
+            return f"{ind} crosses {p.get('direction', 'above')} {other}"
+        return f"{ind} {p.get('op', 'above')} {other}"
     if cond["kind"] == "threshold":
         v = p.get("value")
         return f"{ind} {p.get('op', 'below')} {v:g}" if isinstance(v, int | float) else ind
@@ -60,19 +65,28 @@ def condition_text(cond: dict[str, Any]) -> str:
     return f"{cond['kind']} {ind}" + (f" ({extra})" if extra else "")
 
 
+def exit_text(ex: dict[str, Any]) -> str:
+    """One exit rule in words, e.g. "after 10 sessions" or "when RSI(14) above 70"."""
+    kind = ex.get("kind")
+    params = ex.get("params") or {}
+    if kind == "holding_period":
+        return f"after {params.get('sessions')} sessions"
+    if kind == "signal" or kind is None:
+        conds = ex.get("conditions") or []
+        return "when " + (" and ".join(condition_text(c) for c in conds) or "a signal fires")
+    args = ", ".join(
+        f"{k}={v:g}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items()
+    )
+    return f"on {kind}" + (f" ({args})" if args else "")
+
+
 def strategy_summary(resolved: dict[str, Any]) -> str:
     """Plain-English summary of a strategy config (resolved or draft)."""
     entry = resolved.get("entry") or []
     joiner = " and " if resolved.get("entry_combine", "all") == "all" else " or "
     enter = joiner.join(condition_text(c) for c in entry) or "no entry rule"
-    ex = resolved.get("exit") or {}
-    if ex.get("kind") == "holding_period":
-        n = (ex.get("params") or {}).get("sessions")
-        leave = f"after {n} sessions"
-    else:
-        leave = "when " + (
-            " or ".join(condition_text(c) for c in ex.get("conditions") or []) or "a signal fires"
-        )
+    exits = resolved.get("exits") or [resolved.get("exit") or {}]
+    leave = ", or ".join(exit_text(ex) for ex in exits)
     uni = resolved.get("universe") or []
     pf = resolved.get("portfolio") or {}
     alloc = pf.get("target_allocation")
