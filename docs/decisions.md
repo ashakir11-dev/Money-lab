@@ -142,3 +142,26 @@ each, declared with an id, version, typed parameters, defaults and limits
   `COMPATIBLE_ENGINE_VERSIONS`: its runs can still be duplicated and its paper accounts
   keep processing. Comparisons put both runs in the 0.3.0 shape first, so an old run and
   a new one with the same settings show no exit, sizing or ranking difference.
+
+### Sizing rules and ATR added in engine/0.3.0
+
+Two sizing rules and one indicator, each a new file in `components/` (no engine change).
+All quantities are whole shares worked out at the decision close, with the equity at
+that close; a quantity of 0 is recorded as `skip` / `zero_quantity`.
+
+* **`atr`** (indicator, `length` 1-200, default 14; not in price-cross units). True range
+  TR = max(high - low, |high - previous close|, |low - previous close|), and
+  TR = high - low on the first session of a run of bars. The first ATR is the mean of the
+  first `length` true ranges; later ATR = (previous ATR x (length - 1) + TR) / length
+  (Wilder). A missing bar is never filled: the next bar starts a new run and the warm-up
+  restarts, as for SMA and RSI.
+* **`fixed_dollar`** (`amount` >= 1, default 10,000): qty = floor(amount / close).
+* **`volatility`** (`risk_fraction` 0.0001-0.2, default 0.01; `atr_length`, default 14;
+  `atr_multiple` 0.1-20, default 2): qty = floor(risk_fraction x equity /
+  (atr_multiple x ATR(atr_length))), then capped at the target allocation:
+  qty = min(qty, floor(target_allocation x equity / close)). While ATR is undefined
+  (warm-up, or just after a missing bar) or 0 the quantity is 0. It declares ATR as a
+  requirement, so the resolved settings carry
+  `sizing.requires = [{"id": "atr", "version": "1.0.0", "params": {"length": atr_length}}]`.
+* Tests: `tests/test_sizing.py` (hand-calculated ATR, quantities and cash; validation;
+  the API; paper trading equal to the historical engine).
