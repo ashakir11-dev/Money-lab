@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { api, type Snapshot } from "@/lib/api";
+import { api, type Snapshot, type Watchlist } from "@/lib/api";
 import { int, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import { Badge, ErrorBox, Loading, PageHeader, Section, Tile } from "@/components/ui";
@@ -23,20 +23,37 @@ function spanDays(first?: string, last?: string): string {
   return years >= 1.5 ? `${years.toFixed(1)} y` : `${days} days`;
 }
 
-function TiingoForm({ onDone }: { onDone: (s: Snapshot) => void }) {
+function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapshot) => void }) {
+  const [watchlist, setWatchlist] = useState("");
   const [symbols, setSymbols] = useState("AAPL, MSFT, SPY");
+  const [extras, setExtras] = useState("SPY");
   const [start, setStart] = useState("2020-01-01");
   const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
+  const picked = lists.find((w) => w.name === watchlist);
+
+  function pick(name: string) {
+    const w = lists.find((x) => x.name === name);
+    setWatchlist(name);
+    if (!w) return;
+    setLabel((prev) => (prev === "" || prev === watchlist ? w.name : prev));
+    setExtras(w.members.includes("SPY") ? "" : "SPY");
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      onDone(await api.importTiingo({ symbols: symbolsOf(symbols), start, end, label }));
+      onDone(
+        await api.importTiingo(
+          picked
+            ? { watchlist: picked.name, symbols: symbolsOf(extras), start, end, label }
+            : { symbols: symbolsOf(symbols), start, end, label },
+        ),
+      );
     } catch (err) {
       setError(err);
     } finally {
@@ -44,16 +61,56 @@ function TiingoForm({ onDone }: { onDone: (s: Snapshot) => void }) {
     }
   }
 
+  const extraCount = picked
+    ? symbolsOf(extras).filter((s) => !picked.members.includes(s)).length
+    : 0;
+  const fetchCount = picked ? picked.members.length + extraCount : symbolsOf(symbols).length;
+  const ready = fetchCount > 0;
+  const preview = picked
+    ? picked.members.length > 24
+      ? `${picked.members.slice(0, 24).join(", ")} … and ${picked.members.length - 24} more`
+      : picked.members.join(", ")
+    : "";
+
   return (
     <form onSubmit={submit} data-testid="tiingo-form">
       <p className="muted small">
-        Daily prices, split- and dividend-adjusted the same way as a CSV. Needs <code>TIINGO_API_KEY</code>. Include
-        your benchmark (usually SPY).
+        Daily prices, split- and dividend-adjusted the same way as a CSV. Needs <code>TIINGO_API_KEY</code>. A
+        watchlist supplies the symbols; anything else you type is added. Each symbol is one Tiingo request.
       </p>
       <div className="field">
-        <label htmlFor="tiingo-symbols">Symbols</label>
-        <input id="tiingo-symbols" value={symbols} onChange={(e) => setSymbols(e.target.value)} />
+        <label htmlFor="tiingo-watchlist">Watchlist</label>
+        <select id="tiingo-watchlist" data-testid="tiingo-watchlist" value={watchlist} onChange={(e) => pick(e.target.value)}>
+          <option value="">Type symbols</option>
+          {lists.map((w) => (
+            <option key={w.name} value={w.name}>
+              {w.name} v{w.version} ({w.members.length})
+            </option>
+          ))}
+        </select>
       </div>
+      {picked ? (
+        <div className="field">
+          <label htmlFor="tiingo-extras">Also include</label>
+          <input
+            id="tiingo-extras"
+            value={extras}
+            onChange={(e) => setExtras(e.target.value)}
+            placeholder="SPY"
+          />
+          <div className="help">
+            {picked.members.length} symbols from {picked.name} v{picked.version}. SPY is filled in when the list does
+            not already contain it, so this snapshot can be compared with the benchmark. Remove it if you do not want
+            it fetched.
+          </div>
+          <div className="muted small">{preview}</div>
+        </div>
+      ) : (
+        <div className="field">
+          <label htmlFor="tiingo-symbols">Symbols</label>
+          <input id="tiingo-symbols" value={symbols} onChange={(e) => setSymbols(e.target.value)} />
+        </div>
+      )}
       <div className="fields">
         <div className="field">
           <label htmlFor="tiingo-start">From</label>
@@ -68,8 +125,8 @@ function TiingoForm({ onDone }: { onDone: (s: Snapshot) => void }) {
           <input id="tiingo-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="US large-cap 2020–" />
         </div>
       </div>
-      <button className="primary" type="submit" disabled={busy}>
-        {busy ? "Importing…" : "Import from Tiingo"}
+      <button className="primary" type="submit" disabled={busy || !ready}>
+        {busy ? "Importing…" : `Import ${fetchCount} from Tiingo`}
       </button>
       <ErrorBox error={error} title="Import failed" />
     </form>
@@ -297,7 +354,7 @@ export default function DataPage() {
 
       <div className="grid-2">
         <Section title="Fetch real prices (Tiingo)">
-          <TiingoForm onDone={imported} />
+          <TiingoForm lists={lists.data ?? []} onDone={imported} />
         </Section>
         <Section title="Upload a CSV">
           <CsvForm onDone={imported} />

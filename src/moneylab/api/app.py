@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from moneylab import ENGINE_VERSION
 from moneylab.api.jobs import Job, JobRunner
@@ -128,10 +128,22 @@ class WatchlistOut(BaseModel):
 
 
 class TiingoImport(BaseModel):
-    symbols: list[str] = Field(min_length=1)
+    """Symbols to fetch. A watchlist's current members are included too; ``symbols``
+    are added on top (use that for the benchmark, usually SPY)."""
+
+    symbols: list[str] = Field(default_factory=list)
+    watchlist: str | None = None
     start: date
     end: date
     label: str = ""
+
+    @model_validator(mode="after")
+    def _has_a_feed(self) -> TiingoImport:
+        named = bool(self.watchlist and self.watchlist.strip())
+        typed = any(s.strip() for s in self.symbols)
+        if not named and not typed:
+            raise ValueError("name at least one symbol or a watchlist")
+        return self
 
 
 class CsvImport(BaseModel):
@@ -436,11 +448,14 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         """Fetch daily bars, splits and dividends from Tiingo. The key stays on the server."""
         try:
             snap = lab.import_provider(
-                [s.strip().upper() for s in body.symbols if s.strip()],
+                body.symbols,
                 body.start,
                 body.end,
                 label=body.label,
+                watchlist=body.watchlist,
             )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
         except Exception as exc:  # provider errors are shown to the person
             raise HTTPException(400, f"{type(exc).__name__}: {exc}") from exc
         return _snapshot_out(snap.meta)

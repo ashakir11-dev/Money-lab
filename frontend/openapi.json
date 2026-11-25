@@ -1499,6 +1499,7 @@
         "type": "object"
       },
       "TiingoImport": {
+        "description": "Symbols to fetch. A watchlist's current members are included too; ``symbols``\nare added on top (use that for the benchmark, usually SPY).",
         "properties": {
           "end": {
             "format": "date",
@@ -1519,13 +1520,22 @@
             "items": {
               "type": "string"
             },
-            "minItems": 1,
             "title": "Symbols",
             "type": "array"
+          },
+          "watchlist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchlist"
           }
         },
         "required": [
-          "symbols",
           "start",
           "end"
         ],

@@ -99,6 +99,73 @@ def test_tiingo_import_then_paper_fetch_delivers_the_newer_sessions(
         assert c.post(f"/api/paper/{pid}/replay").json()["match"] is True
 
 
+def test_tiingo_import_uses_a_watchlist_as_the_symbol_feed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A watchlist supplies the symbols. Extra symbols are added. The snapshot records
+    which version was used, and an empty label takes the watchlist's name."""
+    monkeypatch.setenv("TIINGO_API_KEY", TEST_KEY)
+    fake = FakeTiingo(payloads_from_csv())
+
+    def provider(self: Lab, name: str = "tiingo") -> Any:
+        return fake.provider(self.settings.cache_dir)
+
+    monkeypatch.setattr(Lab, "provider", provider)
+    lab = Lab.open(tmp_path / "home")
+    lab.save_watchlist("core", ["aaa", "BBB"], "names I follow")
+    lab.save_watchlist("just-ddd", ["DDD"], "")
+    with TestClient(create_app(lab, web_dir=tmp_path / "no-web")) as c:
+        r = c.post(
+            "/api/snapshots/tiingo",
+            json={
+                "watchlist": "core",
+                "symbols": ["spy"],
+                "start": "2023-01-03",
+                "end": "2023-03-31",
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["symbols"] == ["AAA", "BBB", "SPY"]
+        assert body["label"] == "core"
+        recorded_list = lab.snapshot(body["id"]).meta["provenance"]["watchlist"]
+        assert recorded_list["name"] == "core"
+        assert recorded_list["version"] == 1
+        assert recorded_list["label"] == "names I follow"
+        assert recorded_list["created_at"]
+
+        named = c.post(
+            "/api/snapshots/tiingo",
+            json={
+                "watchlist": "just-ddd",
+                "start": "2023-01-03",
+                "end": "2023-03-31",
+                "label": "mine",
+            },
+        )
+        assert named.status_code == 200, named.text
+        assert named.json()["symbols"] == ["DDD"]
+        assert named.json()["label"] == "mine"
+
+
+def test_tiingo_import_rejects_a_missing_watchlist_before_calling_tiingo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TIINGO_API_KEY", "")
+    with TestClient(create_app(Lab.open(tmp_path / "home"), web_dir=tmp_path / "no")) as c:
+        missing = c.post(
+            "/api/snapshots/tiingo",
+            json={"watchlist": "nope", "start": "2023-01-03", "end": "2023-03-31"},
+        )
+        assert missing.status_code == 404
+        assert "nope" in missing.text
+        empty = c.post(
+            "/api/snapshots/tiingo",
+            json={"symbols": [], "start": "2023-01-03", "end": "2023-03-31"},
+        )
+        assert empty.status_code == 422
+
+
 def test_tiingo_import_without_a_key_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

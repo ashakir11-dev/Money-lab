@@ -83,11 +83,27 @@ class Lab:
         *,
         provider: Provider | None = None,
         refresh: bool = False,
+        watchlist: str | None = None,
     ) -> Snapshot:
         """Fetch raw history and actions from a provider, adjust them through the same
-        path as the file adapter, and store an immutable snapshot with its provenance."""
+        path as the file adapter, and store an immutable snapshot with its provenance.
+
+        With ``watchlist``, that list's current members are fetched too. ``symbols`` are
+        added on top. The snapshot records the watchlist version it used. An empty label
+        takes the watchlist's name.
+        """
+        syms, wl = self._fetch_symbols(symbols, watchlist)
+        if not label and wl is not None:
+            label = wl["name"]
         prov = provider or self.provider()
-        hist = prov.fetch_history(symbols, start, end, refresh=refresh)
+        hist = prov.fetch_history(syms, start, end, refresh=refresh)
+        if wl is not None:
+            hist.provenance["watchlist"] = {
+                "name": wl["name"],
+                "version": wl["version"],
+                "label": wl["label"],
+                "created_at": wl["created_at"],
+            }
         return save_snapshot(
             hist.adjusted(),
             self.settings.snapshot_dir,
@@ -120,6 +136,24 @@ class Lab:
         prov = provider or self.provider()
         hist = prov.fetch_sessions(syms, after, end)
         return new_sessions(known, hist.raw, hist.actions)
+
+    def _fetch_symbols(
+        self, symbols: Iterable[str], watchlist: str | None
+    ) -> tuple[list[str], dict[str, Any] | None]:
+        """Watchlist members first, then any extra symbols. Empty means the caller
+        named neither."""
+        wl = self.watchlist(watchlist.strip()) if watchlist and watchlist.strip() else None
+        out: list[str] = []
+        seen: set[str] = set()
+        for raw in [*(wl["members"] if wl else []), *symbols]:
+            sym = str(raw).strip().upper()
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            out.append(sym)
+        if not out:
+            raise ValueError("name at least one symbol or a watchlist")
+        return out, wl
 
     # Watchlists -------------------------------------------------------------------
     def save_watchlist(self, name: str, symbols: Iterable[str], label: str = "") -> dict[str, Any]:

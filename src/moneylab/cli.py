@@ -57,11 +57,17 @@ def import_file(
 
 @app.command()
 def fetch(
-    symbols: list[str],
+    symbols: Annotated[
+        list[str] | None, typer.Argument(help="extra symbols; omit to fetch the watchlist only")
+    ] = None,
     start: str = typer.Option(..., help="first date, YYYY-MM-DD"),
     end: str = typer.Option(..., help="last date, YYYY-MM-DD"),
     label: str = "",
     refresh: bool = typer.Option(False, help="ignore the response cache"),
+    watchlist: Annotated[
+        str,
+        typer.Option(help="fetch this watchlist's current members; SYMBOLS are added"),
+    ] = "",
 ) -> None:
     """Fetch daily history from Tiingo (needs TIINGO_API_KEY) as an immutable snapshot."""
     from datetime import date
@@ -71,7 +77,12 @@ def fetch(
 
     try:
         snap = Lab.open().import_provider(
-            symbols, date.fromisoformat(start), date.fromisoformat(end), label, refresh=refresh
+            symbols or [],
+            date.fromisoformat(start),
+            date.fromisoformat(end),
+            label,
+            refresh=refresh,
+            watchlist=watchlist or None,
         )
     except (ProviderError, ValueError) as exc:
         typer.echo(f"error: {exc}", err=True)

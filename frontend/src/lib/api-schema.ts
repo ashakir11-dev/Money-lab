@@ -1011,7 +1011,11 @@ export interface components {
             /** Universe */
             universe: string[];
         };
-        /** TiingoImport */
+        /**
+         * TiingoImport
+         * @description Symbols to fetch. A watchlist's current members are included too; ``symbols``
+         *     are added on top (use that for the benchmark, usually SPY).
+         */
         TiingoImport: {
             /**
              * End
@@ -1029,7 +1033,9 @@ export interface components {
              */
             start: string;
             /** Symbols */
-            symbols: string[];
+            symbols?: string[];
+            /** Watchlist */
+            watchlist?: string | null;
         };
         /** ValidationError */
         ValidationError: {

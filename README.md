@@ -41,7 +41,7 @@ To work on the dashboard itself, run `uv run moneylab serve` and, in `frontend/`
 | `uv run moneylab acceptance` | runs the acceptance checks and prints each gate's status |
 | `uv run moneylab import PATH` | imports a CSV in the [file format](docs/file-import-format.md) as a new snapshot |
 | `uv run moneylab paper start RUN_ID` | freezes a saved run for [paper trading](docs/paper-trading.md); then `paper advance` (Tiingo after-close), `paper ingest`, `paper status`, `paper replay` |
-| `uv run moneylab fetch SPY QQQ --start 2020-01-02 --end 2024-12-31` | imports daily history from Tiingo (needs `TIINGO_API_KEY`, see [providers](docs/providers.md)) |
+| `uv run moneylab fetch --watchlist "Benchmark 250" SPY --start 2020-01-02 --end 2024-12-31` | fetches that watchlist from Tiingo, plus any extra symbols, as a snapshot (needs `TIINGO_API_KEY`, see [providers](docs/providers.md)) |
 | `uv run moneylab new-sessions SNAPSHOT_ID` | prints sessions Tiingo has after a snapshot, in the import format |
 | `uv run moneylab watchlist NAME SYM... --label TEXT` | saves a labelled watchlist (a new version if it changed); without symbols shows it |
 | `uv run pytest -m network -q tests/test_tiingo_live.py` | live Tiingo check (deselected by default; needs the key) |

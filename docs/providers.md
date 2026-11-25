@@ -101,6 +101,12 @@ watchlist's current members and records the watchlist (name, version, label, mem
 created_at) in the run's resolved settings. CLI: `uv run moneylab watchlist NAME
 SYMBOLS... --label TEXT` saves, `uv run moneylab watchlist NAME` shows.
 
+`uv run moneylab fetch --watchlist NAME [EXTRA...] --start DATE --end DATE` fetches
+that watchlist's current members from Tiingo, plus any extra symbols (pass `SPY` when
+the list does not contain the benchmark). The snapshot records the watchlist name,
+version, label and the date it was selected. An empty label takes the watchlist's name.
+The same request is `POST /api/snapshots/tiingo` with `watchlist` and optional `symbols`.
+
 ## Live check
 
 Offline tests use recorded-style responses in `fixtures/tiingo/` (regenerate with
