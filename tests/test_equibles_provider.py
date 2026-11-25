@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
 import pytest
 
-from moneylab.data.providers.base import ProviderAuthError, ProviderError, ProviderNotFound, ProviderRateLimited
+from moneylab.data.providers.base import (
+    ProviderAuthError,
+    ProviderError,
+    ProviderNotFound,
+    ProviderRateLimited,
+)
 from moneylab.data.providers.equibles import EquiblesProvider
 from moneylab.settings import Settings
 
@@ -69,7 +73,9 @@ def test_a_bar_off_the_grid_is_refused(tmp_path: Path) -> None:
         _provider(tmp_path, handler).fetch_history(["AAPL"], date(2026, 11, 25), date(2026, 11, 25))
 
 
-def test_split_value_is_numerator_over_denominator_and_a_later_split_is_dropped(tmp_path: Path) -> None:
+def test_split_value_is_numerator_over_denominator_and_a_later_split_is_dropped(
+    tmp_path: Path,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/splits"):
             return httpx.Response(
@@ -91,7 +97,9 @@ def test_split_value_is_numerator_over_denominator_and_a_later_split_is_dropped(
     assert hist.actions["type"].tolist() == ["split"]
 
 
-def test_a_closed_range_is_cached_and_a_forming_bar_is_not(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_a_closed_range_is_cached_and_a_forming_bar_is_not(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     calls = {"bars": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -143,13 +151,21 @@ def test_auth_plan_missing_and_limit(tmp_path: Path) -> None:
             ["AAPL"], date(2026, 11, 25), date(2026, 11, 25)
         )
     with pytest.raises(ProviderAuthError, match="HTTP 401"):
-        _provider(tmp_path, make(401)).fetch_history(["AAPL"], date(2026, 11, 25), date(2026, 11, 25))
+        _provider(tmp_path, make(401)).fetch_history(
+            ["AAPL"], date(2026, 11, 25), date(2026, 11, 25)
+        )
     with pytest.raises(ProviderAuthError, match="does not include bars"):
-        _provider(tmp_path, make(403)).fetch_history(["AAPL"], date(2026, 11, 25), date(2026, 11, 25))
+        _provider(tmp_path, make(403)).fetch_history(
+            ["AAPL"], date(2026, 11, 25), date(2026, 11, 25)
+        )
     with pytest.raises(ProviderNotFound, match="AAPL"):
-        _provider(tmp_path, make(404)).fetch_history(["AAPL"], date(2026, 11, 25), date(2026, 11, 25))
+        _provider(tmp_path, make(404)).fetch_history(
+            ["AAPL"], date(2026, 11, 25), date(2026, 11, 25)
+        )
     with pytest.raises(ProviderRateLimited, match="429"):
-        _provider(tmp_path, make(429)).fetch_history(["AAPL"], date(2026, 11, 25), date(2026, 11, 25))
+        _provider(tmp_path, make(429)).fetch_history(
+            ["AAPL"], date(2026, 11, 25), date(2026, 11, 25)
+        )
 
 
 def test_covered_from_and_incomplete_sessions_fail(tmp_path: Path) -> None:
@@ -164,9 +180,7 @@ def test_covered_from_and_incomplete_sessions_fail(tmp_path: Path) -> None:
     def incomplete(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/splits"):
             return httpx.Response(200, json=SPLITS)
-        return httpx.Response(
-            200, text=CSV, headers={"X-Bars-Incomplete-Sessions": "2026-11-25"}
-        )
+        return httpx.Response(200, text=CSV, headers={"X-Bars-Incomplete-Sessions": "2026-11-25"})
 
     with pytest.raises(ProviderError, match="incomplete"):
         _provider(tmp_path / "b", incomplete).fetch_history(

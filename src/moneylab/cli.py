@@ -68,11 +68,16 @@ def fetch(
         str,
         typer.Option(help="fetch this watchlist's current members; SYMBOLS are added"),
     ] = "",
-    timeframe: str = typer.Option("1h", help="1min, 5min, 15min, 30min, 1h, or 1d"),
+    timeframe: str = typer.Option(
+        "", help="1min, 5min, 15min, 30min, 1h, or 1d (default 1h; Tiingo: 1d only)"
+    ),
+    source: str = typer.Option("equibles", help="equibles (any bar size) or tiingo (daily)"),
 ) -> None:
-    """Fetch history from Equibles (needs EQUIBLES_API_KEY) as an immutable snapshot.
+    """Fetch history as an immutable snapshot.
 
-    1d is resampled from hourly bars. Any other timeframe is stored as those bars.
+    Equibles (needs EQUIBLES_API_KEY): 1d is resampled from hourly bars; any other
+    timeframe is stored as those bars. Tiingo (needs TIINGO_API_KEY): daily bars with
+    splits and dividends.
     """
     from datetime import date
 
@@ -88,7 +93,8 @@ def fetch(
             label,
             refresh=refresh,
             watchlist=watchlist or None,
-            timeframe=timeframe,
+            timeframe=timeframe or ("1d" if source == "tiingo" else "1h"),
+            source=source,
         )
     except (ProviderError, ValueError) as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -102,6 +108,9 @@ def fetch(
         f"timeframe {snap.meta.get('timeframe', '1d')}, "
         f"http requests {p.get('http_requests', '?')}, cache hits {p.get('cache_hits', '?')})"
     )
+    spread = p.get("tiingo_adj_ratio_spread")
+    if spread:
+        typer.echo(f"Tiingo adjClose vs lab adjustment, relative spread: {spread}")
 
 
 @app.command("new-sessions")

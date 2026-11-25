@@ -14,7 +14,13 @@ import pandas as pd
 from moneylab.data.actions import POLICY as ACTION_POLICY
 from moneylab.data.actions import adjust, read_actions
 from moneylab.data.bars import resample_daily, session_label
-from moneylab.data.providers import NewSessions, Provider, EquiblesProvider, new_sessions
+from moneylab.data.providers import (
+    EquiblesProvider,
+    NewSessions,
+    Provider,
+    TiingoProvider,
+    new_sessions,
+)
 from moneylab.data.providers.base import empty_actions, empty_bars
 from moneylab.data.snapshot import (
     DEFAULT_ADJUSTMENT,
@@ -71,10 +77,14 @@ class Lab:
         )
 
     def provider(self, name: str = "equibles") -> Provider:
-        """The live Equibles provider built from settings."""
+        """A live provider built from settings: Equibles (any bar size) or Tiingo (daily)."""
         if name == "equibles":
-            return EquiblesProvider(self.settings.equibles_api_key, cache_dir=self.settings.cache_dir)
-        raise ValueError(f"unknown provider {name!r}; available: equibles")
+            return EquiblesProvider(
+                self.settings.equibles_api_key, cache_dir=self.settings.cache_dir
+            )
+        if name == "tiingo":
+            return TiingoProvider(self.settings.tiingo_api_key, cache_dir=self.settings.cache_dir)
+        raise ValueError(f"unknown provider {name!r}; available: equibles, tiingo")
 
     def import_provider(
         self,
@@ -86,17 +96,24 @@ class Lab:
         provider: Provider | None = None,
         refresh: bool = False,
         watchlist: str | None = None,
-        timeframe: str = "1h",
+        timeframe: str | None = None,
+        source: str = "equibles",
     ) -> Snapshot:
-        """Fetch raw Equibles bars and splits, adjust, and store a snapshot.
+        """Fetch raw bars and corporate actions, adjust, and store a snapshot.
 
-        ``1d`` is resampled from the hourly bars. Any other timeframe is stored
-        as those bars. Dividends are not requested. An empty label leaves the
+        Equibles: ``1d`` is resampled from the hourly bars; any other timeframe is
+        stored as those bars; dividends are not requested. An empty label leaves the
         display name to be read from the source, timeframe, universe and dates.
+        Tiingo: daily bars only, with splits and dividends.
         """
         syms, wl = self._fetch_symbols(symbols, watchlist)
-        prov = provider or self.provider()
-        hist = prov.fetch_history(syms, start, end, refresh=refresh, timeframe=timeframe)
+        prov = provider or self.provider(source)
+        if prov.name == "tiingo":
+            return self._import_tiingo(
+                prov, syms, wl, start, end, label, refresh, timeframe or "1d"
+            )
+        timeframe = timeframe or "1h"
+        hist = prov.fetch_history(syms, start, end, refresh=refresh, timeframe=timeframe)  # type: ignore[call-arg]
         if hist.raw.empty:
             raise ValueError("the provider returned no bars for this request")
         adjusted = adjust(hist.raw, hist.actions)
@@ -132,6 +149,47 @@ class Lab:
             actions=hist.actions,
         )
 
+    def _import_tiingo(
+        self,
+        prov: Provider,
+        syms: list[str],
+        wl: dict[str, Any] | None,
+        start: date,
+        end: date,
+        label: str,
+        refresh: bool,
+        timeframe: str,
+    ) -> Snapshot:
+        if timeframe != "1d":
+            raise ValueError(
+                f"Tiingo supplies daily bars only (timeframe 1d), not {timeframe}; "
+                "use Equibles for intraday bars"
+            )
+        hist = prov.fetch_history(syms, start, end, refresh=refresh)
+        if wl is not None:
+            hist.provenance["watchlist"] = {
+                "name": wl["name"],
+                "version": wl["version"],
+                "label": wl["label"],
+                "created_at": wl["created_at"],
+            }
+        return save_snapshot(
+            hist.adjusted(),
+            self.settings.snapshot_dir,
+            source=prov.name,
+            adjustment=ACTION_POLICY,
+            label=label,
+            provenance=hist.provenance,
+            raw=hist.raw,
+            actions=hist.actions,
+            timeframe="1d",
+        )
+
+    def _provider_for(self, snapshot_id: str) -> Provider:
+        """The provider a snapshot came from: Tiingo for Tiingo snapshots, else Equibles."""
+        source = str(self.snapshot(snapshot_id).meta.get("source", ""))
+        return self.provider("tiingo" if source == "tiingo" else "equibles")
+
     def fetch_new_sessions(
         self,
         snapshot_id: str,
@@ -150,7 +208,7 @@ class Lab:
         known = snap.bars[snap.bars["symbol"].isin(syms)]
         # One request per symbol from the earliest of their last sessions.
         after = known.groupby("symbol")["date"].max().min().date()
-        prov = provider or self.provider()
+        prov = provider or self._provider_for(snapshot_id)
         hist = prov.fetch_sessions(syms, after, end)
         return new_sessions(known, hist.raw, hist.actions)
 
@@ -402,7 +460,7 @@ class Lab:
         st = self.paper_status(paper_id)
         frontier = st["latest_processed"] or acct["start_session"]
         after = date.fromisoformat(str(frontier)[:10])
-        prov = provider or self.provider()
+        prov = provider or self._provider_for(acct["snapshot_id"])
         hist = _fetch_sessions(prov, acct["symbols"], after, end, tf)
         actions = hist.actions if not hist.actions.empty else empty_actions()
         if not actions.empty:
@@ -448,7 +506,9 @@ def _snap_info(snap: Snapshot) -> SnapshotInfo:
     return SnapshotInfo(snap.id, snap.meta["source"], snap.meta["adjustment"])
 
 
-def _fetch_sessions(prov: Provider, symbols: list[str], after: date, end: date | None, timeframe: str) -> Any:
+def _fetch_sessions(
+    prov: Provider, symbols: list[str], after: date, end: date | None, timeframe: str
+) -> Any:
     try:
         return prov.fetch_sessions(symbols, after, end, timeframe=timeframe)  # type: ignore[call-arg]
     except TypeError:
@@ -462,7 +522,8 @@ def _bars_after(raw: pd.DataFrame, frontier: str, timeframe: str) -> pd.DataFram
     if "bar_start" not in raw.columns:
         bars = normalise(raw)
         cutoff = date.fromisoformat(str(frontier)[:10])
-        return bars[bars["date"].dt.date > cutoff].reset_index(drop=True)
+        kept: pd.DataFrame = bars[bars["date"].dt.date > cutoff].reset_index(drop=True)
+        return kept
     adjusted = adjust(raw, empty_actions())
     labels = pd.to_datetime(adjusted["bar_start"]).map(session_label)
     adjusted = adjusted.loc[labels > frontier].reset_index(drop=True)
@@ -470,7 +531,8 @@ def _bars_after(raw: pd.DataFrame, frontier: str, timeframe: str) -> pd.DataFram
         return adjusted
     daily = normalise(resample_daily(adjusted))
     cutoff = date.fromisoformat(str(frontier)[:10])
-    return daily[daily["date"].dt.date > cutoff].reset_index(drop=True)
+    after_daily: pd.DataFrame = daily[daily["date"].dt.date > cutoff].reset_index(drop=True)
+    return after_daily
 
 
 def _ingest_grid(

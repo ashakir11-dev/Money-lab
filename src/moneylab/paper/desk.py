@@ -369,8 +369,7 @@ class PaperDesk:
                 raise ValueError(f"start {start} is before the run's first session {first}")
             labels = pd.to_datetime(bars["bar_start"]).map(session_label)
             hist = bars[
-                bars["symbol"].isin(symbols)
-                & labels.map(lambda s: label_in_range(s, first, start))
+                bars["symbol"].isin(symbols) & labels.map(lambda s: label_in_range(s, first, start))
             ].copy()
             history = save_intraday_snapshot(
                 hist,
@@ -575,9 +574,7 @@ class PaperDesk:
         bars = self._input_bars(acct, events)
         tf = account_timeframe(acct["resolved"])
         n_dec, n_fill, n_eq = len(acc.decisions), len(acc.fills), len(acc.equity_rows)
-        data = MarketData.build(
-            bars, acct["symbols"], acct["first_session"], session, timeframe=tf
-        )
+        data = MarketData.build(bars, acct["symbols"], acct["first_session"], session, timeframe=tf)
         if session_label(data.sessions[-1]) != session:
             raise RuntimeError(f"input for {session} does not end on that session")
         view = MarketView.build(acct["resolved"], data)

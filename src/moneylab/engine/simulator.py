@@ -21,8 +21,6 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from moneylab.data.bars import session_label
-
 import numpy as np
 import pandas as pd
 
@@ -32,6 +30,7 @@ from moneylab.components.registry import (
     get_component,
     indicator_key,
 )
+from moneylab.data.bars import session_label
 from moneylab.data.snapshot import MarketData
 from moneylab.engine.config import required_indicators, resolved_exits, resolved_sizing
 
