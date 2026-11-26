@@ -148,6 +148,13 @@ class StrategyConfig(BaseModel):
     start: date | None = None
     end: date | None = None
     entry: list[Condition]
+    entry_signals: list[Condition] = Field(
+        default_factory=list,
+        description=(
+            "conditions on the entry row. A buy also needs every one of these to pass, "
+            "along with `entry`."
+        ),
+    )
     entry_fill: EntryFill = Field(default_factory=EntryFill)
     exit: ExitRule = Field(default_factory=ExitRule)
     exits: list[ExitRule] | None = Field(
@@ -311,7 +318,8 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
         "timeframe": config.timeframe or "1d",
         "start": config.start.isoformat() if config.start else None,
         "end": config.end.isoformat() if config.end else None,
-        "entry": [_resolve_condition(c, "entry") for c in config.entry],
+        "entry": [_resolve_condition(c, "entry") for c in config.entry]
+        + [_resolve_condition(c, "entry") for c in config.entry_signals],
         "entry_combine": "all",
         "entry_fill": config.entry_fill.model_dump(),
         # "exit" is the first exit rule, kept for readers of the single-exit shape;
@@ -356,6 +364,9 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "missing_bars": "no trade on a session without a bar; orders wait for the next bar",
         },
     }
+    strat_entry = resolved["entry"][len(config.entry) :]
+    if strat_entry:
+        resolved["entry_signals"] = strat_entry
     if p.idle_cash == "benchmark":
         resolved["execution"]["idle_cash"] = (
             f"cash not needed by a position is held in whole shares of {resolved['benchmark']}: "
@@ -389,6 +400,12 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
     exits = resolved_exits(resolved)
     sizing = resolved.get("sizing")
     rank = resolved.get("rank_by")
+    stored = [cond(c) for c in resolved["entry"]]
+    extras = [cond(c) for c in resolved.get("entry_signals") or []]
+    if extras and len(extras) <= len(stored):
+        stored = stored[: len(stored) - len(extras)]
+    else:
+        extras = []
     return StrategyConfig(
         name=resolved["name"],
         universe=resolved["universe"],
@@ -396,7 +413,8 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         timeframe=resolved.get("timeframe", "1d"),
         start=resolved["start"],
         end=resolved["end"],
-        entry=[cond(c) for c in resolved["entry"]],
+        entry=stored,
+        entry_signals=extras,
         entry_fill=EntryFill(**(resolved.get("entry_fill") or {})),
         exit=exit_rule(exits[0]),
         exits=[exit_rule(e) for e in exits] if len(exits) > 1 else None,

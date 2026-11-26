@@ -8,7 +8,7 @@ import { ConditionEditor, PAIRED, SchemaParams, defaultsOf, type CondDraft, type
 import { Mark } from "@/components/Mark";
 import { Specimen } from "@/components/Specimen";
 import { ErrorBox, JobStatus, Loading } from "@/components/ui";
-import { api, type Component, type Condition, type Job, type Param, type RunSubmit, type StrategyConfig, waitForJob } from "@/lib/api";
+import { api, type Component, type Condition, type Job, type Param, type RunSubmit, type StrategyConfig, type StrategyVersion, waitForJob } from "@/lib/api";
 import { nextVersionName, withRun, type LineageRun } from "@/lib/lineage";
 import { useAsync, useDebounced } from "@/lib/hooks";
 import { SECTORS, sectorSymbols } from "@/lib/sectors";
@@ -34,10 +34,16 @@ type Draft = {
   start: string;
   end: string;
   entry: CondDraft[];
+  /** False when the fill block has been removed. A buy then fills at the next open. */
+  fillOn: boolean;
   fillKind: FillKind;
   rangeBelow: string;
   rangeAbove: string;
   dipPct: string;
+  /** Signal conditions on the entry row. They must pass along with `entry`. */
+  entryConds: CondDraft[];
+  /** False when the hold-sessions exit has been removed. */
+  hold: boolean;
   maxHold: string;
   exitConds: CondDraft[];
   /** Price exits (stop loss, take profit, trailing stop...); the first exit that fires sells. */
@@ -66,10 +72,13 @@ const EMPTY: Draft = {
   start: "",
   end: "",
   entry: [],
+  fillOn: true,
   fillKind: "next_open",
   rangeBelow: "2",
   rangeAbove: "2",
   dipPct: "2",
+  entryConds: [],
+  hold: true,
   maxHold: "10",
   exitConds: [],
   guards: [],
@@ -126,13 +135,44 @@ function toCondition(c: CondDraft, comps: Map<string, Component>): Condition {
  * The signal / max-hold exit, plus any price exits. Without price exits only `exit` is
  * sent, so configs built before price exits existed keep their exact shape.
  */
+const FILLS: { id: FillKind; label: string; help: string; icon: BlockIconName }[] = [
+  { id: "next_open", label: "Next open", help: "Fill at the next session open.", icon: "arrow" },
+  {
+    id: "next_range",
+    label: "In range",
+    help: "Fill on the next bar only if it trades inside this band around the signal close. A gap outside cancels the order.",
+    icon: "range",
+  },
+  {
+    id: "dip",
+    label: "Dip",
+    help: "Limit below the signal close. Waits until that session’s low prints through; a gap through fills at the open.",
+    icon: "dip",
+  },
+];
+
+/** Sessions on the hold block, or null when the block is off or the number is blank. */
+function holdSessions(d: Draft): number | null {
+  if (!d.hold || d.maxHold.trim() === "") return null;
+  const n = Number(d.maxHold);
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+/** A run needs one signal, one entry block, and one complete exit block. */
+function draftReady(d: Draft): boolean {
+  if (!d.entry.length) return false;
+  if (!d.fillOn && !d.entryConds.length) return false;
+  if (d.hold && holdSessions(d) == null) return false;
+  return d.guards.length > 0 || d.exitConds.length > 0 || holdSessions(d) != null;
+}
+
 function exitsOf(d: Draft, comps: Map<string, Component>): Pick<StrategyConfig, "exit" | "exits"> {
-  const hold = d.maxHold.trim() === "" ? null : Number(d.maxHold);
+  const hold = holdSessions(d);
   const guards = d.guards.map((g) => ({ kind: g.kind, params: cleanParams(comps.get(g.kind), g.params), conditions: [] }));
   const primary = d.exitConds.length
     ? { kind: "signal", params: hold ? { max_sessions: hold } : {}, conditions: d.exitConds.map((c) => toCondition(c, comps)) }
-    : hold || !guards.length
-      ? { kind: "holding_period", params: { sessions: hold ?? 10 }, conditions: [] }
+    : hold
+      ? { kind: "holding_period", params: { sessions: hold }, conditions: [] }
       : null;
   if (!guards.length) return { exit: primary! };
   // Price exits go first so a session where both fire is reported as the stop.
@@ -151,12 +191,15 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
     start: d.start || null,
     end: d.end || null,
     entry: d.entry.map((c) => toCondition(c, comps)),
-    entry_fill: {
-      kind: d.fillKind,
-      below_pct: d.fillKind === "next_range" && d.rangeBelow.trim() !== "" ? Number(d.rangeBelow) / 100 : null,
-      above_pct: d.fillKind === "next_range" && d.rangeAbove.trim() !== "" ? Number(d.rangeAbove) / 100 : null,
-      dip_pct: d.fillKind === "dip" && d.dipPct.trim() !== "" ? Number(d.dipPct) / 100 : null,
-    },
+    ...(d.entryConds.length ? { entry_signals: d.entryConds.map((c) => toCondition(c, comps)) } : {}),
+    entry_fill: d.fillOn
+      ? {
+          kind: d.fillKind,
+          below_pct: d.fillKind === "next_range" && d.rangeBelow.trim() !== "" ? Number(d.rangeBelow) / 100 : null,
+          above_pct: d.fillKind === "next_range" && d.rangeAbove.trim() !== "" ? Number(d.rangeAbove) / 100 : null,
+          dip_pct: d.fillKind === "dip" && d.dipPct.trim() !== "" ? Number(d.dipPct) / 100 : null,
+        }
+      : { kind: "next_open", below_pct: null, above_pct: null, dip_pct: null },
     ...exitsOf(d, comps),
     ...(d.sizingId && d.sizingId !== "percent_of_equity"
       ? { sizing: { id: d.sizingId, params: cleanParams(comps.get(d.sizingId), d.sizingParams) } }
@@ -185,6 +228,7 @@ type Resolved = {
   start?: string | null;
   end?: string | null;
   entry?: ResolvedCond[];
+  entry_signals?: ResolvedCond[];
   entry_fill?: { kind?: FillKind; below_pct?: number | null; above_pct?: number | null; dip_pct?: number | null };
   exit?: ResolvedExit;
   exits?: ResolvedExit[];
@@ -205,6 +249,13 @@ function fromResolved(r: Resolved): Draft {
   const p = r.portfolio ?? {};
   const all = r.exits?.length ? r.exits : r.exit ? [r.exit] : [];
   const main = all.find((e) => OWN_EXITS.has(e.kind ?? "holding_period"));
+  const mainKind = main ? (main.kind ?? "holding_period") : undefined;
+  const holdRaw =
+    mainKind === "holding_period" ? main?.params?.sessions : mainKind === "signal" ? main?.params?.max_sessions : undefined;
+  const holdOn = holdRaw != null && holdRaw !== "";
+  const extras = r.entry_signals ?? [];
+  const stored = r.entry ?? [];
+  const split = extras.length > 0 && extras.length <= stored.length;
   return {
     ...EMPTY,
     name: r.name ?? "Strategy",
@@ -213,12 +264,15 @@ function fromResolved(r: Resolved): Draft {
     timeframe: asTimeframe(r.timeframe),
     start: r.start ?? "",
     end: r.end ?? "",
-    entry: (r.entry ?? []).map(cond),
+    entry: (split ? stored.slice(0, stored.length - extras.length) : stored).map(cond),
+    fillOn: true,
     fillKind: r.entry_fill?.kind ?? "next_open",
     rangeBelow: r.entry_fill?.below_pct != null ? String(+(r.entry_fill.below_pct * 100).toFixed(6)) : "2",
     rangeAbove: r.entry_fill?.above_pct != null ? String(+(r.entry_fill.above_pct * 100).toFixed(6)) : "2",
     dipPct: r.entry_fill?.dip_pct != null ? String(+(r.entry_fill.dip_pct * 100).toFixed(6)) : "2",
-    maxHold: String(main?.params?.max_sessions ?? main?.params?.sessions ?? ""),
+    entryConds: (split ? extras : []).map(cond),
+    hold: holdOn,
+    maxHold: holdOn ? String(holdRaw) : "10",
     exitConds: (main?.conditions ?? []).map(cond),
     guards: all.filter((e) => !OWN_EXITS.has(e.kind ?? "holding_period")).map((e) => ({ kind: e.kind ?? "", params: { ...(e.params ?? {}) } })),
     sizingId: r.sizing?.id ?? "percent_of_equity",
@@ -268,13 +322,31 @@ function PctSlider({
   );
 }
 
+function versionAsResolved(version: StrategyVersion): Resolved {
+  const rules = version.rules as Resolved;
+  const run = version.runs[0];
+  const exits = (rules.exits ?? []) as Resolved["exits"];
+  return {
+    ...rules,
+    name: version.name,
+    universe: run?.universe ?? rules.universe ?? [],
+    start: run?.start ?? rules.start,
+    end: run?.end ?? rules.end,
+    exits,
+    exit: exits?.[0] ?? rules.exit,
+  };
+}
+
 function Builder() {
-  const from = useSearchParams().get("from") ?? "";
+  const params = useSearchParams();
+  const from = params.get("from") ?? "";
+  const editing = params.get("strategy") ?? "";
   const comps = useAsync(() => api.components(), []);
   const defaults = useAsync(() => api.defaults(), []);
   const snaps = useAsync(() => api.snapshots(), []);
   const lists = useAsync(() => api.watchlists(), []);
   const source = useAsync(() => api.run(from), [from], !!from);
+  const version = useAsync(() => api.strategy(editing), [editing], !!editing && !from);
   const prior = useAsync(() => api.runs(), [], !!from);
   const parentEq = useAsync(() => api.equity(from), [from], !!from);
 
@@ -283,6 +355,7 @@ function Builder() {
   const [snapshot, setSnapshot] = useState("");
   const [ready, setReady] = useState(false);
   const [job, setJob] = useState<Job>();
+  const [savedId, setSavedId] = useState<string>();
   const [submitError, setSubmitError] = useState<unknown>();
   const doneId = job?.status === "complete" ? job.run_ids[0] : undefined;
   const newEq = useAsync(() => api.equity(doneId ?? ""), [doneId], !!doneId);
@@ -292,7 +365,17 @@ function Builder() {
   // Initialise once: from the source run when duplicating, else a worked example.
   useEffect(() => {
     if (ready || !comps.data || !snaps.data) return;
-    if (from) {
+    if (!from && editing) {
+      if (!version.data) return;
+      const next = fromResolved(versionAsResolved(version.data));
+      const first = snaps.data[0];
+      if (!next.universe && first) next.universe = first.symbols.filter((s) => s !== "SPY").join(", ");
+      if (!next.start && first) next.start = first.first_date;
+      if (!next.end && first) next.end = first.last_date;
+      const snapId = version.data.runs[0]?.snapshot_id ?? first?.id ?? "";
+      setDraft(next);
+      setSnapshot(snapId);
+    } else if (from) {
       const src = source.data;
       if (!src || (!prior.data && !prior.error)) return;
       const next = fromResolved(src.resolved as Resolved);
@@ -329,14 +412,19 @@ function Builder() {
       setSnapshot(first?.id ?? "");
     }
     setReady(true);
-  }, [ready, comps.data, snaps.data, source.data, prior.data, prior.error, from, byId, defaults.data]);
+  }, [ready, comps.data, snaps.data, source.data, prior.data, prior.error, from, editing, version.data, byId, defaults.data]);
 
-  const config = useMemo(() => (comps.data ? toConfig(draft, byId) : undefined), [draft, byId, comps.data]);
+  const readyDraft = draftReady(draft);
+  const config = useMemo(
+    () => (comps.data && readyDraft ? toConfig(draft, byId) : undefined),
+    [draft, byId, comps.data, readyDraft],
+  );
   const body: RunSubmit | undefined = config
     ? {
         config,
         snapshot_id: snapshot,
         parent_id: from || null,
+        strategy_id: editing || source.data?.strategy_id || null,
         watchlist: draft.universeSource === "watchlist" ? draft.watchlist || null : null,
       }
     : undefined;
@@ -369,6 +457,20 @@ function Builder() {
   const busy = job?.status === "queued" || job?.status === "running";
   const newRun = job?.status === "complete" ? job.run_ids[0] : undefined;
 
+  async function saveVersion() {
+    if (!config) return;
+    setSubmitError(undefined);
+    try {
+      const saved = await api.saveStrategy({
+        config,
+        strategy_id: editing || source.data?.strategy_id || null,
+      });
+      setSavedId(saved.id);
+    } catch (e) {
+      setSubmitError(e);
+    }
+  }
+
   async function submit() {
     if (!body) return;
     setSubmitError(undefined);
@@ -382,15 +484,26 @@ function Builder() {
     }
   }
 
-  function addCond(which: "entry" | "exitConds") {
+  function addCond(which: "entry" | "exitConds" | "entryConds") {
     const ind = byId.get("rsi") ?? (comps.data ?? []).find((c) => c.uses.includes("indicator"));
     const c: CondDraft = { kind: "threshold", indicator: ind?.id ?? "", indParams: defaultsOf(ind), params: defaultsOf(byId.get("threshold")) };
     const index = draft[which].length;
     setDraft((d) => ({ ...d, [which]: [...d[which], c] }));
-    setOpen(which === "entry" ? `condition-${index}` : `exit-${index}`);
+    setOpen(which === "entry" ? `condition-${index}` : which === "entryConds" ? `entry-signal-${index}` : `exit-${index}`);
   }
 
-  const loadError = comps.error || snaps.error || defaults.error || source.error;
+  function addFill(kind: string) {
+    if (kind !== "next_open" && kind !== "next_range" && kind !== "dip") return;
+    setDraft((d) => ({ ...d, fillOn: true, fillKind: kind }));
+    setOpen("fill");
+  }
+
+  function addHold() {
+    setDraft((d) => ({ ...d, hold: true, maxHold: d.maxHold.trim() === "" ? "10" : d.maxHold }));
+    setOpen("hold");
+  }
+
+  const loadError = comps.error || snaps.error || defaults.error || source.error || version.error;
   if (loadError) return <ErrorBox error={loadError} title="Could not load the builder" />;
   if (!ready) return <Loading what="Loading the builder" />;
   const dflt = defaults.data;
@@ -597,32 +710,84 @@ function Builder() {
           </div>
         </SectionWrap>
 
-        <SectionWrap tone="entry" title="Entry" count={1}>
-          <div className="block-row" role="group" aria-label="Entry fill">
-            {(
-              [
-                ["next_open", "Next open", "Fill at the next session open.", "arrow"],
-                ["next_range", "In range", "Fill on the next bar only if it trades inside this band around the signal close. A gap outside cancels the order.", "range"],
-                ["dip", "Dip", "Limit below the signal close. Waits until that session’s low prints through; a gap through fills at the open.", "dip"],
-              ] as const
-            ).map(([id, label, help, icon]) => (
-              <ChoiceBlock
-                key={id}
-                icon={icon}
-                selected={draft.fillKind === id}
-                label={label}
-                help={help}
-                onClick={() => set("fillKind", id)}
+        <SectionWrap
+          tone="entry"
+          title="Entry"
+          count={(draft.fillOn ? 1 : 0) + draft.entryConds.length}
+          action={
+            <span className="block-section-action">
+              <button type="button" data-testid="add-entry-signal" onClick={() => addCond("entryConds")}>
+                Add signal
+              </button>
+              <select
+                data-testid="add-entry"
+                aria-label="Add an entry"
+                value=""
+                onChange={(e) => addFill(e.target.value)}
+                style={{ width: "auto" }}
               >
-                {id === "next_range" ? (
-                  <>
-                    <PctSlider id="range-below" label="Below %" value={draft.rangeBelow} onChange={(v) => set("rangeBelow", v)} />
-                    <PctSlider id="range-above" label="Above %" value={draft.rangeAbove} onChange={(v) => set("rangeAbove", v)} />
-                  </>
-                ) : id === "dip" ? (
-                  <PctSlider id="dip-pct" label="Dip %" value={draft.dipPct} onChange={(v) => set("dipPct", v)} />
-                ) : null}
-              </ChoiceBlock>
+                <option value="">Add entry…</option>
+                {FILLS.map((f) => (
+                  <option key={f.id} value={f.id} disabled={draft.fillOn && draft.fillKind === f.id}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          }
+        >
+          <p className="muted">
+            One fill, and any signals. A signal here has to pass along with the Signal section before the buy.
+          </p>
+          {!draft.fillOn && draft.entryConds.length === 0 ? <p className="muted">Add at least one entry.</p> : null}
+          {!draft.fillOn && draft.entryConds.length > 0 ? (
+            <p className="muted">No fill block: the buy fills at the next open.</p>
+          ) : null}
+          <div className="block-row">
+            {draft.fillOn
+              ? (() => {
+                  const fill = FILLS.find((f) => f.id === draft.fillKind) ?? FILLS[0];
+                  const summary =
+                    fill.id === "dip"
+                      ? `Dip ${draft.dipPct || "—"}%`
+                      : fill.id === "next_range"
+                        ? `In range ${draft.rangeBelow || "—"}% / ${draft.rangeAbove || "—"}%`
+                        : fill.label;
+                  return (
+                    <ViewBlock
+                      testId="entry-fill"
+                      icon={fill.icon}
+                      summary={summary}
+                      help={fill.help}
+                      open={open === "fill"}
+                      onOpen={() => toggle("fill")}
+                      onRemove={() => setDraft((d) => ({ ...d, fillOn: false }))}
+                      removeLabel={`Remove ${fill.label}`}
+                    >
+                      {fill.id === "next_range" ? (
+                        <>
+                          <PctSlider id="range-below" label="Below %" value={draft.rangeBelow} onChange={(v) => set("rangeBelow", v)} />
+                          <PctSlider id="range-above" label="Above %" value={draft.rangeAbove} onChange={(v) => set("rangeAbove", v)} />
+                        </>
+                      ) : fill.id === "dip" ? (
+                        <PctSlider id="dip-pct" label="Dip %" value={draft.dipPct} onChange={(v) => set("dipPct", v)} />
+                      ) : null}
+                    </ViewBlock>
+                  );
+                })()
+              : null}
+            {draft.entryConds.map((c, i) => (
+              <ConditionEditor
+                key={i}
+                index={i}
+                prefix="entry-signal"
+                cond={c}
+                comps={comps.data ?? []}
+                open={open === `entry-signal-${i}`}
+                onOpen={() => toggle(`entry-signal-${i}`)}
+                onChange={(n) => setDraft((d) => ({ ...d, entryConds: d.entryConds.map((x, j) => (j === i ? n : x)) }))}
+                onRemove={() => setDraft((d) => ({ ...d, entryConds: d.entryConds.filter((_, j) => j !== i) }))}
+              />
             ))}
           </div>
         </SectionWrap>
@@ -630,7 +795,7 @@ function Builder() {
         <SectionWrap
           tone="exit"
           title="Exit"
-          count={draft.guards.length + draft.exitConds.length + 1}
+          count={draft.guards.length + draft.exitConds.length + (draft.hold ? 1 : 0)}
           action={
             <span className="block-section-action">
               <button type="button" onClick={() => addCond("exitConds")}>
@@ -638,13 +803,19 @@ function Builder() {
               </button>
               <select
                 data-testid="add-price-exit"
-                aria-label="Add a price exit"
+                aria-label="Add an exit"
                 value=""
-                onChange={(e) => addGuard(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "holding_period") addHold();
+                  else addGuard(e.target.value);
+                }}
                 style={{ width: "auto" }}
-                disabled={guardKinds.every((c) => usedGuards.has(c.id))}
+                disabled={draft.hold && guardKinds.every((c) => usedGuards.has(c.id))}
               >
-                <option value="">Add price exit…</option>
+                <option value="">Add exit…</option>
+                <option value="holding_period" disabled={draft.hold}>
+                  Hold sessions
+                </option>
                 {guardKinds.map((c) => (
                   <option key={c.id} value={c.id} disabled={usedGuards.has(c.id)} title={c.description}>
                     {c.label}
@@ -657,6 +828,9 @@ function Builder() {
           <p className="muted">
             Any one of these sells. A stop and a profit target do not both have to hit, and an exit signal fires when any of its conditions pass.
           </p>
+          {draft.guards.length + draft.exitConds.length + (draft.hold ? 1 : 0) === 0 ? (
+            <p className="muted">Add at least one exit.</p>
+          ) : null}
           <div className="block-row">
             {draft.guards.map((g, i) => {
               const schema = byId.get(g.kind);
@@ -696,28 +870,33 @@ function Builder() {
                 onRemove={() => setDraft((d) => ({ ...d, exitConds: d.exitConds.filter((_, j) => j !== i) }))}
               />
             ))}
-            <ViewBlock
-              icon="clock"
-              summary={draft.maxHold ? `Hold ${draft.maxHold}` : "Hold none"}
-              help="Fill day counts as session one. With exit signals, this is a cap: the signal or this many sessions, whichever comes first."
-              open={open === "hold"}
-              onOpen={() => toggle("hold")}
-            >
-              <div className="cond-row">
-                <label className="cond-label" htmlFor="sessions">
-                  Sessions
-                </label>
-                <input
-                  id="sessions"
-                  data-testid="exit-sessions"
-                  type="number"
-                  min={1}
-                  value={draft.maxHold}
-                  onChange={(e) => set("maxHold", e.target.value)}
-                  placeholder="none"
-                />
-              </div>
-            </ViewBlock>
+            {draft.hold ? (
+              <ViewBlock
+                testId="exit-hold"
+                icon="clock"
+                summary={holdSessions(draft) ? `Hold ${draft.maxHold}` : "Hold sessions"}
+                help="Fill day counts as session one. With exit signals, this is a cap: the signal or this many sessions, whichever comes first."
+                open={open === "hold"}
+                onOpen={() => toggle("hold")}
+                onRemove={() => setDraft((d) => ({ ...d, hold: false }))}
+                removeLabel="Remove hold sessions"
+              >
+                <div className="cond-row">
+                  <label className="cond-label" htmlFor="sessions">
+                    Sessions
+                  </label>
+                  <input
+                    id="sessions"
+                    data-testid="exit-sessions"
+                    type="number"
+                    min={1}
+                    value={draft.maxHold}
+                    onChange={(e) => set("maxHold", e.target.value)}
+                    placeholder="none"
+                  />
+                </div>
+              </ViewBlock>
+            ) : null}
           </div>
         </SectionWrap>
 
@@ -885,9 +1064,9 @@ function Builder() {
         </SectionWrap>
 
         <section className="stack-block">
-          {check.error ? (
+          {readyDraft && check.error ? (
             <ErrorBox error={check.error} title="Not valid yet" />
-          ) : check.data ? (
+          ) : readyDraft && check.data ? (
             <div className="summary-box" data-testid="builder-summary">
               <p className="plain-summary">{check.data.summary}</p>
             </div>
@@ -897,10 +1076,18 @@ function Builder() {
               className="primary"
               data-testid="run-backtest"
               onClick={submit}
-              disabled={busy || !snapshot || !!check.error || !draft.entry.length}
+              disabled={busy || !snapshot || !readyDraft || !!check.error}
             >
               Run backtest
             </button>
+            <button data-testid="save-strategy" onClick={saveVersion} disabled={!readyDraft || !!check.error}>
+              Save strategy
+            </button>
+            {savedId ? (
+              <Link className="button" href={`/strategies?id=${encodeURIComponent(savedId)}`}>
+                Open the saved version
+              </Link>
+            ) : null}
             <JobStatus status={job?.status} error={job?.error} />
             {newRun && from ? (
               <Link

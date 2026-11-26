@@ -2336,6 +2336,17 @@
             "title": "Status",
             "type": "string"
           },
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          },
           "summary": {
             "title": "Summary",
             "type": "string"
@@ -2420,6 +2431,17 @@
           "snapshot_id": {
             "title": "Snapshot Id",
             "type": "string"
+          },
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
           },
           "watchlist": {
             "anyOf": [
@@ -2602,6 +2624,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
           },
           "summary": {
             "title": "Summary",
@@ -2812,6 +2845,14 @@
           "entry_fill": {
             "$ref": "#/components/schemas/EntryFill"
           },
+          "entry_signals": {
+            "description": "conditions on the entry row. A buy also needs every one of these to pass, along with `entry`.",
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "title": "Entry Signals",
+            "type": "array"
+          },
           "exit": {
             "$ref": "#/components/schemas/ExitRule"
           },
@@ -2905,6 +2946,292 @@
           "entry"
         ],
         "title": "StrategyConfig",
+        "type": "object"
+      },
+      "StrategyFamilyOut": {
+        "properties": {
+          "best_gap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Gap"
+          },
+          "best_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Run Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "run_count": {
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "version_count": {
+            "title": "Version Count",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "name",
+          "created_at",
+          "best_gap",
+          "best_run_id",
+          "version_count",
+          "run_count",
+          "versions"
+        ],
+        "title": "StrategyFamilyOut",
+        "type": "object"
+      },
+      "StrategyRunOut": {
+        "properties": {
+          "benchmark_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Return"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "gap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "universe": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Universe",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "snapshot_id",
+          "universe"
+        ],
+        "title": "StrategyRunOut",
+        "type": "object"
+      },
+      "StrategySave": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/StrategyConfig"
+          },
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "title": "StrategySave",
+        "type": "object"
+      },
+      "StrategyVersionOut": {
+        "properties": {
+          "best_gap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Gap"
+          },
+          "best_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Run Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "rules": {
+            "additionalProperties": true,
+            "title": "Rules",
+            "type": "object"
+          },
+          "run_count": {
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyRunOut"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "name",
+          "created_at",
+          "best_gap",
+          "best_run_id",
+          "run_count",
+          "runs",
+          "rules"
+        ],
+        "title": "StrategyVersionOut",
         "type": "object"
       },
       "StreaksOut": {
@@ -4928,6 +5255,114 @@
         "summary": "Import Tiingo",
         "tags": [
           "data"
+        ]
+      }
+    },
+    "/api/strategies": {
+      "get": {
+        "description": "Root strategies ranked by the best run's gap versus that run's own benchmark.",
+        "operationId": "strategies_api_strategies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StrategyFamilyOut"
+                  },
+                  "title": "Response Strategies Api Strategies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Strategies",
+        "tags": [
+          "strategies"
+        ]
+      },
+      "post": {
+        "description": "Save a version without running it. Unchanged rules keep the same id.",
+        "operationId": "save_strategy_api_strategies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategySave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Strategy",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/api/strategies/{strategy_id}": {
+      "get": {
+        "operationId": "strategy_detail_api_strategies__strategy_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Strategy Detail",
+        "tags": [
+          "strategies"
         ]
       }
     },

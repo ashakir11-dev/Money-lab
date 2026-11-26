@@ -189,6 +189,26 @@ test("a watchlist is shown only when a run has one", () => {
   assert.equal(settingsSections(base(), base()).some((s) => s.rows.some((r) => r.label === "Watchlist")), false);
 });
 
+test("an entry signal is listed on Entry and stays off Signal", () => {
+  const extra = {
+    kind: "threshold",
+    params: { op: ">", value: 70 },
+    indicator: { id: "rsi", params: { period: 14 } },
+  };
+  const withSignal = base({
+    entry: [...base().entry, extra],
+    entry_signals: [extra],
+  });
+  const sections = settingsSections(base(), withSignal);
+  assert.equal(row(sections, "Signal", "Condition 1").changed, false);
+  assert.equal(
+    sections.find((s) => s.title === "Signal")?.rows.some((r) => r.label === "Condition 2"),
+    false,
+  );
+  assert.equal(row(sections, "Entry", "Entry signal 1").a, "none");
+  assert.equal(row(sections, "Entry", "Entry signal 1").b, "rsi(period=14) > 70");
+});
+
 test("an unreadable condition falls back to JSON", () => {
   const broken = base({ entry: [{ kind: "nope" }] });
   const sections = settingsSections(broken, broken);

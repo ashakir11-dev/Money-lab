@@ -161,7 +161,51 @@ class RunSubmit(BaseModel):
     config: StrategyConfig
     snapshot_id: str
     parent_id: str | None = None
+    strategy_id: str | None = None
     watchlist: str | None = None
+
+
+class StrategySave(BaseModel):
+    config: StrategyConfig
+    strategy_id: str | None = None
+
+
+class StrategyRunOut(BaseModel):
+    id: str
+    name: str
+    created_at: str | None = None
+    snapshot_id: str
+    start: str | None = None
+    end: str | None = None
+    universe: list[str]
+    gap: float | None = None
+    total_return: float | None = None
+    benchmark_return: float | None = None
+    benchmark_symbol: str | None = None
+
+
+class StrategyVersionOut(BaseModel):
+    id: str
+    parent_id: str | None
+    name: str
+    created_at: str
+    best_gap: float | None
+    best_run_id: str | None
+    run_count: int
+    runs: list[StrategyRunOut]
+    rules: dict[str, Any]
+
+
+class StrategyFamilyOut(BaseModel):
+    id: str
+    parent_id: str | None
+    name: str
+    created_at: str
+    best_gap: float | None
+    best_run_id: str | None
+    version_count: int
+    run_count: int
+    versions: list[StrategyVersionOut]
 
 
 class BatchSubmit(BaseModel):
@@ -368,6 +412,7 @@ class TradeRow(Always):
 class RunSummary(BaseModel):
     id: str
     parent_id: str | None
+    strategy_id: str | None = None
     name: str
     created_at: str
     status: str
@@ -604,6 +649,7 @@ def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> d
     return {
         "id": row["id"],
         "parent_id": row.get("parent_id"),
+        "strategy_id": row.get("strategy_id"),
         "name": row["name"],
         "created_at": row["created_at"],
         "status": row["status"],
@@ -890,6 +936,44 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         saved: dict[str, Any] = jsonable(lab.save_watchlist(body.name, body.symbols, body.label))
         return saved
 
+    # Strategies ----------------------------------------------------------------------
+    @app.get("/api/strategies", response_model=list[StrategyFamilyOut], tags=["strategies"])
+    def strategies() -> list[dict[str, Any]]:
+        """Root strategies ranked by the best run's gap versus that run's own benchmark."""
+        return [jsonable(row) for row in lab.strategy_families()]
+
+    @app.get(
+        "/api/strategies/{strategy_id}",
+        response_model=StrategyVersionOut,
+        tags=["strategies"],
+    )
+    def strategy_detail(strategy_id: str) -> dict[str, Any]:
+        for family in lab.strategy_families():
+            for version in family["versions"]:
+                if version["id"] == strategy_id:
+                    return jsonable(version)
+        raise HTTPException(404, f"strategy {strategy_id} not found")
+
+    @app.post("/api/strategies", response_model=StrategyVersionOut, tags=["strategies"])
+    def save_strategy(body: StrategySave) -> dict[str, Any]:
+        """Save a version without running it. Unchanged rules keep the same id."""
+        if body.strategy_id is not None:
+            try:
+                lab.strategy(body.strategy_id)
+            except KeyError:
+                raise HTTPException(404, f"strategy {body.strategy_id} not found") from None
+        try:
+            saved = lab.save_strategy(body.config, body.strategy_id)
+        except ValidationError as exc:
+            raise _bad_request(exc) from exc
+        except ValueError as exc:
+            raise _bad_request(exc) from exc
+        for family in lab.strategy_families():
+            for version in family["versions"]:
+                if version["id"] == saved:
+                    return jsonable(version)
+        raise HTTPException(500, "saved strategy was not readable")
+
     # Runs ----------------------------------------------------------------------------
     @app.get("/api/runs", response_model=list[RunSummary], tags=["runs"])
     def runs() -> list[dict[str, Any]]:
@@ -911,11 +995,22 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
             raise HTTPException(404, f"snapshot {body.snapshot_id} not found") from None
         if body.parent_id is not None:
             _detail(lab, body.parent_id)
+        if body.strategy_id is not None:
+            try:
+                lab.strategy(body.strategy_id)
+            except KeyError:
+                raise HTTPException(404, f"strategy {body.strategy_id} not found") from None
         validate(body)
         job = jobs.submit(
             "run",
             lambda: [
-                lab.run(body.config, body.snapshot_id, body.parent_id, watchlist=body.watchlist)
+                lab.run(
+                    body.config,
+                    body.snapshot_id,
+                    body.parent_id,
+                    watchlist=body.watchlist,
+                    strategy_id=body.strategy_id,
+                )
             ],
         )
         return _job_out(job)

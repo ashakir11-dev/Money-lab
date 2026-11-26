@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,7 @@ from moneylab.lineage import next_version_name
 from moneylab.paper.desk import PaperDesk
 from moneylab.settings import Settings, get_settings
 from moneylab.store import RunStore
+from moneylab.strategies import frozen_rules, run_gap
 
 
 @dataclass
@@ -272,23 +273,34 @@ class Lab:
         parent_id: str | None = None,
         *,
         watchlist: str | None = None,
+        strategy_id: str | None = None,
     ) -> str:
         """Resolve a user config with today's defaults, run it and save it.
 
         With ``watchlist`` the universe is that watchlist's current members, and the run
-        records the watchlist (name, version, label, members) it used.
+        records the watchlist (name, version, label, members) it used. ``strategy_id``
+        is the version being run. Unchanged rules attach the run to that version.
+        Changed rules create a child version first. A run parent is used only when no
+        strategy version was named.
         """
         wl = None
         if watchlist is not None:
             wl = self.watchlist(watchlist)
             config = config.model_copy(update={"universe": list(wl["members"])})
+        explicit_timeframe = config.timeframe
         config = self.with_snapshot_timeframe(config, snapshot_id)
         resolved = resolve(config, self.settings)
         if wl is not None:
             resolved["watchlist"] = {
                 k: wl[k] for k in ("name", "version", "label", "members", "created_at")
             }
-        return self.execute(resolved, snapshot_id, parent_id)
+        return self.execute(
+            resolved,
+            snapshot_id,
+            parent_id,
+            strategy_id=strategy_id,
+            explicit_timeframe=explicit_timeframe,
+        )
 
     def duplicate(self, run_id: str, name: str | None = None) -> str:
         """Re-run a saved run exactly as resolved: same settings, data and versions.
@@ -301,7 +313,12 @@ class Lab:
         resolved = {k: v for k, v in orig["resolved"].items() if k != "data"}
         check_versions(resolved)
         resolved["name"] = name or next_version_name(self.store.list_runs(), run_id)
-        return self.execute(resolved, orig["snapshot_id"], parent_id=run_id)
+        return self.execute(
+            resolved,
+            orig["snapshot_id"],
+            parent_id=run_id,
+            strategy_id=orig.get("strategy_id"),
+        )
 
     def market_data(
         self, snapshot_id: str, symbols: list[str], start: str | None, end: str | None
@@ -317,7 +334,13 @@ class Lab:
         return self._data_cache[key]
 
     def execute(
-        self, resolved: dict[str, Any], snapshot_id: str, parent_id: str | None = None
+        self,
+        resolved: dict[str, Any],
+        snapshot_id: str,
+        parent_id: str | None = None,
+        *,
+        strategy_id: str | None = None,
+        explicit_timeframe: str | None = "",
     ) -> str:
         snap = self.snapshot(snapshot_id)
         _require_timeframe(resolved, snap)
@@ -328,6 +351,12 @@ class Lab:
             resolved["end"],
         )
         resolved, result, m = run_one(resolved, data, _snap_info(snap))
+        bound = self.bind_strategy(
+            resolved,
+            strategy_id=strategy_id,
+            parent_id=parent_id,
+            explicit_timeframe=explicit_timeframe,
+        )
         return self.store.save(
             resolved=resolved,
             snapshot_id=snap.id,
@@ -335,6 +364,7 @@ class Lab:
             result=result,
             metrics=m,
             parent_id=parent_id,
+            strategy_id=bound,
         )
 
     def has_analysis(self, run_id: str) -> bool:
@@ -435,9 +465,159 @@ class Lab:
             self.settings.workers if workers is None else workers,
         )
         lap("simulate_and_write_ledgers")
-        self.store.insert_records(records)
+        bound = [
+            replace(
+                record,
+                strategy_id=self.bind_strategy(
+                    record.resolved,
+                    strategy_id=None,
+                    parent_id=record.parent_id,
+                    explicit_timeframe=config.timeframe,
+                ),
+            )
+            for record, config in zip(records, configs, strict=True)
+        ]
+        self.store.insert_records(bound)
         lap("save_records")
-        return [r.run_id for r in records]
+        return [r.run_id for r in bound]
+
+    def bind_strategy(
+        self,
+        resolved: dict[str, Any],
+        *,
+        strategy_id: str | None,
+        parent_id: str | None,
+        explicit_timeframe: str | None = "",
+    ) -> str:
+        """The version this resolved config belongs to.
+
+        ``explicit_timeframe`` is None when the user left the bar size unset, so the
+        snapshot's bar size is not part of the version. Any other value keeps the
+        timeframe already written into ``resolved``.
+        """
+        rules = frozen_rules(resolved)
+        if explicit_timeframe is None:
+            rules = {**rules, "timeframe": None}
+        base = strategy_id
+        if base is None and parent_id:
+            try:
+                base = self.store.get(parent_id).get("strategy_id")
+            except KeyError:
+                base = None
+        return self.store.save_strategy(
+            name=str(resolved.get("name") or "Untitled strategy"),
+            rules=rules,
+            strategy_id=base,
+        )
+
+    def save_strategy(self, config: StrategyConfig, strategy_id: str | None = None) -> str:
+        """Store a version without running it. Unchanged rules return the same id."""
+        rules = frozen_rules(resolve(config, self.settings))
+        if config.timeframe is None:
+            rules = {**rules, "timeframe": None}
+        return self.store.save_strategy(
+            name=config.name,
+            rules=rules,
+            strategy_id=strategy_id,
+            rename=True,
+        )
+
+    def strategy(self, strategy_id: str) -> dict[str, Any]:
+        return self.store.get_strategy(strategy_id)
+
+    def strategy_runs(self, strategy_id: str) -> list[dict[str, Any]]:
+        return self.store.runs_for_strategy(strategy_id)
+
+    def strategy_families(self) -> list[dict[str, Any]]:
+        """Root strategies, best gap first. A missing benchmark sorts last."""
+        strategies = self.store.list_strategies()
+        children: dict[str | None, list[dict[str, Any]]] = {}
+        for item in strategies:
+            children.setdefault(item["parent_id"], []).append(item)
+        runs_by: dict[str, list[dict[str, Any]]] = {}
+        for row in self.store.list_runs():
+            if not row.get("strategy_id"):
+                continue
+            runs_by.setdefault(row["strategy_id"], []).append(self.store.get(row["id"]))
+
+        def version(item: dict[str, Any]) -> dict[str, Any]:
+            own = runs_by.get(item["id"], [])
+            best_gap: float | None = None
+            best_run: str | None = None
+            listed = []
+            for run in own:
+                gap = run_gap(run["metrics"])
+                resolved = run["resolved"]
+                listed.append(
+                    {
+                        "id": run["id"],
+                        "name": run["name"],
+                        "created_at": run["created_at"],
+                        "snapshot_id": run["snapshot_id"],
+                        "start": resolved.get("start"),
+                        "end": resolved.get("end"),
+                        "universe": resolved.get("universe") or [],
+                        "gap": gap,
+                        "total_return": (run["metrics"] or {}).get("total_return"),
+                        "benchmark_return": ((run["metrics"] or {}).get("benchmark") or {}).get(
+                            "total_return"
+                        ),
+                        "benchmark_symbol": ((run["metrics"] or {}).get("benchmark") or {}).get(
+                            "symbol"
+                        )
+                        or resolved.get("benchmark"),
+                    }
+                )
+                if gap is not None and (best_gap is None or gap > best_gap):
+                    best_gap = gap
+                    best_run = run["id"]
+            return {
+                "id": item["id"],
+                "parent_id": item["parent_id"],
+                "name": item["name"],
+                "created_at": item["created_at"],
+                "rules": item["rules"],
+                "best_gap": best_gap,
+                "best_run_id": best_run,
+                "run_count": len(own),
+                "runs": listed,
+            }
+
+        def walk(strategy_id: str) -> list[dict[str, Any]]:
+            found = []
+            for child in children.get(strategy_id, []):
+                found.append(child)
+                found.extend(walk(child["id"]))
+            return found
+
+        families = []
+        for root in children.get(None, []):
+            versions = [version(item) for item in (root, *walk(root["id"]))]
+            scored = [item for item in versions if item["best_gap"] is not None]
+            if scored:
+                winner = max(scored, key=lambda item: float(item["best_gap"]))
+                best_gap = winner["best_gap"]
+                best_run = winner["best_run_id"]
+            else:
+                best_gap = None
+                best_run = None
+            families.append(
+                {
+                    "id": root["id"],
+                    "parent_id": None,
+                    "name": root["name"],
+                    "created_at": root["created_at"],
+                    "best_gap": best_gap,
+                    "best_run_id": best_run,
+                    "version_count": len(versions),
+                    "run_count": sum(item["run_count"] for item in versions),
+                    "versions": versions,
+                }
+            )
+        families.sort(
+            key=lambda row: (row["best_gap"] is None, -(row["best_gap"] or 0.0), row["name"])
+        )
+        return families
 
     def compare(self, run_a: str, run_b: str) -> dict[str, Any]:
         a, b = self.store.get(run_a), self.store.get(run_b)

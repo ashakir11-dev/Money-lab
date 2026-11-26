@@ -265,9 +265,17 @@ function setup(a: Record<string, unknown>, b: Record<string, unknown>): SettingS
   return { title: "Setup", rows };
 }
 
+/** Entry-row signals are stored again at the end of `entry`. The signal section is the rest. */
+function signalOnly(resolved: Record<string, unknown>): unknown[] {
+  const all = list(resolved.entry);
+  const extra = list(resolved.entry_signals);
+  if (!extra.length || extra.length > all.length) return all;
+  return all.slice(0, all.length - extra.length);
+}
+
 function signal(a: Record<string, unknown>, b: Record<string, unknown>): SettingSection {
-  const left = list(a.entry).map(conditionCell);
-  const right = list(b.entry).map(conditionCell);
+  const left = signalOnly(a).map(conditionCell);
+  const right = signalOnly(b).map(conditionCell);
   return {
     title: "Signal",
     rows: [pair("Combine", combineCell(a.entry_combine), combineCell(b.entry_combine)), ...zip((i) => `Condition ${i + 1}`, left, right)],
@@ -285,6 +293,13 @@ function entry(a: Record<string, unknown>, b: Record<string, unknown>): SettingS
     rows.push(pair("Below", fillPercent(fa, "next_range", "below_pct"), fillPercent(fb, "next_range", "below_pct")));
     rows.push(pair("Above", fillPercent(fa, "next_range", "above_pct"), fillPercent(fb, "next_range", "above_pct")));
   }
+  rows.push(
+    ...zip(
+      (i) => `Entry signal ${i + 1}`,
+      list(a.entry_signals).map(conditionCell),
+      list(b.entry_signals).map(conditionCell),
+    ),
+  );
   return { title: "Entry", rows };
 }
 

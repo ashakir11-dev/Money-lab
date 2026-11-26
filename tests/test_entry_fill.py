@@ -1,5 +1,7 @@
 from fixtures_util import bars, day, fills, level_strategy, run
-from moneylab.engine.config import EntryFill
+from moneylab.describe import strategy_summary
+from moneylab.engine.config import Condition, EntryFill, IndicatorRef, config_from_resolved, resolve
+from moneylab.settings import Settings
 
 
 def test_dip_fills_at_limit_when_the_low_prints_through() -> None:
@@ -56,3 +58,33 @@ def test_next_range_fills_at_open_when_the_open_is_in_band() -> None:
     buys = [f for f in fills(run(df, cfg)) if f[2] == "buy"]
     assert buys
     assert buys[0][4] == 20.4
+
+
+def _above(value: float) -> Condition:
+    return Condition(
+        kind="threshold",
+        indicator=IndicatorRef(id="sma", params={"length": 1}),
+        params={"op": "above", "value": value},
+    )
+
+
+def test_an_entry_signal_must_pass_along_with_the_signal_section() -> None:
+    cfg = level_strategy(["AAA", "SPY"], above=10, hold=5)
+    df = bars({"AAA": [(20, 20)] * 4, "SPY": [(10, 10)] * 4})
+    assert any(f[2] == "buy" for f in fills(run(df, cfg)))
+    cfg.entry_signals = [_above(100)]
+    assert not any(f[2] == "buy" for f in fills(run(df, cfg)))
+
+
+def test_entry_signals_round_trip_and_stay_out_of_configs_that_have_none() -> None:
+    plain = resolve(level_strategy(["AAA", "SPY"], above=10, hold=5), Settings(_env_file=None))
+    assert "entry_signals" not in plain
+    cfg = level_strategy(["AAA", "SPY"], above=10, hold=5)
+    cfg.entry_signals = [_above(100)]
+    resolved = resolve(cfg, Settings(_env_file=None))
+    assert len(resolved["entry"]) == 2
+    assert resolved["entry_signals"] == [resolved["entry"][1]]
+    again = resolve(config_from_resolved(resolved), Settings(_env_file=None))
+    assert again == resolved
+    text = strategy_summary(resolved)
+    assert "above 10" in text and "above 100" in text

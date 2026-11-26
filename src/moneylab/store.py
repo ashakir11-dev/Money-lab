@@ -20,6 +20,7 @@ from typing import Any
 import pandas as pd
 
 from moneylab.engine.simulator import RunResult
+from moneylab.strategies import frozen_rules, rules_hash
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -33,7 +34,16 @@ CREATE TABLE IF NOT EXISTS runs (
     engine_version TEXT NOT NULL,
     config_hash TEXT NOT NULL,
     resolved_json TEXT NOT NULL,
-    metrics_json TEXT
+    metrics_json TEXT,
+    strategy_id TEXT
+);
+CREATE TABLE IF NOT EXISTS strategies (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT REFERENCES strategies(id),
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    rules_json TEXT NOT NULL,
+    rules_hash TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS watchlists (
     name TEXT NOT NULL,
@@ -59,6 +69,7 @@ class RunRecord:
     metrics: dict[str, Any]
     parent_id: str | None = None
     created_at: str | None = None
+    strategy_id: str | None = None
 
 
 def new_run_id() -> str:
@@ -87,6 +98,10 @@ class RunStore:
         self.db_path = home / "moneylab.sqlite"
         with self._conn() as c:
             c.executescript(SCHEMA)
+            cols = {row[1] for row in c.execute("PRAGMA table_info(runs)")}
+            if "strategy_id" not in cols:
+                c.execute("ALTER TABLE runs ADD COLUMN strategy_id TEXT")
+        self._backfill_strategies()
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -111,6 +126,7 @@ class RunStore:
         metrics: dict[str, Any],
         parent_id: str | None = None,
         created_at: str | None = None,
+        strategy_id: str | None = None,
     ) -> str:
         run_id = new_run_id()
         write_ledgers(self.run_dir(run_id), result)
@@ -124,6 +140,7 @@ class RunStore:
                     metrics=metrics,
                     parent_id=parent_id,
                     created_at=created_at,
+                    strategy_id=strategy_id,
                 )
             ]
         )
@@ -138,7 +155,10 @@ class RunStore:
         now = datetime.now(UTC).isoformat()
         with self._conn() as c:
             c.executemany(
-                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO runs ("
+                "id, parent_id, name, created_at, finished_at, status, snapshot_id, "
+                "engine_version, config_hash, resolved_json, metrics_json, strategy_id"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         r.run_id,
@@ -152,6 +172,7 @@ class RunStore:
                         r.config_hash,
                         json.dumps(r.resolved),
                         json.dumps(r.metrics),
+                        r.strategy_id,
                     )
                     for r in records
                 ],
@@ -207,8 +228,8 @@ class RunStore:
     def list_runs(self) -> list[dict[str, Any]]:
         with self._conn() as c:
             rows = c.execute(
-                "SELECT id, parent_id, name, created_at, status, snapshot_id, config_hash "
-                "FROM runs ORDER BY created_at DESC, id DESC"
+                "SELECT id, parent_id, name, created_at, status, snapshot_id, config_hash, "
+                "strategy_id FROM runs ORDER BY created_at DESC, id DESC"
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -237,6 +258,111 @@ class RunStore:
         """The run's closed trades (see ``engine.analytics``), or None if not computed."""
         path = self.run_dir(run_id) / "trades.parquet"
         return pd.read_parquet(path) if path.is_file() else None
+
+    def save_strategy(
+        self,
+        *,
+        name: str,
+        rules: dict[str, Any],
+        strategy_id: str | None = None,
+        rename: bool = False,
+    ) -> str:
+        """Return ``strategy_id`` when ``rules`` are unchanged. Otherwise insert a child.
+
+        A brand-new version (no ``strategy_id``) is a root. Renaming happens only when
+        asked, and only when the rules did not change.
+        """
+        digest = rules_hash(rules)
+        parent_id: str | None = None
+        if strategy_id is not None:
+            current = self.get_strategy(strategy_id)
+            if current["rules_hash"] == digest:
+                if rename and name and name != current["name"]:
+                    with self._conn() as c:
+                        c.execute(
+                            "UPDATE strategies SET name = ? WHERE id = ?",
+                            (name, strategy_id),
+                        )
+                return strategy_id
+            parent_id = strategy_id
+        new_id = new_run_id()
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO strategies VALUES (?,?,?,?,?,?)",
+                (
+                    new_id,
+                    parent_id,
+                    name or "Untitled strategy",
+                    datetime.now(UTC).isoformat(),
+                    json.dumps(rules),
+                    digest,
+                ),
+            )
+        return new_id
+
+    def get_strategy(self, strategy_id: str) -> dict[str, Any]:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM strategies WHERE id = ?", (strategy_id,)).fetchone()
+        if row is None:
+            raise KeyError(strategy_id)
+        out = dict(row)
+        out["rules"] = json.loads(out.pop("rules_json"))
+        return out
+
+    def list_strategies(self) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM strategies ORDER BY created_at, id").fetchall()
+        out = []
+        for row in rows:
+            item = dict(row)
+            item["rules"] = json.loads(item.pop("rules_json"))
+            out.append(item)
+        return out
+
+    def runs_for_strategy(self, strategy_id: str) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT id FROM runs WHERE strategy_id = ? ORDER BY created_at, id",
+                (strategy_id,),
+            ).fetchall()
+        return [self.get(row["id"]) for row in rows]
+
+    def _backfill_strategies(self) -> None:
+        with self._conn() as c:
+            pending = c.execute(
+                "SELECT id, parent_id, resolved_json FROM runs "
+                "WHERE strategy_id IS NULL ORDER BY created_at, id"
+            ).fetchall()
+        if not pending:
+            return
+        by_id = {row["id"]: row for row in pending}
+        assigned: dict[str, str] = {}
+
+        def ensure(row: sqlite3.Row) -> str:
+            if row["id"] in assigned:
+                return assigned[row["id"]]
+            parent = row["parent_id"]
+            parent_strategy: str | None = None
+            if parent and parent in by_id:
+                parent_strategy = ensure(by_id[parent])
+            elif parent:
+                try:
+                    parent_strategy = self.get(parent).get("strategy_id")
+                except KeyError:
+                    parent_strategy = None
+            resolved = json.loads(row["resolved_json"])
+            strategy_id = self.save_strategy(
+                name=resolved.get("name") or "Untitled strategy",
+                rules=frozen_rules(resolved),
+                strategy_id=parent_strategy,
+            )
+            with self._conn() as c:
+                c.execute("UPDATE runs SET strategy_id = ? WHERE id = ?", (strategy_id, row["id"]))
+            assigned[row["id"]] = strategy_id
+            return strategy_id
+
+        for row in pending:
+            ensure(row)
 
     def ledgers(self, run_id: str) -> RunResult:
         d = self.run_dir(run_id)

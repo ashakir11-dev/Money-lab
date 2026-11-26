@@ -27,7 +27,7 @@ function HomeStats() {
     return <ErrorBox error={overview.error} title="Could not load the lab summary" />;
   }
   const { snapshots, strategies, best, paper } = overview.data;
-  const report = best ? `/report?id=${encodeURIComponent(best.run_id)}` : "/report";
+  const report = best ? `/analytics?a=${encodeURIComponent(best.run_id)}` : "/analytics";
   const bench = best?.benchmark_symbol || "SPY";
   const beat =
     best && best.benchmark_return != null && best.total_return != null
@@ -43,7 +43,7 @@ function HomeStats() {
         <div className="tile-label">Snapshots</div>
         <div className="tile-value">{snapshots}</div>
       </Link>
-      <Link href="/report" className="tile" data-testid="stat-strategies">
+      <Link href="/strategies" className="tile" data-testid="stat-strategies">
         <div className="tile-label">Strategies</div>
         <div className="tile-value">{strategies}</div>
       </Link>
@@ -74,9 +74,9 @@ function HomeStats() {
 
 const RAIL = [
   { href: "/data", label: "Data", icon: "data" as const },
-  { href: "/builder", label: "Builder", icon: "builder" as const },
-  { href: "/report", label: "Reports", icon: "reports" as const },
-  { href: "/compare", label: "Compare", icon: "compare" as const },
+  { href: "/strategies", label: "Strategies", icon: "builder" as const },
+  { href: "/analytics", label: "Analytics", icon: "reports" as const },
+  { href: "/builder", label: "Builder", icon: "compare" as const },
 ];
 
 function align(rows: EquityRow[], dates: string[], key: "equity" | "benchmark_equity"): (number | null)[] {
@@ -127,8 +127,8 @@ export default function HomePage() {
             bName: run.name,
             caption: versusSpy(run.total_return, run.benchmark_return),
             pin: fd?.session ?? null,
-            pinHref: `/compare?a=${encodeURIComponent(run.parent_id)}&b=${encodeURIComponent(run.id)}`,
-            wellHref: `/report?id=${encodeURIComponent(run.id)}`,
+            pinHref: `/analytics?a=${encodeURIComponent(run.parent_id)}&b=${encodeURIComponent(run.id)}`,
+            wellHref: `/analytics?a=${encodeURIComponent(run.id)}`,
           };
         } catch {
           /* Fall through to vs-benchmark overlay. */
@@ -145,7 +145,7 @@ export default function HomePage() {
         caption: versusSpy(run.total_return, run.benchmark_return),
         pin: null as string | null,
         pinHref: undefined as string | undefined,
-        wellHref: `/report?id=${encodeURIComponent(run.id)}`,
+        wellHref: `/analytics?a=${encodeURIComponent(run.id)}`,
       };
     }
     return null;
@@ -207,8 +207,8 @@ export default function HomePage() {
 
       {!live && ready ? (
         <p className="bench-cta">
-          <Link href={hasData ? "/builder" : "/data"} className="button primary">
-            {hasData ? "Open Builder" : "Import data"}
+          <Link href={hasData ? "/strategies" : "/data"} className="button primary">
+            {hasData ? "Open Strategies" : "Import data"}
           </Link>
         </p>
       ) : live ? (
@@ -228,7 +228,7 @@ export default function HomePage() {
               {strip.map((r) => (
                 <Link
                   key={r.id}
-                  href={`/report?id=${encodeURIComponent(r.id)}`}
+                  href={`/analytics?a=${encodeURIComponent(r.id)}`}
                   className="film-well"
                   data-testid="run-row"
                   data-run-id={r.id}
@@ -256,7 +256,7 @@ export default function HomePage() {
                 </Link>
               ))}
               {(runs.data ?? []).length > strip.length ? (
-                <Link href="/report" className="film-more muted">
+                <Link href="/analytics" className="film-more muted">
                   All experiments
                 </Link>
               ) : null}

@@ -10,9 +10,8 @@ import { useAsync } from "@/lib/hooks";
 const LINKS = [
   { href: "/", label: "Home", id: "nav-home-page", exact: true },
   { href: "/data", label: "Data", id: "nav-data" },
-  { href: "/builder", label: "Builder", id: "nav-builder" },
-  { href: "/report", label: "Reports", id: "nav-report" },
-  { href: "/compare", label: "Compare", id: "nav-compare" },
+  { href: "/strategies", label: "Strategies", id: "nav-strategies" },
+  { href: "/analytics", label: "Analytics", id: "nav-analytics" },
   { href: "/paper", label: "Paper", id: "nav-paper" },
   { href: "/gates", label: "Gates", id: "nav-gates" },
 ];
@@ -22,7 +21,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const health = useAsync(() => api.health(), []);
   const active = (href: string, exact?: boolean) => {
     if (exact) return path === "/";
-    if (href === "/report") return path.startsWith("/report") || path.startsWith("/run");
+    if (href === "/analytics") return path.startsWith("/analytics") || path.startsWith("/report") || path.startsWith("/compare") || path.startsWith("/run");
+    if (href === "/strategies") return path.startsWith("/strategies") || path.startsWith("/builder");
     return path === href || path.startsWith(`${href}/`);
   };
 

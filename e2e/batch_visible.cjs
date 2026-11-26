@@ -12,7 +12,7 @@ async function main() {
   const out = [];
   for (let i = 0; i < Number(n); i++) {
     await page.goto(`${base}/`);
-    await page.getByTestId("nav-compare").waitFor();
+    await page.getByTestId("nav-analytics").waitFor();
     const t0 = Date.now();
     let job = await page.evaluate(async (b) => {
       const r = await fetch("/api/batches", { method: "POST", headers: { "content-type": "application/json" }, body: b });

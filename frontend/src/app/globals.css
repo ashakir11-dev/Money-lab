@@ -1310,12 +1310,18 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
-.settings-panel section {
-  margin-top: 14px;
+.settings-panel table {
+  table-layout: fixed;
 }
-.settings-panel h3 {
-  margin: 0 0 6px;
+.settings-panel col.settings-label {
+  width: 22%;
+}
+.settings-panel tr.settings-section th {
+  padding-top: 16px;
+  color: var(--ink);
   font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .chip {
   display: inline-flex;
@@ -1952,4 +1958,108 @@ table.month-grid th:first-child {
 }
 table.month-grid td.num {
   min-width: 3.4em;
+}
+
+.strategy-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.strategy-rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.strategy-rank button,
+.version-node {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.strategy-rank button.on,
+.version-node.on {
+  border-color: var(--accent);
+}
+
+.rank-index {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.version-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-tree > li > .version-tree {
+  margin-top: 8px;
+  border-left: 1px solid var(--line-strong);
+}
+
+.strategy-detail {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 20px;
+}
+
+tr.best-run td {
+  background: var(--accent-soft);
+}
+
+.analytics-picks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.analytics-picks label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+
+.analytics-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.analytics-grid.cols-2,
+.analytics-grid.cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.analytics-run,
+.pair-diff,
+.version-panel {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .strategy-layout,
+  .strategy-detail,
+  .analytics-picks {
+    grid-template-columns: 1fr;
+  }
 }

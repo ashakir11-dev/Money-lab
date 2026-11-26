@@ -503,6 +503,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Strategies
+         * @description Root strategies ranked by the best run's gap versus that run's own benchmark.
+         */
+        get: operations["strategies_api_strategies_get"];
+        put?: never;
+        /**
+         * Save Strategy
+         * @description Save a version without running it. Unchanged rules keep the same id.
+         */
+        post: operations["save_strategy_api_strategies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies/{strategy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Strategy Detail */
+        get: operations["strategy_detail_api_strategies__strategy_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/validate": {
         parameters: {
             query?: never;
@@ -1296,6 +1337,8 @@ export interface components {
             source_label: string;
             /** Status */
             status: string;
+            /** Strategy Id */
+            strategy_id?: string | null;
             /** Summary */
             summary: string;
             /** Total Return */
@@ -1312,6 +1355,8 @@ export interface components {
             parent_id?: string | null;
             /** Snapshot Id */
             snapshot_id: string;
+            /** Strategy Id */
+            strategy_id?: string | null;
             /** Watchlist */
             watchlist?: string | null;
         };
@@ -1367,6 +1412,8 @@ export interface components {
             source_label: string;
             /** Status */
             status: string;
+            /** Strategy Id */
+            strategy_id?: string | null;
             /** Summary */
             summary: string;
             /** Total Return */
@@ -1448,6 +1495,11 @@ export interface components {
             /** Entry */
             entry: components["schemas"]["Condition"][];
             entry_fill?: components["schemas"]["EntryFill"];
+            /**
+             * Entry Signals
+             * @description conditions on the entry row. A buy also needs every one of these to pass, along with `entry`.
+             */
+            entry_signals?: components["schemas"]["Condition"][];
             exit?: components["schemas"]["ExitRule"];
             /**
              * Exits
@@ -1473,6 +1525,81 @@ export interface components {
             timeframe?: ("1min" | "5min" | "15min" | "30min" | "1h" | "1d") | null;
             /** Universe */
             universe: string[];
+        };
+        /** StrategyFamilyOut */
+        StrategyFamilyOut: {
+            /** Best Gap */
+            best_gap: number | null;
+            /** Best Run Id */
+            best_run_id: string | null;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Run Count */
+            run_count: number;
+            /** Version Count */
+            version_count: number;
+            /** Versions */
+            versions: components["schemas"]["StrategyVersionOut"][];
+        };
+        /** StrategyRunOut */
+        StrategyRunOut: {
+            /** Benchmark Return */
+            benchmark_return?: number | null;
+            /** Benchmark Symbol */
+            benchmark_symbol?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** End */
+            end?: string | null;
+            /** Gap */
+            gap?: number | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Snapshot Id */
+            snapshot_id: string;
+            /** Start */
+            start?: string | null;
+            /** Total Return */
+            total_return?: number | null;
+            /** Universe */
+            universe: string[];
+        };
+        /** StrategySave */
+        StrategySave: {
+            config: components["schemas"]["StrategyConfig"];
+            /** Strategy Id */
+            strategy_id?: string | null;
+        };
+        /** StrategyVersionOut */
+        StrategyVersionOut: {
+            /** Best Gap */
+            best_gap: number | null;
+            /** Best Run Id */
+            best_run_id: string | null;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Rules */
+            rules: {
+                [key: string]: unknown;
+            };
+            /** Run Count */
+            run_count: number;
+            /** Runs */
+            runs: components["schemas"]["StrategyRunOut"][];
         };
         /** StreaksOut */
         StreaksOut: {
@@ -2495,6 +2622,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SnapshotOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    strategies_api_strategies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyFamilyOut"][];
+                };
+            };
+        };
+    };
+    save_strategy_api_strategies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategySave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyVersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    strategy_detail_api_strategies__strategy_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyVersionOut"];
                 };
             };
             /** @description Validation Error */
