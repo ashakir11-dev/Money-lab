@@ -107,7 +107,7 @@ class SnapshotOut(BaseModel):
     source_kind: Literal["real", "demo", "file"]
     source_label: str
     label: str
-    name: str = Field(description="typed label, or source, timeframe, universe and dates")
+    name: str = Field(description="typed label, then source, timeframe, universe and dates")
     timeframe: str = Field(default="1d", description="bar size: 1min, 5min, 15min, 30min, 1h or 1d")
     adjustment: str
     created_at: str

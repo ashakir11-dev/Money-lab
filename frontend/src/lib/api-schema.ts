@@ -1091,7 +1091,7 @@ export interface components {
             last_date: string;
             /**
              * Name
-             * @description typed label, or source, timeframe, universe and dates
+             * @description typed label, then source, timeframe, universe and dates
              */
             name: string;
             /** Rows */

@@ -1,9 +1,9 @@
-"""A snapshot's display name is its label, or a line read from its configuration."""
+"""A snapshot's display name is its configuration, with a typed label in front."""
 
 from moneylab.data.snapshot import snapshot_name
 
 
-def test_typed_label_is_the_name() -> None:
+def test_typed_label_leads_the_configuration() -> None:
     meta = {
         "label": "  mine  ",
         "source": "tiingo",
@@ -11,7 +11,7 @@ def test_typed_label_is_the_name() -> None:
         "first_date": "2020-01-02",
         "last_date": "2020-01-03",
     }
-    assert snapshot_name(meta) == "mine"
+    assert snapshot_name(meta) == "mine · tiingo · 1d · AAPL · 2020-01-02 → 2020-01-03"
 
 
 def test_name_reads_source_timeframe_symbols_and_requested_dates() -> None:

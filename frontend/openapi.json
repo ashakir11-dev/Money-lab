@@ -1543,7 +1543,7 @@
             "type": "string"
           },
           "name": {
-            "description": "typed label, or source, timeframe, universe and dates",
+            "description": "typed label, then source, timeframe, universe and dates",
             "title": "Name",
             "type": "string"
           },
