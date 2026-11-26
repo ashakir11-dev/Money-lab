@@ -8,6 +8,14 @@ changed and why. Batches of variants run concurrently on a worker pool
 (`Lab.run_batch`). A plain-language tour with diagrams is in [docs/system-overview.md](docs/system-overview.md). Acceptance gate status is tracked in
 [docs/acceptance-report.md](docs/acceptance-report.md).
 
+## Try it in the cloud (no install)
+
+On GitHub, click **Code > Codespaces > Create codespace on main**. The codespace installs
+everything, loads the demo data and starts the dashboard; a browser tab opens on it
+(or open the **Ports** tab and click port 8501). Then follow
+[docs/walkthrough.md](docs/walkthrough.md). Live Tiingo data needs `TIINGO_API_KEY`
+added as a Codespaces secret; the demo does not.
+
 ## Setup
 
 Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 for you).
