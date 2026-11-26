@@ -20,7 +20,8 @@ def main() -> None:
     lab = Lab.open()
     snap = lab.import_provider(
         [*UNIVERSE, "SPY"], date(2017, 9, 1), date(2024, 12, 31),
-        label="SPY top 20 (end-2017) + SPY, 2017-09 to 2024-12, Tiingo", source="tiingo", timeframe="1d",
+        label="SPY top 20 (end-2017) + SPY, 2017-09 to 2024-12, Tiingo",
+        source="tiingo", timeframe="1d",
     )  # fmt: skip
     out = {}
     for th, hold in VARIANTS:
