@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { api, type Snapshot, type Watchlist } from "@/lib/api";
+import { api, type EquiblesImport, type Snapshot, type Watchlist } from "@/lib/api";
 import { int, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 import { Badge, ErrorBox, Loading, PageHeader, Section, Tile } from "@/components/ui";
@@ -30,9 +30,12 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
   const [start, setStart] = useState("2020-01-01");
   const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
   const [label, setLabel] = useState("");
+  const [source, setSource] = useState<"equibles" | "tiingo">("equibles");
+  const [timeframe, setTimeframe] = useState<EquiblesImport["timeframe"]>("1h");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   const picked = lists.find((w) => w.name === watchlist);
+  const sourceName = source === "tiingo" ? "Tiingo" : "Equibles";
 
   function pick(name: string) {
     const w = lists.find((x) => x.name === name);
@@ -47,13 +50,10 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
     setBusy(true);
     setError(undefined);
     try {
-      onDone(
-        await api.importEquibles(
-          picked
-            ? { watchlist: picked.name, symbols: symbolsOf(extras), start, end, label, timeframe: "1h" }
-            : { symbols: symbolsOf(symbols), start, end, label, timeframe: "1h" },
-        ),
-      );
+      const feed = picked
+        ? { watchlist: picked.name, symbols: symbolsOf(extras), start, end, label }
+        : { symbols: symbolsOf(symbols), start, end, label };
+      onDone(source === "tiingo" ? await api.importTiingo(feed) : await api.importEquibles({ ...feed, timeframe }));
     } catch (err) {
       setError(err);
     } finally {
@@ -74,10 +74,50 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
 
   return (
     <form onSubmit={submit} data-testid="tiingo-form">
+      <div className="source-row" role="group" aria-label="Data source">
+        {(["equibles", "tiingo"] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            data-testid={`source-${s}`}
+            className={source === s ? "on" : undefined}
+            onClick={() => setSource(s)}
+          >
+            {s === "tiingo" ? "Tiingo (daily)" : "Equibles"}
+          </button>
+        ))}
+      </div>
       <p className="muted small">
-        Daily prices, split- and dividend-adjusted the same way as a CSV. Needs <code>TIINGO_API_KEY</code>. A
-        watchlist supplies the symbols; anything else you type is added. Each symbol is one Tiingo request.
+        {source === "tiingo" ? (
+          <>
+            Daily prices, split- and dividend-adjusted the same way as a CSV. Needs <code>TIINGO_API_KEY</code>. Tiingo
+            has daily bars only.
+          </>
+        ) : (
+          <>
+            Split-adjusted bars at the size you pick (daily is built from hourly bars). Needs{" "}
+            <code>EQUIBLES_API_KEY</code>.
+          </>
+        )}{" "}
+        A watchlist supplies the symbols; anything else you type is added.
       </p>
+      {source === "equibles" ? (
+        <div className="field">
+          <label htmlFor="fetch-timeframe">Bar size</label>
+          <select
+            id="fetch-timeframe"
+            data-testid="fetch-timeframe"
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value as EquiblesImport["timeframe"])}
+          >
+            {(["1d", "1h", "30min", "15min", "5min", "1min"] as const).map((tf) => (
+              <option key={tf} value={tf}>
+                {tf === "1d" ? "Daily (1d)" : tf}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <div className="field">
         <label htmlFor="tiingo-watchlist">Watchlist</label>
         <select id="tiingo-watchlist" data-testid="tiingo-watchlist" value={watchlist} onChange={(e) => pick(e.target.value)}>
@@ -126,7 +166,7 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
         </div>
       </div>
       <button className="primary" type="submit" disabled={busy || !ready}>
-        {busy ? "Importing…" : `Import ${fetchCount} from Tiingo`}
+        {busy ? "Importing…" : `Import ${fetchCount} from ${sourceName}`}
       </button>
       <ErrorBox error={error} title="Import failed" />
     </form>
