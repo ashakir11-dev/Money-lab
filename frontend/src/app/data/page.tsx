@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { api, type EquiblesImport, type Snapshot, type Watchlist } from "@/lib/api";
 import { int, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
+import { WatchlistEditDialog } from "@/components/WatchlistEditDialog";
 import { Badge, ErrorBox, Loading, PageHeader, Section, Tile } from "@/components/ui";
 
 const symbolsOf = (s: string) =>
@@ -269,6 +270,7 @@ export default function DataPage() {
   const snaps = useAsync(() => api.snapshots(), []);
   const lists = useAsync(() => api.watchlists(), []);
   const [last, setLast] = useState<Snapshot>();
+  const [editing, setEditing] = useState<Watchlist | null>(null);
 
   const imported = (s: Snapshot) => {
     setLast(s);
@@ -379,6 +381,7 @@ export default function DataPage() {
                   <th className="num">Version</th>
                   <th>Members</th>
                   <th>Selected</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -399,6 +402,11 @@ export default function DataPage() {
                       {w.members.length > 6 ? ` +${w.members.length - 6}` : ""}
                     </td>
                     <td className="small nowrap">{when(w.created_at)}</td>
+                    <td>
+                      <button type="button" data-testid="edit-watchlist" data-name={w.name} onClick={() => setEditing(w)}>
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -409,6 +417,9 @@ export default function DataPage() {
         ) : null}
         <h3>Save a watchlist</h3>
         <WatchlistForm onDone={lists.reload} />
+        {editing ? (
+          <WatchlistEditDialog watchlist={editing} onClose={() => setEditing(null)} onSaved={lists.reload} />
+        ) : null}
       </Section>
 
       <div className="grid-2">

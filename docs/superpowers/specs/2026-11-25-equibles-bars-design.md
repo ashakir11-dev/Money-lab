@@ -14,7 +14,7 @@ Equibles is the only market-data source. Tiingo is removed. The lab computes its
 
 Hourly bars start on the hour from midnight `America/New_York`. The regular session is the seven bars `09:00`, `10:00`, `11:00`, `12:00`, `13:00`, `14:00`, `15:00`. The `09:00` bar is the half-hour `09:30`–`10:00`. It is kept.
 
-For every timeframe, a bar is on the grid when its start is a multiple of the bar size from local midnight, `start < 16:00`, and `start + size > 09:30`. That rule is what produces the seven hourly starts. A returned bar that is not on the grid fails the import and names the unexpected start.
+For every timeframe, a bar is on the grid when its start is a multiple of the bar size from local midnight, `start < 16:00`, and `start + size > 09:30`. That rule is what produces the seven hourly starts. Equibles also returns a bar at `16:00`: bars are rolled up from midnight, and the regular session includes the closing-auction minute that starts at the close. That bar is folded into the bar that ends at `16:00` (the `15:00` hour). Its close replaces that bar's close, and its high, low, and volume are included. Any other returned bar that is not on the grid fails the import and names the unexpected start.
 
 Raw hourly bars are adjusted with `moneylab.data.actions.adjust`, then resampled if the snapshot is daily. `adjust` compares the session date, so bars on the ex-date stay as traded and earlier bars are rescaled. The split value is `numerator / denominator`. A split dated after the snapshot's last bar is not applied. New Equibles snapshots record the adjustment `split_adjusted_from_raw`. File import keeps its current adjustment label and its current content hash.
 
