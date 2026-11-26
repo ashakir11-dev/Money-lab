@@ -16,7 +16,13 @@ type RuleDraft = { kind: string; params: Record<string, Value> };
 /** Exits the builder handles through its own controls (signal conditions and max hold). */
 const OWN_EXITS = new Set(["signal", "holding_period"]);
 
+type Timeframe = NonNullable<StrategyConfig["timeframe"]>;
+const TIMEFRAMES: Timeframe[] = ["1d", "1h", "30min", "15min", "5min", "1min"];
+const asTimeframe = (s: string | undefined): Timeframe =>
+  TIMEFRAMES.includes(s as Timeframe) ? (s as Timeframe) : "1d";
+
 type Draft = {
+  timeframe: Timeframe;
   name: string;
   universe: string;
   watchlist: string;
@@ -46,6 +52,7 @@ type Draft = {
 };
 
 const EMPTY: Draft = {
+  timeframe: "1d",
   name: "My strategy",
   universe: "",
   watchlist: "",
@@ -135,7 +142,7 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
     name: d.name || "Untitled strategy",
     universe: splitSymbols(d.universe),
     benchmark: d.benchmark.trim().toUpperCase() || "SPY",
-    timeframe: "1h",
+    timeframe: d.timeframe,
     start: d.start || null,
     end: d.end || null,
     entry: d.entry.map((c) => toCondition(c, comps)),
@@ -165,6 +172,7 @@ type ResolvedRef = { id: string; params?: Record<string, Value> };
 type ResolvedCond = { kind: CondDraft["kind"]; indicator: ResolvedRef; other?: ResolvedRef | null; params?: Record<string, Value> };
 type ResolvedExit = { kind?: string; params?: Record<string, Value>; conditions?: ResolvedCond[] };
 type Resolved = {
+  timeframe?: string;
   name?: string;
   universe?: string[];
   benchmark?: string;
@@ -196,6 +204,7 @@ function fromResolved(r: Resolved): Draft {
     name: `${r.name ?? "Strategy"} (copy)`,
     universe: (r.universe ?? []).join(", "),
     benchmark: r.benchmark ?? "SPY",
+    timeframe: asTimeframe(r.timeframe),
     start: r.start ?? "",
     end: r.end ?? "",
     entry: (r.entry ?? []).map(cond),
@@ -291,6 +300,7 @@ function Builder() {
       const first = snaps.data[0];
       setDraft({
         ...EMPTY,
+        timeframe: asTimeframe(first?.timeframe),
         universe: first ? first.symbols.filter((s) => s !== "SPY").join(", ") : "",
         start: first?.first_date ?? "",
         end: first?.last_date ?? "",
@@ -328,7 +338,7 @@ function Builder() {
   function pickSnapshot(id: string) {
     setSnapshot(id);
     const s = snaps.data?.find((x) => x.id === id);
-    if (s) setDraft((d) => ({ ...d, start: s.first_date, end: s.last_date }));
+    if (s) setDraft((d) => ({ ...d, start: s.first_date, end: s.last_date, timeframe: asTimeframe(s.timeframe) }));
   }
 
   function setSource(universeSource: Draft["universeSource"]) {
@@ -417,6 +427,26 @@ function Builder() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="field">
+              <label htmlFor="timeframe">Bar size</label>
+              <select
+                id="timeframe"
+                data-testid="builder-timeframe"
+                value={draft.timeframe}
+                onChange={(e) => set("timeframe", e.target.value as Timeframe)}
+              >
+                {TIMEFRAMES.map((tf) => (
+                  <option key={tf} value={tf}>
+                    {tf === "1d" ? "Daily (1d)" : tf}
+                  </option>
+                ))}
+              </select>
+              <div className="help">
+                {snap && asTimeframe(snap.timeframe) !== draft.timeframe
+                  ? `This snapshot has ${snap.timeframe} bars. Pick a ${draft.timeframe} snapshot, or switch back.`
+                  : "Lookbacks and hold times count bars of this size."}
+              </div>
             </div>
             <div className="field">
               <label htmlFor="name">Name</label>

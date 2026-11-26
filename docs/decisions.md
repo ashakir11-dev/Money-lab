@@ -215,3 +215,30 @@ No engine change. They count bars, so a daily bar and an hourly bar use the same
 * `scripts/plot_levels.py` writes one SVG per symbol (close, support, resistance) from a
   snapshot. It is for judging whether the default move is noise. It is not a pass/fail test.
 * Tests: `tests/test_levels.py`, `tests/test_straightness.py`.
+
+### Swing points, trend blocks, bars per year and the Builder's bar size
+
+* **`swing_high` / `swing_low`** (`left`, `right`, default 5/5): the last confirmed
+  swing point. Bar k is a swing high when its high is above the `left` highs before it
+  and at least the `right` highs after it; it is only known at bar k + `right`. Price units.
+* **`market_structure`** (same `left`/`right`): +1 when the last two confirmed swing highs
+  and lows both rise, -1 when both fall, 0 when mixed.
+* **`adx`** (`length` 14, `output` adx | plus_di | minus_di): Wilder's directional
+  movement. ADX is trend strength (0-100, above about 25 is the usual "trending" cut-off);
+  `+DI above -DI` (same indicator, two outputs) gives direction.
+* **`linreg_trend`** (`length` 50, `output` slope_pct_year | tstat | r2): least-squares slope
+  of ln(close). The %/year figure uses bars per year of the data's bar size.
+* **`straightness`** 1.1.0 gains `output=unsigned` (Kaufman's efficiency ratio, the absolute
+  value) instead of a separate efficiency block.
+* **Bars per year**: 252 daily; 252 x grid bars per session intraday (1h = 7, so 1764;
+  5min = 78; 1min = 390). Sharpe is annualised by it, so hourly runs are no longer scaled
+  as if daily. Daily results, and the golden ledgers, are unchanged.
+* **Bar size of a run**: a strategy that names no `timeframe` takes its snapshot's bar
+  size (1d for snapshots saved before bar sizes existed). The Builder shows a Bar size
+  picker that follows the chosen snapshot; the report shows it next to the snapshot.
+  Previously the Builder always sent 1h, which made every daily snapshot refuse to run.
+* **Sources**: Equibles (any bar size) and Tiingo (daily only; other sizes are refused
+  with a message) both stay available.
+* **No look-ahead**: `tests/test_no_lookahead.py` checks every registered indicator, at
+  defaults and at short lookbacks: truncating after bar t, or rewriting every later bar,
+  never changes a value at or before t. A new indicator is covered when it is registered.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -44,3 +45,19 @@ def test_sharpe_uses_bars_per_year() -> None:
     assert hourly["sharpe"] == pytest.approx(per_bar * math.sqrt(1764))
     assert "sqrt(252)" in daily["sharpe_assumptions"]
     assert "sqrt(1764)" in hourly["sharpe_assumptions"]
+
+
+def test_a_config_without_a_bar_size_takes_the_snapshots(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from moneylab.demo import rsi_strategy
+    from moneylab.engine.config import resolve
+    from moneylab.service import Lab
+    from moneylab.settings import Settings
+
+    cfg = rsi_strategy(30).model_copy(update={"timeframe": None})
+    assert cfg.timeframe is None
+    assert resolve(cfg, Settings(_env_file=None))["timeframe"] == "1d"
+    lab = Lab.open(tmp_path / "home")
+    snap = lab.import_file(Path(__file__).parents[1] / "fixtures" / "data" / "rsi_divergence.csv")
+    assert lab.with_snapshot_timeframe(cfg, snap.id).timeframe == "1d"
+    hourly = cfg.model_copy(update={"timeframe": "1h"})
+    assert lab.with_snapshot_timeframe(hourly, snap.id).timeframe == "1h"

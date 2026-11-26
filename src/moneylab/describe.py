@@ -183,5 +183,11 @@ def strategy_summary(resolved: dict[str, Any]) -> str:
     return (
         f"Buy when {enter}{how}; sell {leave}. "
         f"Trades {len(uni)} symbol{'s' if len(uni) != 1 else ''} against "
-        f"{resolved.get('benchmark', '?')}{sizing}.{rank_text(resolved)}"
+        f"{resolved.get('benchmark', '?')}{sizing}{_bars_text(resolved)}.{rank_text(resolved)}"
     )
+
+
+def _bars_text(resolved: dict[str, Any]) -> str:
+    """Name the bar size when it is not daily (counts such as 'after 10 sessions' are bars)."""
+    tf = resolved.get("timeframe") or "1d"
+    return "" if tf == "1d" else f", on {tf} bars"

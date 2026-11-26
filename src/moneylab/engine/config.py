@@ -136,7 +136,10 @@ class StrategyConfig(BaseModel):
     name: str = "Untitled strategy"
     universe: list[str]
     benchmark: str = "SPY"
-    timeframe: Literal["1min", "5min", "15min", "30min", "1h", "1d"] = "1h"
+    timeframe: Literal["1min", "5min", "15min", "30min", "1h", "1d"] | None = Field(
+        default=None,
+        description="bar size; when omitted, the run takes the snapshot's bar size",
+    )
     start: date | None = None
     end: date | None = None
     entry: list[Condition]
@@ -300,7 +303,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
         "name": config.name,
         "universe": list(config.universe),
         "benchmark": config.benchmark.upper(),
-        "timeframe": config.timeframe,
+        "timeframe": config.timeframe or "1d",
         "start": config.start.isoformat() if config.start else None,
         "end": config.end.isoformat() if config.end else None,
         "entry": [_resolve_condition(c, "entry") for c in config.entry],

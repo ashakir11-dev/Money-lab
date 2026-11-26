@@ -6,6 +6,7 @@ Start it with ``uv run moneylab serve``. ``create_app(lab)`` builds an app aroun
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import math
@@ -107,6 +108,7 @@ class SnapshotOut(BaseModel):
     source_label: str
     label: str
     name: str = Field(description="typed label, or source, timeframe, universe and dates")
+    timeframe: str = Field(default="1d", description="bar size: 1min, 5min, 15min, 30min, 1h or 1d")
     adjustment: str
     created_at: str
     symbols: list[str]
@@ -358,6 +360,7 @@ def _snapshot_out(meta: dict[str, Any]) -> SnapshotOut:
         source_label=ds.badge,
         label=meta.get("label", ""),
         name=snapshot_name(meta),
+        timeframe=str(meta.get("timeframe") or "1d"),
         adjustment=meta.get("adjustment", ""),
         created_at=meta.get("created_at", ""),
         symbols=meta.get("symbols", []),
@@ -502,7 +505,12 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         from moneylab.engine.config import resolve
 
         try:
-            resolved = resolve(body.config, lab.settings)
+            config = body.config
+            if body.snapshot_id:
+                # An unknown snapshot is reported when the run is submitted.
+                with contextlib.suppress(KeyError, OSError):
+                    config = lab.with_snapshot_timeframe(config, body.snapshot_id)
+            resolved = resolve(config, lab.settings)
         except (ValueError, ValidationError) as exc:
             raise _bad_request(exc) from exc
         return {"resolved": jsonable(resolved), "summary": strategy_summary(resolved)}

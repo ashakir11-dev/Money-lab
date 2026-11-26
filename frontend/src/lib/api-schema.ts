@@ -442,6 +442,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/snapshots/tiingo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Tiingo
+         * @description Fetch daily bars, splits and dividends from Tiingo. The key stays on the server.
+         */
+        post: operations["import_tiingo_api_snapshots_tiingo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/validate": {
         parameters: {
             query?: never;
@@ -1087,6 +1107,12 @@ export interface components {
             source_label: string;
             /** Symbols */
             symbols: string[];
+            /**
+             * Timeframe
+             * @description bar size: 1min, 5min, 15min, 30min, 1h or 1d
+             * @default 1d
+             */
+            timeframe: string;
         };
         /** StrategyConfig */
         StrategyConfig: {
@@ -1120,12 +1146,37 @@ export interface components {
             start?: string | null;
             /**
              * Timeframe
-             * @default 1h
-             * @enum {string}
+             * @description bar size; when omitted, the run takes the snapshot's bar size
              */
-            timeframe: "1min" | "5min" | "15min" | "30min" | "1h" | "1d";
+            timeframe?: ("1min" | "5min" | "15min" | "30min" | "1h" | "1d") | null;
             /** Universe */
             universe: string[];
+        };
+        /**
+         * TiingoImport
+         * @description Daily bars from Tiingo. A watchlist's current members are included too; ``symbols``
+         *     are added on top (use that for the benchmark, usually SPY). Tiingo has no intraday bars.
+         */
+        TiingoImport: {
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Symbols */
+            symbols?: string[];
+            /** Watchlist */
+            watchlist?: string | null;
         };
         /** TradeChartOut */
         TradeChartOut: {
@@ -1882,6 +1933,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EquiblesImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_tiingo_api_snapshots_tiingo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TiingoImport"];
             };
         };
         responses: {

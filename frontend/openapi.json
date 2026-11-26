@@ -1574,6 +1574,12 @@
             },
             "title": "Symbols",
             "type": "array"
+          },
+          "timeframe": {
+            "default": "1d",
+            "description": "bar size: 1min, 5min, 15min, 30min, 1h or 1d",
+            "title": "Timeframe",
+            "type": "string"
           }
         },
         "required": [
@@ -1683,17 +1689,24 @@
             "title": "Start"
           },
           "timeframe": {
-            "default": "1h",
-            "enum": [
-              "1min",
-              "5min",
-              "15min",
-              "30min",
-              "1h",
-              "1d"
+            "anyOf": [
+              {
+                "enum": [
+                  "1min",
+                  "5min",
+                  "15min",
+                  "30min",
+                  "1h",
+                  "1d"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Timeframe",
-            "type": "string"
+            "description": "bar size; when omitted, the run takes the snapshot's bar size",
+            "title": "Timeframe"
           },
           "universe": {
             "items": {
@@ -1708,6 +1721,50 @@
           "entry"
         ],
         "title": "StrategyConfig",
+        "type": "object"
+      },
+      "TiingoImport": {
+        "description": "Daily bars from Tiingo. A watchlist's current members are included too; ``symbols``\nare added on top (use that for the benchmark, usually SPY). Tiingo has no intraday bars.",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Symbols",
+            "type": "array"
+          },
+          "watchlist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchlist"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "TiingoImport",
         "type": "object"
       },
       "TradeChartOut": {
@@ -2908,6 +2965,48 @@
           }
         },
         "summary": "Import Equibles",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/snapshots/tiingo": {
+      "post": {
+        "description": "Fetch daily bars, splits and dividends from Tiingo. The key stays on the server.",
+        "operationId": "import_tiingo_api_snapshots_tiingo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TiingoImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Tiingo",
         "tags": [
           "data"
         ]

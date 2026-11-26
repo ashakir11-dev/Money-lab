@@ -185,6 +185,13 @@ class Lab:
             timeframe="1d",
         )
 
+    def with_snapshot_timeframe(self, config: StrategyConfig, snapshot_id: str) -> StrategyConfig:
+        """A config that names no bar size takes its snapshot's (1d for older snapshots)."""
+        if config.timeframe is not None:
+            return config
+        tf = self.snapshot(snapshot_id).meta.get("timeframe") or "1d"
+        return config.model_copy(update={"timeframe": tf})
+
     def _provider_for(self, snapshot_id: str) -> Provider:
         """The provider a snapshot came from: Tiingo for Tiingo snapshots, else Equibles."""
         source = str(self.snapshot(snapshot_id).meta.get("source", ""))
@@ -274,6 +281,7 @@ class Lab:
         if watchlist is not None:
             wl = self.watchlist(watchlist)
             config = config.model_copy(update={"universe": list(wl["members"])})
+        config = self.with_snapshot_timeframe(config, snapshot_id)
         resolved = resolve(config, self.settings)
         if wl is not None:
             resolved["watchlist"] = {
@@ -354,7 +362,9 @@ class Lab:
 
         if parent_ids is not None and len(parent_ids) != len(configs):
             raise ValueError("parent_ids must have one entry per config")
-        resolved = [resolve(c, self.settings) for c in configs]
+        resolved = [
+            resolve(self.with_snapshot_timeframe(c, snapshot_id), self.settings) for c in configs
+        ]
         lap("resolve")
         snap = self.snapshot(snapshot_id)
         for r in resolved:
