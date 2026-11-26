@@ -96,19 +96,33 @@ function Label({
   );
 }
 
+function sideName(side: string): string {
+  if (side === "buy") return "Buy";
+  if (side === "sell") return "Sell";
+  return side;
+}
+
 export function TradeChartView({ chart }: { chart: TradeChart }) {
   const n = chart.sessions.length;
   const [hover, setHover] = useState<number | null>(null);
   if (n < 1) return null;
 
-  const overlays = chart.series.filter((s) => s.price_scale);
-  const panes = chart.series.filter((s) => !s.price_scale);
+  const legs = chart.legs?.length ? chart.legs : [{ fill: chart.fill, signal: chart.signal }];
+  const used = new Set<string>();
+  for (const leg of legs) {
+    for (const key of Object.keys(leg.signal.values ?? {})) {
+      if (chart.series.some((s) => s.key === key)) used.add(key);
+    }
+  }
+  const series = used.size ? chart.series.filter((s) => used.has(s.key)) : chart.series;
+  const overlays = series.filter((s) => s.price_scale);
+  const panes = series.filter((s) => !s.price_scale);
   const plotW = W - M.left - M.right;
   const slot = plotW / n;
   const x = (i: number) => M.left + slot * i + slot / 2;
   const priceTop = M.top;
   const priceBottom = CANDLE_H - 10;
-  const priceValues: number[] = [chart.fill.price];
+  const priceValues: number[] = legs.map((leg) => leg.fill.price);
   chart.candles.forEach((c) => {
     if (!c) return;
     priceValues.push(c.high, c.low);
@@ -116,14 +130,11 @@ export function TradeChartView({ chart }: { chart: TradeChart }) {
   overlays.forEach((s) => s.values.forEach((v) => typeof v === "number" && priceValues.push(v)));
   const [lo, hi] = extent(priceValues);
   const yPrice = (v: number) => priceTop + (1 - (v - lo) / (hi - lo)) * (priceBottom - priceTop);
-  const fillAt = chart.sessions.indexOf(chart.fill.session);
-  const signalAt = chart.sessions.indexOf(chart.signal.session);
-  const signalClose = signalAt >= 0 ? chart.candles[signalAt]?.close : undefined;
   const height = CANDLE_H + panes.length * PANE_H + M.bottom;
   const plotBottom = height - M.bottom;
   const ticks = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i);
   const priceTicks = niceTicks(lo, hi).filter((t) => t >= lo && t <= hi);
-  const shown = hover ?? (fillAt >= 0 ? fillAt : n - 1);
+  const shown = hover ?? (chart.sessions.indexOf(legs[0]?.fill.session ?? "") >= 0 ? chart.sessions.indexOf(legs[0].fill.session) : n - 1);
   const bar = chart.candles[shown];
 
   function onMove(e: MouseEvent<SVGSVGElement>) {
@@ -154,7 +165,9 @@ export function TradeChartView({ chart }: { chart: TradeChart }) {
       <svg
         viewBox={`0 0 ${W} ${height}`}
         role="img"
-        aria-label={`${chart.symbol} ${timeframeLabel(chart.timeframe)} at ${sessionText(chart.fill.session)}`}
+        aria-label={`${chart.symbol} ${timeframeLabel(chart.timeframe)}, ${legs
+          .map((leg) => `${sideName(leg.fill.side)} ${sessionText(leg.fill.session)}`)
+          .join(", ")}`}
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
@@ -188,25 +201,45 @@ export function TradeChartView({ chart }: { chart: TradeChart }) {
             strokeWidth="1.6"
           />
         ))}
-        {fillAt >= 0 ? (
-          <g>
-            <line x1={x(fillAt)} x2={x(fillAt)} y1={priceTop} y2={plotBottom} stroke="var(--ink)" strokeDasharray="3 3" />
-            <circle
-              cx={x(fillAt)}
-              cy={yPrice(chart.fill.price)}
-              r="4.5"
-              fill={chart.fill.side === "buy" ? "var(--good)" : "var(--bad)"}
-              stroke="var(--well)"
-              strokeWidth="1.5"
+        {legs.map((leg) => {
+          const fillAt = chart.sessions.indexOf(leg.fill.session);
+          if (fillAt < 0) return null;
+          const color = leg.fill.side === "buy" ? "var(--good)" : "var(--bad)";
+          const cx = x(fillAt);
+          const cy = yPrice(leg.fill.price);
+          const label = sideName(leg.fill.side);
+          const nearRight = cx > W - M.right - 36;
+          return (
+            <g key={`${leg.fill.side}-${leg.fill.session}`}>
+              <line x1={cx} x2={cx} y1={priceTop} y2={plotBottom} stroke={color} strokeDasharray="3 3" />
+              <circle cx={cx} cy={cy} r="4.5" fill={color} stroke="var(--well)" strokeWidth="1.5" />
+              <text
+                x={nearRight ? cx - 8 : cx + 8}
+                y={cy - 8}
+                textAnchor={nearRight ? "end" : "start"}
+                fill={color}
+                fontFamily="var(--sans)"
+                fontSize={12}
+                fontWeight={600}
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })}
+        {legs.map((leg) => {
+          const signalAt = chart.sessions.indexOf(leg.signal.session);
+          const signalClose = signalAt >= 0 ? chart.candles[signalAt]?.close : undefined;
+          if (signalAt < 0 || typeof signalClose !== "number") return null;
+          const color = leg.fill.side === "buy" ? "var(--good)" : "var(--bad)";
+          return (
+            <polygon
+              key={`signal-${leg.fill.side}-${leg.signal.session}`}
+              points={`${x(signalAt)},${yPrice(signalClose) - 6} ${x(signalAt) + 6},${yPrice(signalClose)} ${x(signalAt)},${yPrice(signalClose) + 6} ${x(signalAt) - 6},${yPrice(signalClose)}`}
+              fill={color}
             />
-          </g>
-        ) : null}
-        {signalAt >= 0 && typeof signalClose === "number" ? (
-          <polygon
-            points={`${x(signalAt)},${yPrice(signalClose) - 6} ${x(signalAt) + 6},${yPrice(signalClose)} ${x(signalAt)},${yPrice(signalClose) + 6} ${x(signalAt) - 6},${yPrice(signalClose)}`}
-            fill="var(--accent)"
-          />
-        ) : null}
+          );
+        })}
         {hover !== null ? <line x1={x(hover)} x2={x(hover)} y1={priceTop} y2={plotBottom} className="crosshair" /> : null}
         {panes.map((s, p) => {
           const top = CANDLE_H + p * PANE_H;
@@ -252,7 +285,7 @@ export function TradeChartView({ chart }: { chart: TradeChart }) {
         ) : (
           <span>No bar</span>
         )}
-        {chart.series.map((s) => (
+        {series.map((s) => (
           <span key={s.key}>
             {s.key} {typeof s.values[shown] === "number" ? num(s.values[shown], 2) : "–"}
           </span>

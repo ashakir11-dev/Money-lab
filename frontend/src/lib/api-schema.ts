@@ -322,7 +322,7 @@ export interface paths {
         };
         /**
          * Trade Chart
-         * @description Candles and indicator lines around one fill. ``decision_id`` is the fill's.
+         * @description Candles around a fill. A paired id adds the other leg of that round trip.
          */
         get: operations["trade_chart_api_runs__run_id__chart_get"];
         put?: never;
@@ -556,6 +556,11 @@ export interface components {
              */
             side: "buy" | "sell";
         };
+        /** ChartLegOut */
+        ChartLegOut: {
+            fill: components["schemas"]["ChartFillOut"];
+            signal: components["schemas"]["ChartSignalOut"];
+        };
         /** ChartSignalOut */
         ChartSignalOut: {
             /** Action */
@@ -751,7 +756,7 @@ export interface components {
             conditions?: components["schemas"]["Condition"][];
             /**
              * Kind
-             * @description 'signal' (exit when all conditions pass) or a registered exit rule id
+             * @description 'signal' (exit when any condition passes) or a registered exit rule id
              * @default holding_period
              */
             kind: string;
@@ -1245,6 +1250,11 @@ export interface components {
             /** Candles */
             candles: (components["schemas"]["CandleOut"] | null)[];
             fill: components["schemas"]["ChartFillOut"];
+            /**
+             * Legs
+             * @description The clicked fill, or the buy and the sell when a round trip is opened.
+             */
+            legs: components["schemas"]["ChartLegOut"][];
             /** Series */
             series: components["schemas"]["IndicatorSeriesOut"][];
             /** Sessions */
@@ -1793,6 +1803,7 @@ export interface operations {
         parameters: {
             query: {
                 decision_id: number;
+                paired_decision_id?: number | null;
             };
             header?: never;
             path: {

@@ -93,6 +93,45 @@ export function roundTrips(fills: FillRow[]): RoundTrip[] {
   return lotsFromFills(fills).trips;
 }
 
+/** The one closed trade that this fill belongs to, when the fill is not shared. */
+export function tripForDecision(trips: RoundTrip[], decisionId: number): RoundTrip | null {
+  const matches = trips.filter(
+    (t) => t.entryDecisionId === decisionId || t.exitDecisionId === decisionId,
+  );
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export function chartRequestForTrip(trip: RoundTrip): {
+  decisionId: number;
+  pairedDecisionId?: number;
+  title: string;
+} | null {
+  const entry = trip.entryDecisionId;
+  const exit = trip.exitDecisionId;
+  const decisionId = entry ?? exit;
+  if (decisionId == null) return null;
+  const pairedDecisionId =
+    entry != null && exit != null && entry !== exit ? (decisionId === entry ? exit : entry) : undefined;
+  const title =
+    entry != null && exit != null
+      ? `${trip.symbol} · buy ${trip.entrySession} · sell ${trip.exitSession}`
+      : `${trip.symbol} ${entry != null ? "buy" : "sell"} · ${entry != null ? trip.entrySession : trip.exitSession}`;
+  return { decisionId, pairedDecisionId, title };
+}
+
+export function chartRequestForFill(
+  fill: FillRow,
+  trips: RoundTrip[],
+): { decisionId: number; pairedDecisionId?: number; title: string } | null {
+  if (typeof fill.decision_id !== "number") return null;
+  const trip = tripForDecision(trips, fill.decision_id);
+  if (trip) return chartRequestForTrip(trip);
+  return {
+    decisionId: fill.decision_id,
+    title: `${fill.symbol} ${fill.side} · ${fill.session}`,
+  };
+}
+
 export function fillBreakdown(fills: FillRow[]): FillBreakdown {
   const buys = fills.filter((f) => f.side === "buy");
   const sells = fills.filter((f) => f.side === "sell");

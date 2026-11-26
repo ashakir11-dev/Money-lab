@@ -15,6 +15,8 @@ import {
   fillBreakdown,
   marksFromFills,
   pnlSummary,
+  chartRequestForFill,
+  chartRequestForTrip,
   reasonCounts,
   roundTrips,
   timeInMarket,
@@ -98,10 +100,14 @@ function ReportView() {
   const [job, setJob] = useState<Job>();
   const [rerunError, setRerunError] = useState<unknown>();
   const opener = useRef<HTMLElement | null>(null);
-  const [chartPick, setChartPick] = useState<{ decisionId: number; title: string } | null>(null);
-  const openChart = useCallback((decisionId: number, title: string, el: HTMLElement) => {
+  const [chartPick, setChartPick] = useState<{
+    decisionId: number;
+    pairedDecisionId?: number;
+    title: string;
+  } | null>(null);
+  const openChart = useCallback((decisionId: number, title: string, el: HTMLElement, pairedDecisionId?: number) => {
     opener.current = el;
-    setChartPick({ decisionId, title });
+    setChartPick({ decisionId, pairedDecisionId, title });
   }, []);
   const closeChart = useCallback(() => {
     setChartPick(null);
@@ -343,17 +349,14 @@ function ReportView() {
                       <tr key={`${t.symbol}-${t.entrySession}-${i}`}>
                         <td>{t.symbol}</td>
                         <td>
-                          {t.entryDecisionId != null ? (
+                          {t.entryDecisionId != null || t.exitDecisionId != null ? (
                             <button
                               type="button"
                               className="linkish"
-                              onClick={(e) =>
-                                openChart(
-                                  t.entryDecisionId as number,
-                                  `${t.symbol} buy · ${t.entrySession}`,
-                                  e.currentTarget,
-                                )
-                              }
+                              onClick={(e) => {
+                                const req = chartRequestForTrip(t);
+                                if (req) openChart(req.decisionId, req.title, e.currentTarget, req.pairedDecisionId);
+                              }}
                             >
                               {t.entrySession} @ {money(t.entryPrice)}
                             </button>
@@ -364,17 +367,14 @@ function ReportView() {
                           )}
                         </td>
                         <td>
-                          {t.exitDecisionId != null ? (
+                          {t.entryDecisionId != null || t.exitDecisionId != null ? (
                             <button
                               type="button"
                               className="linkish"
-                              onClick={(e) =>
-                                openChart(
-                                  t.exitDecisionId as number,
-                                  `${t.symbol} sell · ${t.exitSession}`,
-                                  e.currentTarget,
-                                )
-                              }
+                              onClick={(e) => {
+                                const req = chartRequestForTrip(t);
+                                if (req) openChart(req.decisionId, req.title, e.currentTarget, req.pairedDecisionId);
+                              }}
                             >
                               {t.exitSession} @ {money(t.exitPrice)}
                             </button>
@@ -441,9 +441,10 @@ function ReportView() {
             {fills.data ? (
               <FillsTable
                 fills={fills.data}
-                onOpen={(fill, el) =>
-                  openChart(fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)
-                }
+                onOpen={(fill, el) => {
+                  const req = chartRequestForFill(fill, trips);
+                  if (req) openChart(req.decisionId, req.title, el, req.pairedDecisionId);
+                }}
               />
             ) : (
               <Loading />
@@ -514,6 +515,7 @@ function ReportView() {
             <TradeChartDialog
               runId={id}
               decisionId={chartPick.decisionId}
+              pairedDecisionId={chartPick.pairedDecisionId}
               title={chartPick.title}
               onClose={closeChart}
             />

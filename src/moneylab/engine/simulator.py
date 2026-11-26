@@ -118,7 +118,7 @@ def _evaluate(
     close: np.ndarray,
     i: int,
 ) -> tuple[bool | None, list[dict[str, Any]], dict[str, float | None]]:
-    """Evaluate all conditions at session i. Returns (passed | None if not evaluable)."""
+    """Evaluate entry conditions at session i. Passes only when every condition passes."""
     return _evaluate_compiled(_compile(conds), ind, close, i)
 
 
@@ -127,7 +127,16 @@ def _evaluate_compiled(
     ind: dict[str, np.ndarray],
     close: np.ndarray,
     i: int,
+    *,
+    combine: str = "all",
 ) -> tuple[bool | None, list[dict[str, Any]], dict[str, float | None]]:
+    """Evaluate conditions at session i.
+
+    ``combine="all"`` (entries) passes only when every condition passes.
+    ``combine="any"`` (exits) passes when one condition passes, so a stop and a
+    target never have to happen together. Returns None when nothing passed and
+    every condition is still warming up.
+    """
     results: list[dict[str, Any]] = []
     c_i = close[i]
     values: dict[str, float | None] = {"close": _f(c_i)}
@@ -186,9 +195,16 @@ def _evaluate_compiled(
         if r["passed"] is None:
             evaluable = False
         results.append(r)
+    flags = [r["passed"] for r in results]
+    if combine == "any":
+        if any(flag is True for flag in flags):
+            return True, results, values
+        if flags and all(flag is None for flag in flags):
+            return None, results, values
+        return False, results, values
     if not evaluable:
         return None, results, values
-    return all(r["passed"] for r in results), results, values
+    return all(flags), results, values
 
 
 def _entry_candidates(conds: list[_Cond], view: MarketView, symbols: list[str]) -> np.ndarray:
@@ -306,7 +322,7 @@ class _ExitRule:
             if math.isnan(close):
                 return None
             ok, res, vals = _evaluate_compiled(
-                self.compiled, view.indicators[sym], view.closes[sym], i
+                self.compiled, view.indicators[sym], view.closes[sym], i, combine="any"
             )
             return ("exit signal", {"conditions": res, "values": vals}) if ok else None
         fn = get_component(self.kind).exit_fn

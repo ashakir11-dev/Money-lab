@@ -91,6 +91,43 @@ def test_buy_chart_matches_the_stored_rsi(tmp_path: Path) -> None:
     assert len(by_key["rsi(length=14)"]["values"]) == len(chart["sessions"])
 
 
+def test_round_trip_chart_marks_the_buy_and_the_sell(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    fills = lab.store.ledgers(run_id).fills
+    buy = fills[fills["side"] == "buy"].iloc[0]
+    sells = fills[(fills["symbol"] == buy["symbol"]) & (fills["side"] == "sell")]
+    assert not sells.empty
+    sell = sells.iloc[0]
+    resolved, data, buy_decision = _pieces(lab, run_id, buy)
+    _, _, sell_decision = _pieces(lab, run_id, sell)
+    chart = assemble_chart(
+        resolved,
+        data,
+        buy_decision,
+        buy.to_dict(),
+        paired=(sell_decision, sell.to_dict()),
+    )
+
+    from moneylab.data.bars import session_label
+
+    labels = [session_label(ts) for ts in data.sessions]
+    points = [
+        labels.index(buy_decision["session"]),
+        labels.index(str(buy["session"])),
+        labels.index(sell_decision["session"]),
+        labels.index(str(sell["session"])),
+    ]
+    start, end = chart_window(len(labels), min(points), max(points))
+    assert chart["sessions"] == labels[start : end + 1]
+    assert [leg["fill"]["side"] for leg in chart["legs"]] == ["buy", "sell"]
+    assert chart["legs"][0]["fill"]["session"] == str(buy["session"])
+    assert chart["legs"][1]["fill"]["session"] == str(sell["session"])
+    assert chart["legs"][0]["signal"]["conditions"], "the entry signal is what decided the buy"
+    assert chart["legs"][1]["signal"]["reason"] == sell_decision["reason"]
+    assert str(buy["session"]) in chart["sessions"]
+    assert str(sell["session"]) in chart["sessions"]
+
+
 def test_holding_period_sell_has_no_conditions(tmp_path: Path) -> None:
     lab, run_id = _lab(tmp_path)
     fills = lab.store.ledgers(run_id).fills
@@ -150,6 +187,28 @@ def test_chart_route_returns_the_buy(tmp_path: Path) -> None:
     stored = lab.store.ledgers(run_id).decisions
     stored = stored[stored["decision_id"] == int(buy["decision_id"])].iloc[0]
     assert rsi["values"][at] == stored["values"]["rsi(length=14)"]
+
+
+def test_chart_route_returns_both_legs_of_a_round_trip(tmp_path: Path) -> None:
+    lab, run_id = _lab(tmp_path)
+    fills = lab.store.ledgers(run_id).fills
+    buy = fills[fills["side"] == "buy"].iloc[0]
+    sell = fills[(fills["symbol"] == buy["symbol"]) & (fills["side"] == "sell")].iloc[0]
+    with _client(lab, tmp_path) as client:
+        response = client.get(
+            f"/api/runs/{run_id}/chart",
+            params={
+                "decision_id": int(buy["decision_id"]),
+                "paired_decision_id": int(sell["decision_id"]),
+            },
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [leg["fill"]["side"] for leg in body["legs"]] == ["buy", "sell"]
+    assert body["legs"][0]["signal"]["session"] in body["sessions"]
+    assert body["legs"][1]["signal"]["session"] in body["sessions"]
+    assert body["legs"][0]["fill"]["session"] in body["sessions"]
+    assert body["legs"][1]["fill"]["session"] in body["sessions"]
 
 
 def test_chart_route_unknown_run(tmp_path: Path) -> None:

@@ -69,7 +69,7 @@ class Condition(BaseModel):
 class ExitRule(BaseModel):
     kind: str = Field(
         default="holding_period",
-        description="'signal' (exit when all conditions pass) or a registered exit rule id",
+        description="'signal' (exit when any condition passes) or a registered exit rule id",
     )
     params: dict[str, Any] = Field(default_factory=dict)
     conditions: list[Condition] = Field(default_factory=list)
@@ -335,7 +335,10 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "fill": _fill_text(config.entry_fill),
             "sizing": "the sizing rule's whole-share quantity at the decision close",
             "order_of_processing": "exits before entries",
-            "exits": "the first exit rule in the list that fires sells the whole position",
+            "exits": (
+                "the first exit rule that fires sells the whole position; "
+                "conditions on a signal exit are combined with or"
+            ),
             "tie_break": (
                 "candidates processed in ascending symbol order, or by rank_by "
                 "(missing values last, ties in symbol order)"

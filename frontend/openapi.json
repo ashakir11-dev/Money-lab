@@ -99,6 +99,22 @@
         "title": "ChartFillOut",
         "type": "object"
       },
+      "ChartLegOut": {
+        "properties": {
+          "fill": {
+            "$ref": "#/components/schemas/ChartFillOut"
+          },
+          "signal": {
+            "$ref": "#/components/schemas/ChartSignalOut"
+          }
+        },
+        "required": [
+          "fill",
+          "signal"
+        ],
+        "title": "ChartLegOut",
+        "type": "object"
+      },
       "ChartSignalOut": {
         "properties": {
           "action": {
@@ -542,7 +558,7 @@
           },
           "kind": {
             "default": "holding_period",
-            "description": "'signal' (exit when all conditions pass) or a registered exit rule id",
+            "description": "'signal' (exit when any condition passes) or a registered exit rule id",
             "title": "Kind",
             "type": "string"
           },
@@ -1949,6 +1965,14 @@
           "fill": {
             "$ref": "#/components/schemas/ChartFillOut"
           },
+          "legs": {
+            "description": "The clicked fill, or the buy and the sell when a round trip is opened.",
+            "items": {
+              "$ref": "#/components/schemas/ChartLegOut"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
           "series": {
             "items": {
               "$ref": "#/components/schemas/IndicatorSeriesOut"
@@ -1982,7 +2006,8 @@
           "candles",
           "series",
           "fill",
-          "signal"
+          "signal",
+          "legs"
         ],
         "title": "TradeChartOut",
         "type": "object"
@@ -2745,7 +2770,7 @@
     },
     "/api/runs/{run_id}/chart": {
       "get": {
-        "description": "Candles and indicator lines around one fill. ``decision_id`` is the fill's.",
+        "description": "Candles around a fill. A paired id adds the other leg of that round trip.",
         "operationId": "trade_chart_api_runs__run_id__chart_get",
         "parameters": [
           {
@@ -2764,6 +2789,22 @@
             "schema": {
               "title": "Decision Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "paired_decision_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Paired Decision Id"
             }
           }
         ],
