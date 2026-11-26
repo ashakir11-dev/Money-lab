@@ -75,8 +75,8 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
   return (
     <form onSubmit={submit} data-testid="tiingo-form">
       <p className="muted small">
-        Daily prices, split- and dividend-adjusted the same way as a CSV. Needs <code>TIINGO_API_KEY</code>. A
-        watchlist supplies the symbols; anything else you type is added. Each symbol is one Tiingo request.
+        Daily prices from Equibles. Needs <code>EQUIBLES_API_KEY</code>. A
+        watchlist supplies the symbols; anything else you type is added. The default bar is one hour.
       </p>
       <div className="field">
         <label htmlFor="tiingo-watchlist">Watchlist</label>
@@ -126,7 +126,7 @@ function TiingoForm({ lists, onDone }: { lists: Watchlist[]; onDone: (s: Snapsho
         </div>
       </div>
       <button className="primary" type="submit" disabled={busy || !ready}>
-        {busy ? "Importing…" : `Import ${fetchCount} from Tiingo`}
+        {busy ? "Importing…" : `Import ${fetchCount} from Equibles`}
       </button>
       <ErrorBox error={error} title="Import failed" />
     </form>
@@ -270,7 +270,7 @@ export default function DataPage() {
         <ErrorBox error={snaps.error} title="Could not load snapshots" />
         {snaps.loading && !snaps.data ? <Loading /> : null}
         {snaps.data && !snaps.data.length ? (
-          <p className="muted">No price data yet. Import from Tiingo or upload a CSV below.</p>
+          <p className="muted">No price data yet. Import from Equibles or upload a CSV below.</p>
         ) : null}
         {snaps.data && snaps.data.length ? (
           <div className="table-wrap">
@@ -353,7 +353,7 @@ export default function DataPage() {
       </Section>
 
       <div className="grid-2">
-        <Section title="Fetch real prices (Tiingo)">
+        <Section title="Fetch real prices (Equibles)">
           <TiingoForm lists={lists.data ?? []} onDone={imported} />
         </Section>
         <Section title="Upload a CSV">

@@ -4,6 +4,8 @@ export type RoundTrip = {
   symbol: string;
   entrySession: string;
   exitSession: string;
+  entryDecisionId: number | null;
+  exitDecisionId: number | null;
   qty: number;
   entryPrice: number;
   exitPrice: number;
@@ -31,7 +33,13 @@ export type FillBreakdown = {
   notionalSells: number;
 };
 
-type Lot = { session: string; qty: number; price: number; cost: number };
+type Lot = {
+  session: string;
+  qty: number;
+  price: number;
+  cost: number;
+  decisionId: number | null;
+};
 
 function lotsFromFills(fills: FillRow[]): { remaining: Map<string, Lot[]>; trips: RoundTrip[] } {
   const remaining = new Map<string, Lot[]>();
@@ -40,7 +48,13 @@ function lotsFromFills(fills: FillRow[]): { remaining: Map<string, Lot[]>; trips
     const sym = String(f.symbol);
     const book = remaining.get(sym) ?? [];
     if (f.side === "buy") {
-      book.push({ session: f.session, qty: f.qty, price: f.price, cost: f.cost });
+      book.push({
+        session: f.session,
+        qty: f.qty,
+        price: f.price,
+        cost: f.cost,
+        decisionId: typeof f.decision_id === "number" ? f.decision_id : null,
+      });
       remaining.set(sym, book);
       continue;
     }
@@ -56,6 +70,8 @@ function lotsFromFills(fills: FillRow[]): { remaining: Map<string, Lot[]>; trips
         symbol: sym,
         entrySession: lot.session,
         exitSession: f.session,
+        entryDecisionId: lot.decisionId,
+        exitDecisionId: typeof f.decision_id === "number" ? f.decision_id : null,
         qty: take,
         entryPrice: lot.price,
         exitPrice: f.price,

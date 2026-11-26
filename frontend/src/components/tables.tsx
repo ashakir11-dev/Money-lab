@@ -3,7 +3,15 @@
 import type { ConditionResult, DecisionRow, FillRow } from "@/lib/api";
 import { ACTION_LABEL, int, money, num, plain } from "@/lib/format";
 
-export function FillsTable({ fills, empty = "No trades." }: { fills: FillRow[]; empty?: string }) {
+export function FillsTable({
+  fills,
+  empty = "No trades.",
+  onOpen,
+}: {
+  fills: FillRow[];
+  empty?: string;
+  onOpen?: (fill: FillRow, opener: HTMLElement) => void;
+}) {
   if (!fills.length) return <p className="muted">{empty}</p>;
   return (
     <div className="table-wrap">
@@ -21,21 +29,41 @@ export function FillsTable({ fills, empty = "No trades." }: { fills: FillRow[]; 
           </tr>
         </thead>
         <tbody>
-          {fills.map((f, i) => (
-            <tr key={`${f.session}-${f.symbol}-${f.side}-${i}`}>
-              <td>{f.session}</td>
-              <td>{f.symbol}</td>
-              <td>
-                <span className={`side side-${f.side}`}>{f.side}</span>
-                {f.note ? <span className="muted small"> · {f.note}</span> : null}
-              </td>
-              <td className="num">{int(f.qty)}</td>
-              <td className="num">{money(f.price)}</td>
-              <td className="num">{money(f.gross)}</td>
-              <td className="num">{money(f.cost)}</td>
-              <td className="num">{money(f.cash_after)}</td>
-            </tr>
-          ))}
+          {fills.map((f, i) => {
+            const open = onOpen && typeof f.decision_id === "number" ? onOpen : null;
+            return (
+              <tr
+                key={`${f.session}-${f.symbol}-${f.side}-${i}`}
+                className={open ? "click-row" : undefined}
+                role={open ? "button" : undefined}
+                tabIndex={open ? 0 : undefined}
+                aria-label={open ? `${f.side} ${f.symbol} ${f.session}` : undefined}
+                onClick={open ? (e) => open(f, e.currentTarget) : undefined}
+                onKeyDown={
+                  open
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          open(f, e.currentTarget);
+                        }
+                      }
+                    : undefined
+                }
+              >
+                <td>{f.session}</td>
+                <td>{f.symbol}</td>
+                <td>
+                  <span className={`side side-${f.side}`}>{f.side}</span>
+                  {f.note ? <span className="muted small"> · {f.note}</span> : null}
+                </td>
+                <td className="num">{int(f.qty)}</td>
+                <td className="num">{money(f.price)}</td>
+                <td className="num">{money(f.gross)}</td>
+                <td className="num">{money(f.cost)}</td>
+                <td className="num">{money(f.cash_after)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { EquityChart } from "@/components/EquityChart";
 import { Specimen } from "@/components/Specimen";
 import { StatBreakdown, type StatItem } from "@/components/StatBreakdown";
+import { TradeChartDialog } from "@/components/TradeChartDialog";
 import { DecisionsTable, FillsTable } from "@/components/tables";
 import { Badge, ErrorBox, JobStatus, Loading } from "@/components/ui";
 import {
@@ -213,6 +214,16 @@ function ReportView() {
   );
   const [job, setJob] = useState<Job>();
   const [rerunError, setRerunError] = useState<unknown>();
+  const opener = useRef<HTMLElement | null>(null);
+  const [chartPick, setChartPick] = useState<{ decisionId: number; title: string } | null>(null);
+  const openChart = useCallback((decisionId: number, title: string, el: HTMLElement) => {
+    opener.current = el;
+    setChartPick({ decisionId, title });
+  }, []);
+  const closeChart = useCallback(() => {
+    setChartPick(null);
+    opener.current?.focus();
+  }, []);
 
   const skipRows = (skips.data?.rows ?? []) as DecisionRow[];
   const nearRows = (near.data?.rows ?? []) as DecisionRow[];
@@ -453,10 +464,46 @@ function ReportView() {
                       <tr key={`${t.symbol}-${t.entrySession}-${i}`}>
                         <td>{t.symbol}</td>
                         <td>
-                          {t.entrySession} @ {money(t.entryPrice)}
+                          {t.entryDecisionId != null ? (
+                            <button
+                              type="button"
+                              className="linkish"
+                              onClick={(e) =>
+                                openChart(
+                                  t.entryDecisionId as number,
+                                  `${t.symbol} buy · ${t.entrySession}`,
+                                  e.currentTarget,
+                                )
+                              }
+                            >
+                              {t.entrySession} @ {money(t.entryPrice)}
+                            </button>
+                          ) : (
+                            <>
+                              {t.entrySession} @ {money(t.entryPrice)}
+                            </>
+                          )}
                         </td>
                         <td>
-                          {t.exitSession} @ {money(t.exitPrice)}
+                          {t.exitDecisionId != null ? (
+                            <button
+                              type="button"
+                              className="linkish"
+                              onClick={(e) =>
+                                openChart(
+                                  t.exitDecisionId as number,
+                                  `${t.symbol} sell · ${t.exitSession}`,
+                                  e.currentTarget,
+                                )
+                              }
+                            >
+                              {t.exitSession} @ {money(t.exitPrice)}
+                            </button>
+                          ) : (
+                            <>
+                              {t.exitSession} @ {money(t.exitPrice)}
+                            </>
+                          )}
                         </td>
                         <td className="num">{int(t.qty)}</td>
                         <td className={`num ${t.pnl >= 0 ? "pos" : "neg"}`}>{money(t.pnl)}</td>
@@ -512,7 +559,16 @@ function ReportView() {
           <section className="stack-block">
             <h2>Trades</h2>
             <ErrorBox error={fills.error} />
-            {fills.data ? <FillsTable fills={fills.data} /> : <Loading />}
+            {fills.data ? (
+              <FillsTable
+                fills={fills.data}
+                onOpen={(fill, el) =>
+                  openChart(fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)
+                }
+              />
+            ) : (
+              <Loading />
+            )}
           </section>
 
           <section className="stack-block">
@@ -575,6 +631,14 @@ function ReportView() {
               <pre className="json">{JSON.stringify(r.resolved, null, 2)}</pre>
             </details>
           </section>
+          {chartPick ? (
+            <TradeChartDialog
+              runId={id}
+              decisionId={chartPick.decisionId}
+              title={chartPick.title}
+              onClose={closeChart}
+            />
+          ) : null}
         </>
       ) : null}
     </div>
