@@ -402,7 +402,8 @@ These are the things most likely to surprise you.
 6. **Building blocks (updated 2026-11-25, engine/0.3.0).** Indicators: SMA, EMA, RSI, MACD,
    ATR, Bollinger %B, rate of change, N-day high/low, average volume, breadth. Conditions:
    thresholds, close crossing an indicator, and one indicator against another. Exits:
-   hold N sessions, signal, stop-loss, take-profit, trailing stop, combined in a list.
+   hold N sessions, signal, stop-loss, take-profit, trailing stop. Listed exits are or:
+   the first one that fires sells. Conditions on one signal exit are also or.
    Sizing: percent of equity, fixed dollars, volatility (ATR). Entries can be ranked by an
    indicator. Still missing: short selling and "any of" entry rules. The dashboard does
    not show the new options yet (they are available through the API).
