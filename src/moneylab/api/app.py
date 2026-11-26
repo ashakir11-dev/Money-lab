@@ -16,7 +16,6 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +30,7 @@ from moneylab.data.snapshot import list_snapshots, read_import_file, snapshot_na
 from moneylab.describe import data_source, strategy_summary
 from moneylab.engine.chart import ChartRejected, assemble_chart
 from moneylab.engine.config import StrategyConfig, VersionMismatch, check_versions
+from moneylab.jsonable import jsonable
 from moneylab.service import Lab
 
 API_VERSION = "1"
@@ -39,25 +39,6 @@ DEFAULT_WEB_DIR = Path(__file__).resolve().parents[3] / "frontend" / "out"
 
 
 # JSON helpers --------------------------------------------------------------------------
-def jsonable(obj: Any) -> Any:
-    """Plain JSON values: NaN/inf become null, numpy and pandas scalars become Python."""
-    if isinstance(obj, dict):
-        return {str(k): jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, list | tuple):
-        return [jsonable(v) for v in obj]
-    if isinstance(obj, np.ndarray):
-        return [jsonable(v) for v in obj.tolist()]
-    if isinstance(obj, np.generic):
-        obj = obj.item()
-    if isinstance(obj, float):
-        return obj if math.isfinite(obj) else None
-    if isinstance(obj, pd.Timestamp | date):
-        return obj.isoformat()[:10]
-    if obj is pd.NaT:
-        return None
-    return obj
-
-
 def records(df: pd.DataFrame) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = json.loads(df.to_json(orient="records", date_format="iso"))
     return out
@@ -200,6 +181,183 @@ class JobOut(BaseModel):
     error: str | None
 
 
+# The research analysis of a run (engine/analytics.py). Every field may be null: a run
+# with no trades has no win rate, and a run with no benchmark has no beta.
+class TradeStatsOut(BaseModel):
+    count: int = 0
+    low_sample: bool = True
+    wins: int | None = None
+    losses: int | None = None
+    win_rate: float | None = None
+    avg_win: float | None = None
+    avg_loss: float | None = None
+    avg_win_pct: float | None = None
+    avg_loss_pct: float | None = None
+    payoff_ratio: float | None = None
+    expectancy: float | None = None
+    expectancy_pct: float | None = None
+    profit_factor: float | None = None
+    gross_profit: float | None = None
+    gross_loss: float | None = None
+    largest_win: float | None = None
+    largest_loss: float | None = None
+    t_stat: float | None = None
+    avg_hold: float | None = None
+    median_hold: float | None = None
+    avg_hold_win: float | None = None
+    avg_hold_loss: float | None = None
+    max_consecutive_losses: int | None = None
+    max_consecutive_wins: int | None = None
+    avg_mae: float | None = None
+    avg_mfe: float | None = None
+    avg_mae_winners: float | None = None
+    avg_mfe_losers: float | None = None
+
+
+class EdgeStatsOut(BaseModel):
+    count: int = 0
+    mean: float | None = None
+    median: float | None = None
+    t_stat: float | None = None
+    beat_rate: float | None = None
+    low_sample: bool | None = None
+
+
+class ReturnStatsOut(BaseModel):
+    cagr: float | None = None
+    volatility: float | None = None
+    sharpe: float | None = None
+    sortino: float | None = None
+    calmar: float | None = None
+    max_drawdown: float | None = None
+    longest_underwater: int | None = None
+    max_dd_length: int | None = None
+
+
+class DrawdownStatsOut(BaseModel):
+    max_drawdown: float | None = None
+    peak_session: str | None = None
+    trough_session: str | None = None
+    recovery_session: str | None = None
+    max_dd_length: int | None = None
+    longest_underwater: int | None = None
+    longest_underwater_start: str | None = None
+    current_drawdown: float | None = None
+    drawdowns_over_10pct: int | None = None
+    time_underwater: float | None = None
+
+
+class MarketStatsOut(BaseModel):
+    beta: float | None = None
+    correlation: float | None = None
+    alpha: float | None = None
+
+
+class CostStatsOut(BaseModel):
+    total: float | None = None
+    return_before_costs: float | None = None
+    cost_drag: float | None = None
+    share_of_gross_profit: float | None = None
+    turnover: float | None = None
+    traded_notional: float | None = None
+
+
+class FunnelOut(BaseModel):
+    signals: int | None = None
+    entered: int | None = None
+    filled: int | None = None
+    taken_rate: float | None = None
+    fill_rate: float | None = None
+    skipped: dict[str, int] = Field(default_factory=dict)
+    not_filled: dict[str, int] = Field(default_factory=dict)
+    near_misses: int | None = None
+
+
+class YearRowOut(BaseModel):
+    year: str
+    ret: float | None = None
+    bench_ret: float | None = None
+    trades: int = 0
+    win_rate: float | None = None
+    pnl: float | None = None
+    avg_edge: float | None = None
+
+
+class MonthRowOut(BaseModel):
+    month: str
+    ret: float | None = None
+    bench_ret: float | None = None
+
+
+class StreaksOut(BaseModel):
+    max_consecutive_losing_trades: int | None = None
+    max_consecutive_losing_months: int | None = None
+    losing_months: int | None = None
+    months: int | None = None
+
+
+class GroupRowOut(BaseModel):
+    key: str
+    trades: int
+    win_rate: float | None = None
+    pnl: float | None = None
+    avg_ret: float | None = None
+    avg_edge: float | None = None
+    avg_hold: float | None = None
+
+
+class RegimeRowOut(BaseModel):
+    regime: Literal["up", "down", "warmup"]
+    sessions: int
+    ret: float | None = None
+    bench_ret: float | None = None
+    trades: int = 0
+    win_rate: float | None = None
+    avg_ret: float | None = None
+    avg_edge: float | None = None
+
+
+class AnalysisOut(BaseModel):
+    trades: TradeStatsOut = Field(default_factory=TradeStatsOut)
+    edge: EdgeStatsOut = Field(default_factory=EdgeStatsOut)
+    returns: ReturnStatsOut = Field(default_factory=ReturnStatsOut)
+    drawdown: DrawdownStatsOut = Field(default_factory=DrawdownStatsOut)
+    benchmark: ReturnStatsOut | None = None
+    market: MarketStatsOut | None = None
+    costs: CostStatsOut = Field(default_factory=CostStatsOut)
+    funnel: FunnelOut = Field(default_factory=FunnelOut)
+    by_year: list[YearRowOut] = Field(default_factory=list)
+    monthly: list[MonthRowOut] = Field(default_factory=list)
+    streaks: StreaksOut = Field(default_factory=StreaksOut)
+    by_symbol: list[GroupRowOut] = Field(default_factory=list)
+    by_exit: list[GroupRowOut] = Field(default_factory=list)
+    by_regime: list[RegimeRowOut] = Field(default_factory=list)
+
+
+class TradeRow(BaseModel):
+    """One closed round trip. Returns are fractions; hold is in sessions (bars)."""
+
+    symbol: str
+    entry_session: str
+    exit_session: str
+    entry_decision_id: int | None = None
+    exit_decision_id: int | None = None
+    qty: float
+    entry_price: float
+    exit_price: float
+    costs: float
+    pnl: float
+    ret: float | None = None
+    hold_sessions: int | None = None
+    exit_kind: str
+    exit_reason: str | None = None
+    bench_ret: float | None = None
+    edge: float | None = None
+    mae: float | None = None
+    mfe: float | None = None
+    regime: str | None = None
+
+
 class RunSummary(BaseModel):
     id: str
     parent_id: str | None
@@ -217,6 +375,14 @@ class RunSummary(BaseModel):
     sharpe: float | None
     trades: int | None
     open_positions: int | None
+    win_rate: float | None = None
+    profit_factor: float | None = None
+    cagr: float | None = None
+    edge_mean: float | None = Field(
+        default=None, description="average edge per trade vs the benchmark"
+    )
+    edge_t: float | None = Field(default=None, description="t-statistic of that edge")
+    low_sample: bool | None = Field(default=None, description="fewer than 30 closed trades")
 
 
 class RunDetail(RunSummary):
@@ -225,6 +391,9 @@ class RunDetail(RunSummary):
     finished_at: str | None
     resolved: dict[str, Any]
     metrics: dict[str, Any]
+    analysis: AnalysisOut | None = Field(
+        default=None, description="research analysis; null when it cannot be computed"
+    )
 
 
 class EquityRow(BaseModel):
@@ -403,7 +572,26 @@ def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> d
         "sharpe": _num(m.get("sharpe")),
         "trades": m.get("trades"),
         "open_positions": m.get("open_positions"),
+        "win_rate": _num(m.get("win_rate")),
+        "profit_factor": _num(m.get("profit_factor")),
+        "cagr": _num(m.get("cagr")),
+        "edge_mean": _num(m.get("edge_mean")),
+        "edge_t": _num(m.get("edge_t")),
+        "low_sample": m.get("low_sample"),
     }
+
+
+def _ensure_analysis(lab: Lab, run_id: str, full: dict[str, Any]) -> dict[str, Any]:
+    """Runs saved before the analysis existed get it computed once, on first open, and
+    stored. If their snapshot is gone the run is shown without it."""
+    if "analysis" in full["metrics"]:
+        return full
+    try:
+        if lab.recompute_metrics(run_id):
+            return lab.store.get(run_id)
+    except Exception:  # never let a missing or odd snapshot break opening a run
+        pass
+    return full
 
 
 def _detail(lab: Lab, run_id: str) -> RunDetail:
@@ -411,13 +599,17 @@ def _detail(lab: Lab, run_id: str) -> RunDetail:
         full = lab.store.get(run_id)
     except KeyError:
         raise HTTPException(404, f"run {run_id} not found") from None
+    full = _ensure_analysis(lab, run_id, full)
+    analysis = full["metrics"].get("analysis")
+    metrics = {k: v for k, v in full["metrics"].items() if k != "analysis"}
     return RunDetail(
         **_summary(full, full, _snapshot_name_for(lab, full["snapshot_id"])),
         engine_version=full["engine_version"],
         config_hash=full["config_hash"],
         finished_at=full.get("finished_at"),
         resolved=jsonable(full["resolved"]),
-        metrics=jsonable(full["metrics"]),
+        metrics=jsonable(metrics),
+        analysis=AnalysisOut(**analysis) if analysis else None,
     )
 
 
@@ -645,6 +837,15 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     def equity(run_id: str) -> list[dict[str, Any]]:
         _detail(lab, run_id)
         return records(lab.store.ledgers(run_id).equity)
+
+    @app.get("/api/runs/{run_id}/trades", response_model=list[TradeRow], tags=["runs"])
+    def trades(run_id: str) -> list[dict[str, Any]]:
+        """Closed round trips with return, edge versus the benchmark, MAE/MFE, how each
+        closed and the true holding length. Empty when the analysis cannot be computed."""
+        _detail(lab, run_id)  # computes the analysis (and the trade list) for older runs
+        t = lab.store.trades(run_id)
+        out: list[dict[str, Any]] = jsonable(records(t)) if t is not None else []
+        return out
 
     @app.get("/api/runs/{run_id}/fills", response_model=list[FillRow], tags=["runs"])
     def fills(run_id: str) -> list[dict[str, Any]]:

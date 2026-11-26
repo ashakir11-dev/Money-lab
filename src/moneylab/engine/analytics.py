@@ -32,8 +32,8 @@ import numpy as np
 import pandas as pd
 
 from moneylab.data.bars import bars_per_session, bars_per_year
+from moneylab.engine.simulator import SWEEP_NOTE
 
-SWEEP_NOTE = "sweep"
 LOW_SAMPLE_TRADES = 30
 REGIME_DAYS = 200
 
@@ -265,8 +265,8 @@ def trade_stats(trips: pd.DataFrame) -> dict[str, Any]:
             "profit_factor": gross_win / gross_loss if gross_loss > 0 else None,
             "gross_profit": gross_win,
             "gross_loss": -gross_loss,
-            "largest_win": float(pnl.max()),
-            "largest_loss": float(pnl.min()),
+            "largest_win": float(pnl[wins].max()) if wins.any() else None,
+            "largest_loss": float(pnl[losses].min()) if losses.any() else None,
             "t_stat": _t_stat(ret),
             "avg_hold": float(np.nanmean(hold)) if np.isfinite(hold).any() else None,
             "median_hold": float(np.nanmedian(hold)) if np.isfinite(hold).any() else None,
@@ -465,20 +465,20 @@ def analyze(
     # Costs and turnover
     sf = strategy_fills(fills)
     costs = float(fills["cost"].sum()) if len(fills) else 0.0
-    gross = (
-        sf["gross"] if "gross" in sf else sf["qty"] * sf["price"] if len(sf) else pd.Series([])
-    )
+    gross = sf["gross"] if "gross" in sf else sf["qty"] * sf["price"] if len(sf) else pd.Series([])
     traded = float(pd.to_numeric(gross, errors="coerce").fillna(0).sum()) if len(sf) else 0.0
     years = (e.size - 1) / bpy if e.size > 1 else 0.0
     avg_eq = float(e.mean()) if e.size else 0.0
     start = float(e[0]) if e.size else 0.0
     pnl_total = float(e[-1] - e[0]) if e.size else 0.0
-    gp = out["trades"].get("gross_profit") or 0.0
+    # Trade P&L before costs, to say what share of it the trades' costs took.
+    trade_costs = float(trips["costs"].sum()) if len(trips) else 0.0
+    before = (float(trips["pnl"].sum()) if len(trips) else 0.0) + trade_costs
     out["costs"] = {
         "total": costs,
         "return_before_costs": (pnl_total + costs) / start if start else None,
         "cost_drag": costs / start if start else None,
-        "share_of_gross_profit": costs / (gp + float(trips["costs"].sum())) if gp > 0 else None,
+        "share_of_gross_profit": trade_costs / before if before > 0 else None,
         "turnover": (traded / 2) / avg_eq / years if avg_eq and years > 0 else None,
         "traded_notional": traded,
     }

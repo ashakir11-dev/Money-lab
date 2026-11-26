@@ -228,6 +228,8 @@ def _compact_state(acc: Account) -> dict[str, Any]:
     out.update(
         n_decisions=len(acc.decisions), n_fills=len(acc.fills), n_equity=len(acc.equity_rows)
     )
+    if acc.idle_in_benchmark:  # kept out otherwise so existing accounts' state is unchanged
+        out["sweep_qty"] = acc.sweep_qty
     plain: dict[str, Any] = json.loads(json.dumps(out))
     return plain
 

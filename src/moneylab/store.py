@@ -75,6 +75,9 @@ def write_ledgers(run_dir: Path, result: RunResult) -> None:
     dec.to_parquet(run_dir / "decisions.parquet", index=False)
     result.fills.to_parquet(run_dir / "fills.parquet", index=False)
     result.equity.to_parquet(run_dir / "equity.parquet", index=False)
+    trades = result.meta.get("trades")
+    if trades is not None:
+        trades.to_parquet(run_dir / "trades.parquet", index=False)
 
 
 class RunStore:
@@ -218,6 +221,22 @@ class RunStore:
         out["resolved"] = json.loads(out.pop("resolved_json"))
         out["metrics"] = json.loads(out.pop("metrics_json") or "{}")
         return out
+
+    def update_metrics(self, run_id: str, metrics: dict[str, Any]) -> None:
+        """Replace a run's stored metrics (metrics are derived from the ledgers, so they
+        can be recomputed; the run's settings and ledgers are never touched)."""
+        with self._conn() as c:
+            c.execute(
+                "UPDATE runs SET metrics_json = ? WHERE id = ?", (json.dumps(metrics), run_id)
+            )
+
+    def write_trades(self, run_id: str, trades: pd.DataFrame) -> None:
+        trades.to_parquet(self.run_dir(run_id) / "trades.parquet", index=False)
+
+    def trades(self, run_id: str) -> pd.DataFrame | None:
+        """The run's closed trades (see ``engine.analytics``), or None if not computed."""
+        path = self.run_dir(run_id) / "trades.parquet"
+        return pd.read_parquet(path) if path.is_file() else None
 
     def ledgers(self, run_id: str) -> RunResult:
         d = self.run_dir(run_id)

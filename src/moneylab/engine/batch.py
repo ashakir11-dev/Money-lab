@@ -26,11 +26,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from moneylab.data.bars import session_label
 from moneylab.data.snapshot import MarketData
+from moneylab.engine.analytics import TRADE_COLUMNS, analyze, headline
 from moneylab.engine.config import config_hash
 from moneylab.engine.reporting import metrics
 from moneylab.engine.simulator import RunResult, simulate
+from moneylab.jsonable import jsonable
 from moneylab.store import RunRecord, new_run_id, write_ledgers
 
 
@@ -63,6 +67,7 @@ def run_one(
             result.equity, result.fills, column="benchmark_equity", timeframe=tf
         )
         m["benchmark"].update(result.meta.get("benchmark", {}))
+    m.update(analysis_metrics(result, data, resolved))
     out = dict(resolved)
     out["data"] = {
         "snapshot_id": snap.id,
@@ -72,6 +77,26 @@ def run_one(
         "last_session": session_label(data.sessions[-1]),
     }
     return out, result, m
+
+
+def analysis_metrics(
+    result: RunResult, data: MarketData, resolved: dict[str, Any]
+) -> dict[str, Any]:
+    """The research analysis of a finished run, ready to store: ``analysis`` (JSON-clean,
+    without the trade list), the flat headline numbers for the run list, and the trade
+    list put in ``result.meta["trades"]`` (stored beside the ledgers)."""
+    tf = str(resolved.get("timeframe") or "1d")
+    a = analyze(
+        result.equity,
+        result.fills,
+        result.decisions,
+        data.frames,
+        str(resolved["benchmark"]),
+        tf,
+    )
+    trade_list = a.pop("trade_list")
+    result.meta["trades"] = pd.DataFrame(trade_list, columns=TRADE_COLUMNS)
+    return {"analysis": jsonable(a), **jsonable(headline(a))}
 
 
 # Read-only inputs for the current batch, set by the parent (fork) or the initializer.

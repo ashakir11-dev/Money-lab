@@ -184,7 +184,14 @@ def strategy_summary(resolved: dict[str, Any]) -> str:
         f"Buy when {enter}{how}; sell {leave}. "
         f"Trades {len(uni)} symbol{'s' if len(uni) != 1 else ''} against "
         f"{resolved.get('benchmark', '?')}{sizing}{_bars_text(resolved)}.{rank_text(resolved)}"
+        f"{_idle_text(resolved)}"
     )
+
+
+def _idle_text(resolved: dict[str, Any]) -> str:
+    if (resolved.get("portfolio") or {}).get("idle_cash") == "benchmark":
+        return f" Cash not in a position is held in {resolved.get('benchmark', '?')}."
+    return ""
 
 
 def _bars_text(resolved: dict[str, Any]) -> str:

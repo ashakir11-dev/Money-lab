@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from moneylab.data.bars import bars_per_year
+from moneylab.engine.analytics import strategy_fills
 from moneylab.engine.simulator import DECISION_ACTIONS
 
 SHARPE_ASSUMPTIONS = (
@@ -52,8 +53,9 @@ def metrics(
     if column == "equity":
         # A trade is a completed round trip (a sell that closes a position); positions
         # still open at the end are counted separately.
-        buys = int((fills["side"] == "buy").sum()) if len(fills) else 0
-        sells = int((fills["side"] == "sell").sum()) if len(fills) else 0
+        own = strategy_fills(fills)  # idle cash parked in the benchmark is not a trade
+        buys = int((own["side"] == "buy").sum()) if len(own) else 0
+        sells = int((own["side"] == "sell").sum()) if len(own) else 0
         out["trades"] = sells
         out["open_positions"] = buys - sells
         out["costs"] = float(fills["cost"].sum()) if len(fills) else 0.0
@@ -90,6 +92,7 @@ def comparable_settings(resolved: dict[str, Any]) -> dict[str, Any]:
     out["sizing"] = resolved_sizing(resolved)
     out["rank_by"] = resolved.get("rank_by")
     # Runs saved before entry fill options filled at the next open.
+    out["portfolio"] = {"idle_cash": "cash", **resolved["portfolio"]}
     out["entry_fill"] = resolved.get("entry_fill") or {
         "kind": "next_open",
         "below_pct": None,

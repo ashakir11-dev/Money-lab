@@ -158,6 +158,28 @@ def demo() -> None:
     typer.echo(f"original run {out['original']}, changed run {out['changed']}")
 
 
+@app.command("recompute-metrics")
+def recompute_metrics(
+    run_ids: Annotated[list[str] | None, typer.Argument(help="runs to redo; omit for all")] = None,
+    force: Annotated[bool, typer.Option(help="redo runs that already have their analysis")] = False,
+) -> None:
+    """Recompute the research analysis (trade quality, edge versus the benchmark, risk,
+    breakdowns) of saved runs from their ledgers and snapshots. Settings and ledgers are
+    never changed. Runs whose snapshot is missing are skipped."""
+    from moneylab.service import Lab
+
+    lab = Lab.open()
+    if run_ids:
+        done = [r for r in run_ids if lab.recompute_metrics(r)]
+        skipped = [r for r in run_ids if r not in done]
+    else:
+        out = lab.recompute_all(force=force)
+        done, skipped = out["done"], out["skipped"]
+    typer.echo(f"recomputed {len(done)} run(s); skipped {len(skipped)} (snapshot missing/changed)")
+    for r in skipped:
+        typer.echo(f"  skipped {r}")
+
+
 paper_app = typer.Typer(
     no_args_is_help=True, help="Paper forward testing of a frozen run (docs/paper-trading.md)."
 )

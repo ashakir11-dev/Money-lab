@@ -32,7 +32,7 @@ from moneylab.data.snapshot import (
     save_intraday_snapshot,
     save_snapshot,
 )
-from moneylab.engine.batch import Job, SnapshotInfo, run_jobs, run_one
+from moneylab.engine.batch import Job, SnapshotInfo, analysis_metrics, run_jobs, run_one
 from moneylab.engine.config import StrategyConfig, check_versions, config_hash, resolve
 from moneylab.engine.reporting import config_diff, first_difference
 from moneylab.engine.simulator import RunResult
@@ -334,6 +334,47 @@ class Lab:
             metrics=m,
             parent_id=parent_id,
         )
+
+    def has_analysis(self, run_id: str) -> bool:
+        return "analysis" in self.store.get(run_id)["metrics"]
+
+    def recompute_metrics(self, run_id: str) -> bool:
+        """Recompute a saved run's research analysis from its ledgers and its snapshot's
+        bars, and store it (with the run's trade list). Nothing about the run's settings
+        or ledgers changes. Returns False, changing nothing, when the snapshot is gone or
+        its bars no longer line up with the run's sessions."""
+        run = self.store.get(run_id)
+        resolved = run["resolved"]
+        if not (self.settings.snapshot_dir / f"{run['snapshot_id']}.parquet").is_file():
+            return False
+        try:
+            data = self.market_data(
+                run["snapshot_id"],
+                [*resolved["universe"], resolved["benchmark"]],
+                resolved["start"],
+                resolved["end"],
+            )
+            led = self.store.ledgers(run_id)
+        except (OSError, ValueError, KeyError):
+            return False
+        if len(data.sessions) != len(led.equity):
+            return False
+        extra = analysis_metrics(led, data, resolved)
+        trades = led.meta.pop("trades")
+        self.store.write_trades(run_id, trades)
+        self.store.update_metrics(run_id, {**run["metrics"], **extra})
+        return True
+
+    def recompute_all(self, *, force: bool = False) -> dict[str, list[str]]:
+        """Recompute the analysis of every run that has none (every run with ``force``).
+        Returns the run ids ``done`` and ``skipped`` (snapshot missing or changed)."""
+        out: dict[str, list[str]] = {"done": [], "skipped": []}
+        for row in self.store.list_runs():
+            rid = row["id"]
+            if not force and self.has_analysis(rid):
+                continue
+            out["done" if self.recompute_metrics(rid) else "skipped"].append(rid)
+        return out
 
     def run_batch(
         self,

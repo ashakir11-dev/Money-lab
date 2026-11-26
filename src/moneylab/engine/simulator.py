@@ -42,6 +42,8 @@ NO_SIGNAL = "no_signal"  # diagnostic: some entry conditions passed, not all
 INELIGIBLE = "ineligible"  # diagnostic: warm-up or missing bar
 # Actions that are trading decisions (compared between runs). The others explain them.
 DECISION_ACTIONS = (ENTER, EXIT, SKIP)
+# Note on fills that park or release idle cash in the benchmark (not strategy trades).
+SWEEP_NOTE = "sweep"
 
 
 def _ind_key(ind: dict[str, Any]) -> str:
@@ -347,10 +349,14 @@ class MarketView:
     closes: dict[str, np.ndarray]
     indicators: dict[str, dict[str, np.ndarray]]
     first_bar: dict[str, int]
+    # The benchmark's own bars, used only to park idle cash in it (idle_cash "benchmark").
+    bench_open: np.ndarray | None = None
+    bench_close: np.ndarray | None = None
 
     @classmethod
     def build(cls, resolved: dict[str, Any], data: MarketData) -> MarketView:
         symbols = sorted(resolved["universe"])
+        bench = data.frames.get(resolved.get("benchmark", ""))
         return cls(
             sessions=data.sessions,
             opens={s: data.frames[s]["open"].to_numpy(dtype=float) for s in symbols},
@@ -359,6 +365,8 @@ class MarketView:
             closes={s: data.frames[s]["close"].to_numpy(dtype=float) for s in symbols},
             indicators=_compute_indicators(data, required_indicators(resolved), symbols),
             first_bar=dict(data.first_bar),
+            bench_open=bench["open"].to_numpy(dtype=float) if bench is not None else None,
+            bench_close=bench["close"].to_numpy(dtype=float) if bench is not None else None,
         )
 
 
@@ -383,6 +391,11 @@ class Account:
         self.rank = resolved.get("rank_by")
         self.entry_fill = resolved.get("entry_fill") or {"kind": "next_open"}
         self.symbols = sorted(resolved["universe"])
+        # Idle cash held in the benchmark (engine/0.4.0): whole shares kept apart from
+        # ``positions``. They never count toward max_positions and are not trades.
+        self.idle_in_benchmark = port.get("idle_cash", "cash") == "benchmark"
+        self.bench = str(resolved["benchmark"])
+        self.sweep_qty = 0
         self.cash = float(port["starting_cash"])
         self.positions: dict[str, _Position] = {}
         self.pending: dict[str, _Order] = {}
@@ -431,6 +444,7 @@ class Account:
             "fills": self.fills,
             "equity_rows": self.equity_rows,
             "last_index": self.last_index,
+            "sweep_qty": self.sweep_qty,
         }
 
     @classmethod
@@ -444,6 +458,7 @@ class Account:
         a.fills = list(state["fills"])
         a.equity_rows = list(state["equity_rows"])
         a.last_index = int(state["last_index"])
+        a.sweep_qty = int(state.get("sweep_qty", 0))
         return a
 
     # Processing ----------------------------------------------------------------
@@ -509,6 +524,8 @@ class Account:
         day = session_label(view.sessions[i])
         cost_rate = self.cost_rate
         for side in ("sell", "buy"):
+            if side == "buy":
+                self._sweep_sell(view, i, day)
             for sym in sorted(s for s, o in self.pending.items() if o.side == side):
                 o = self.pending[sym]
                 open_px = view.opens[sym][i]
@@ -571,6 +588,85 @@ class Account:
                 self.fills.append(
                     _fill(day, sym, "buy", qty, px, cost, self.cash, o, i - o.decision_idx, note)
                 )
+        self._sweep_buy(view, i, day)
+
+    # Idle cash in the benchmark ----------------------------------------------------
+    def _bench_open(self, view: MarketView, i: int) -> float:
+        """The benchmark's open at session ``i``; NaN when idle cash stays as cash or the
+        benchmark has no bar (then nothing is swept that session)."""
+        if not self.idle_in_benchmark or view.bench_open is None:
+            return math.nan
+        return float(view.bench_open[i])
+
+    def _sweep_fill(self, day: str, side: str, qty: int, px: float, cost: float) -> dict[str, Any]:
+        return {
+            "session": day,
+            "symbol": self.bench,
+            "side": side,
+            "qty": qty,
+            "price": round(px, 6),
+            "gross": _cents(qty * px),
+            "cost": cost,
+            "cash_after": self.cash,
+            "decision_id": None,
+            "sessions_waited": 0,
+            "note": SWEEP_NOTE,
+        }
+
+    def _sweep_sell(self, view: MarketView, i: int, day: str) -> None:
+        """Sell just enough benchmark shares to pay for the buys that can fill today.
+
+        The estimate is each order's quantity times its highest possible fill price (the
+        open, or the range's high when that is above it), times one plus the cost, rounded up
+        to the cent, plus a cent for each order after the first (their own rounding).
+        """
+        px = self._bench_open(view, i)
+        if math.isnan(px) or self.sweep_qty <= 0:
+            return
+        need = 0.0
+        orders = 0
+        for sym, o in self.pending.items():
+            if o.side != "buy":
+                continue
+            open_px = view.opens[sym][i]
+            if math.isnan(open_px):
+                continue
+            top = open_px if math.isnan(o.range_hi) else max(open_px, o.range_hi)
+            need += o.qty * top * (1 + self.cost_rate)
+            orders += 1
+        if not orders:
+            return
+        # Round up to the cent, and allow a cent for each further order's own rounding.
+        need = math.ceil(need * 100 - 1e-9) / 100 + 0.01 * (orders - 1)
+        short = need - self.cash
+        if short <= 0:
+            return
+        k = min(self.sweep_qty, math.ceil(short / (px * (1 - self.cost_rate))))
+        while True:
+            gross = k * px
+            cost = _cents(gross * self.cost_rate)
+            cash = _cents(self.cash + gross - cost)
+            if cash >= need or k >= self.sweep_qty:
+                break
+            k += 1
+        self.cash = cash
+        self.sweep_qty -= k
+        self.fills.append(self._sweep_fill(day, "sell", k, px, cost))
+
+    def _sweep_buy(self, view: MarketView, i: int, day: str) -> None:
+        """Put all the cash that is left into whole benchmark shares at the open."""
+        px = self._bench_open(view, i)
+        if math.isnan(px) or self.cash <= 0:
+            return
+        k = int(self.cash // (px * (1 + self.cost_rate)))
+        while k > 0 and k * px + _cents(k * px * self.cost_rate) > self.cash:
+            k -= 1
+        if k <= 0:
+            return
+        cost = _cents(k * px * self.cost_rate)
+        self.cash = _cents(self.cash - k * px - cost)
+        self.sweep_qty += k
+        self.fills.append(self._sweep_fill(day, "buy", k, px, cost))
 
     def _mark_at_close(self, view: MarketView, i: int) -> float:
         """Mark to market (last known close values a symbol without a bar)."""
@@ -579,16 +675,22 @@ class Account:
             if not math.isnan(c):
                 self.last_close[sym] = float(c)
         pos_value = sum(p.qty * self.last_close[s] for s, p in self.positions.items())
-        equity = _cents(self.cash + pos_value)
-        self.equity_rows.append(
-            {
-                "session": session_label(view.sessions[i]),
-                "cash": self.cash,
-                "positions_value": _cents(pos_value),
-                "equity": equity,
-                "positions": len(self.positions),
-            }
-        )
+        sweep_value = 0.0
+        if self.idle_in_benchmark:
+            if view.bench_close is not None and not math.isnan(view.bench_close[i]):
+                self.last_close[self.bench] = float(view.bench_close[i])
+            sweep_value = _cents(self.sweep_qty * self.last_close.get(self.bench, 0.0))
+        equity = _cents(self.cash + pos_value + sweep_value)
+        row = {
+            "session": session_label(view.sessions[i]),
+            "cash": self.cash,
+            "positions_value": _cents(pos_value),
+            "equity": equity,
+            "positions": len(self.positions),
+        }
+        if self.idle_in_benchmark:
+            row["sweep_value"] = sweep_value
+        self.equity_rows.append(row)
         return equity
 
     def _decide_exits(self, view: MarketView, i: int) -> int:
@@ -629,6 +731,9 @@ class Account:
             for s, o in self.pending.items()
             if o.side == "sell"
         )
+        sweep_proceeds = 0.0
+        if self.idle_in_benchmark and self.sweep_qty:
+            sweep_proceeds = self.sweep_qty * self.last_close.get(self.bench, 0.0) * (1 - cost_rate)
         symbols = self.symbols
         # Only symbols that can record something are visited (see _entry_candidates);
         # the rest are not yet listed or fail a condition outright.
@@ -694,7 +799,7 @@ class Account:
                 self._record(day, sym, SKIP, "zero_quantity", conditions=res, values=vals)
                 continue
             est = qty * c * (1 + cost_rate)
-            available = self.cash + expected_proceeds - committed
+            available = self.cash + expected_proceeds - committed + sweep_proceeds
             if est > available:
                 self._record(
                     day,

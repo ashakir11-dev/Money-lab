@@ -110,6 +110,11 @@ class PortfolioSettings(BaseModel):
     target_allocation: float | None = Field(default=None, gt=0, le=1)
     max_positions: int | None = Field(default=None, ge=1, le=300)
     cost_bps_per_side: float | None = Field(default=None, ge=0, le=500)
+    idle_cash: Literal["cash", "benchmark"] | None = Field(
+        default=None,
+        description="what cash not needed by a position does: stay as cash (default) or be "
+        "held in whole shares of the benchmark, sold at the open when a trade needs the cash",
+    )
 
 
 class EntryFill(BaseModel):
@@ -324,6 +329,7 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "cost_bps_per_side": p.cost_bps_per_side
             if p.cost_bps_per_side is not None
             else s.cost_bps_per_side,
+            "idle_cash": p.idle_cash or "cash",
             "long_only": True,
             "whole_shares": True,
             "one_position_per_symbol": True,
@@ -347,6 +353,12 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "missing_bars": "no trade on a session without a bar; orders wait for the next bar",
         },
     }
+    if p.idle_cash == "benchmark":
+        resolved["execution"]["idle_cash"] = (
+            f"cash not needed by a position is held in whole shares of {resolved['benchmark']}: "
+            "bought at each open with the cash left, sold at the open just before a buy that "
+            "needs the cash; these sweep fills are not trades and use no position slot"
+        )
     return resolved
 
 
@@ -386,7 +398,11 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         exit=exit_rule(exits[0]),
         exits=[exit_rule(e) for e in exits] if len(exits) > 1 else None,
         portfolio=PortfolioSettings(
-            **{k: resolved["portfolio"][k] for k in PortfolioSettings.model_fields}
+            **{
+                k: resolved["portfolio"][k]
+                for k in PortfolioSettings.model_fields
+                if k in resolved["portfolio"]
+            }
         ),
         sizing=SizingRule(id=sizing["id"], params=dict(sizing["params"])) if sizing else None,
         rank_by=RankBy(indicator=ref(rank["indicator"]), order=rank["order"]) if rank else None,
