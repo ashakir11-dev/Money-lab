@@ -1995,6 +1995,12 @@ table.month-grid td.num {
   border-color: var(--accent);
 }
 
+.strategy-rank button > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .rank-index {
   color: var(--ink-3);
   font-family: var(--mono);
