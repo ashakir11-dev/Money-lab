@@ -35,6 +35,16 @@ export function TradeChartDialog({
   const data = chart.loading ? undefined : chart.data;
   const noBars = !!data && data.candles.every((c) => c == null);
   const conditions = (data?.signal.conditions ?? []) as ConditionResult[];
+  const timeframe =
+    data?.timeframe === "1d"
+      ? "1 day"
+      : data?.timeframe === "1h"
+        ? "1 hour"
+        : data?.timeframe === "1min"
+          ? "1 minute"
+          : data?.timeframe
+            ? data.timeframe.replace("min", " minutes")
+            : "";
 
   return (
     <div className="trade-dialog-backdrop">
@@ -51,12 +61,23 @@ export function TradeChartDialog({
           <div className="trade-dialog-grid">
             <div>{noBars ? <p>No bars in this window.</p> : <TradeChartView chart={data} />}</div>
             <aside className="trade-readout">
-              <p>
-                Filled {data.fill.session} · {data.fill.side} @ {money(data.fill.price)}
-              </p>
-              <p>Signal {data.signal.session}</p>
-              <p>{data.signal.reason}</p>
-              <ConditionsTable conditions={conditions} />
+              <dl className="trade-facts">
+                <dt>Timeframe</dt>
+                <dd>{timeframe}</dd>
+                <dt>Filled</dt>
+                <dd>
+                  {data.fill.session.replace("T", " ")} · {data.fill.side} · {money(data.fill.price)}
+                </dd>
+                <dt>Signal</dt>
+                <dd>{data.signal.session.replace("T", " ")}</dd>
+                <dt>Reason</dt>
+                <dd>{data.signal.reason}</dd>
+              </dl>
+              {conditions.length ? (
+                <div className="table-wrap">
+                  <ConditionsTable conditions={conditions} />
+                </div>
+              ) : null}
             </aside>
           </div>
         ) : null}

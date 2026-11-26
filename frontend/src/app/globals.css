@@ -1369,6 +1369,8 @@ button.linkish {
 }
 .trade-dialog {
   width: min(1100px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1390,8 +1392,43 @@ button.linkish {
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 16px;
 }
-.trade-readout p {
-  margin: 0 0 8px;
+.trade-chart svg {
+  overflow: hidden;
+}
+.trade-chart .legend-item i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  flex: none;
+}
+.trade-chart .legend-item .muted {
+  margin-left: 6px;
+}
+.trade-readout {
+  min-width: 0;
+}
+.trade-facts {
+  display: grid;
+  grid-template-columns: 5.75rem minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  font-size: 0.92rem;
+}
+.trade-facts dt {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.7;
+}
+.trade-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 800px) {
   .trade-dialog-grid {
