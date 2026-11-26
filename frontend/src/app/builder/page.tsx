@@ -9,6 +9,7 @@ import { Mark } from "@/components/Mark";
 import { Specimen } from "@/components/Specimen";
 import { ErrorBox, JobStatus, Loading } from "@/components/ui";
 import { api, type Component, type Condition, type Job, type Param, type RunSubmit, type StrategyConfig, waitForJob } from "@/lib/api";
+import { nextVersionName, withRun, type LineageRun } from "@/lib/lineage";
 import { useAsync, useDebounced } from "@/lib/hooks";
 import { SECTORS, sectorSymbols } from "@/lib/sectors";
 
@@ -202,7 +203,7 @@ function fromResolved(r: Resolved): Draft {
   const main = all.find((e) => OWN_EXITS.has(e.kind ?? "holding_period"));
   return {
     ...EMPTY,
-    name: `${r.name ?? "Strategy"} (copy)`,
+    name: r.name ?? "Strategy",
     universe: (r.universe ?? []).join(", "),
     benchmark: r.benchmark ?? "SPY",
     timeframe: asTimeframe(r.timeframe),
@@ -269,6 +270,7 @@ function Builder() {
   const snaps = useAsync(() => api.snapshots(), []);
   const lists = useAsync(() => api.watchlists(), []);
   const source = useAsync(() => api.run(from), [from], !!from);
+  const prior = useAsync(() => api.runs(), [], !!from);
   const parentEq = useAsync(() => api.equity(from), [from], !!from);
 
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -287,8 +289,15 @@ function Builder() {
     if (ready || !comps.data || !snaps.data) return;
     if (from) {
       const src = source.data;
-      if (!src) return;
+      if (!src || (!prior.data && !prior.error)) return;
       const next = fromResolved(src.resolved as Resolved);
+      const known = withRun<LineageRun>(prior.data ?? [], {
+        id: src.id,
+        parent_id: src.parent_id,
+        name: src.name,
+        created_at: src.created_at,
+      });
+      next.name = nextVersionName(known, from);
       const s = snaps.data.find((x) => x.id === src.snapshot_id) ?? snaps.data[0];
       if (s) {
         if (!next.start) next.start = s.first_date;
@@ -315,7 +324,7 @@ function Builder() {
       setSnapshot(first?.id ?? "");
     }
     setReady(true);
-  }, [ready, comps.data, snaps.data, source.data, from, byId, defaults.data]);
+  }, [ready, comps.data, snaps.data, source.data, prior.data, prior.error, from, byId, defaults.data]);
 
   const config = useMemo(() => (comps.data ? toConfig(draft, byId) : undefined), [draft, byId, comps.data]);
   const body: RunSubmit | undefined = config

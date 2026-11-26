@@ -21,6 +21,7 @@ import {
 } from "@/lib/analysis";
 import { api, waitForJob, type DecisionRow, type Job, type RunMetrics, type RunSummary, type Watchlist } from "@/lib/api";
 import { int, money, pct, versusSpy, when } from "@/lib/format";
+import { rootId, versionNumber } from "@/lib/lineage";
 import { metricStats } from "@/lib/reportMetrics";
 import { useAsync } from "@/lib/hooks";
 
@@ -54,6 +55,18 @@ function RunPicker({ runs, id }: { runs: RunSummary[]; id: string }) {
         ))}
       </select>
     </div>
+  );
+}
+
+function FamilyCaption({ runs, id }: { runs: RunSummary[]; id: string }) {
+  const root = rootId(runs, id);
+  if (root === id) return null;
+  const name = runs.find((run) => run.id === root)?.name ?? root;
+  return (
+    <>
+      {" "}
+      · v{versionNumber(runs, id)} of <Link href={`/report?id=${encodeURIComponent(root)}`}>{name}</Link>
+    </>
   );
 }
 
@@ -217,12 +230,7 @@ function ReportView() {
       <p className="caption">
         <Badge kind={r.source_kind}>{r.source_label}</Badge> · {r.snapshot_name} ·{" "}
         <span data-testid="run-timeframe">{String((r.resolved as { timeframe?: string }).timeframe ?? "1d")} bars</span> · <code>{r.id}</code> · {r.engine_version} · {when(r.created_at)}
-        {r.parent_id ? (
-          <>
-            {" "}
-            · copy of <Link href={`/report?id=${encodeURIComponent(r.parent_id)}`}>{parent.data?.name ?? r.parent_id}</Link>
-          </>
-        ) : null}
+        {r.parent_id && list.data ? <FamilyCaption runs={list.data} id={id} /> : null}
       </p>
       <p className="plain-summary" data-testid="run-summary">
         {r.summary}

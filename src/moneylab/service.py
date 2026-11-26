@@ -36,6 +36,7 @@ from moneylab.engine.batch import Job, SnapshotInfo, run_jobs, run_one
 from moneylab.engine.config import StrategyConfig, check_versions, config_hash, resolve
 from moneylab.engine.reporting import config_diff, first_difference
 from moneylab.engine.simulator import RunResult
+from moneylab.lineage import next_version_name
 from moneylab.paper.desk import PaperDesk
 from moneylab.settings import Settings, get_settings
 from moneylab.store import RunStore
@@ -293,12 +294,13 @@ class Lab:
         """Re-run a saved run exactly as resolved: same settings, data and versions.
 
         Current defaults are not consulted. Refuses if a component or the engine has a
-        different version than the one the original run used.
+        different version than the one the original run used. The new run is named with
+        the next number in the original's family unless ``name`` is given.
         """
         orig = self.store.get(run_id)
         resolved = {k: v for k, v in orig["resolved"].items() if k != "data"}
         check_versions(resolved)
-        resolved["name"] = name or f"{resolved['name']} (duplicate)"
+        resolved["name"] = name or next_version_name(self.store.list_runs(), run_id)
         return self.execute(resolved, orig["snapshot_id"], parent_id=run_id)
 
     def market_data(

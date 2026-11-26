@@ -213,6 +213,7 @@ class RunSummary(BaseModel):
     summary: str
     total_return: float | None
     benchmark_return: float | None
+    benchmark_symbol: str | None
     max_drawdown: float | None
     sharpe: float | None
     trades: int | None
@@ -381,6 +382,10 @@ def _num(v: Any) -> float | None:
     return float(v) if isinstance(v, int | float) and math.isfinite(v) else None
 
 
+def _symbol(v: Any) -> str | None:
+    return v if isinstance(v, str) and v else None
+
+
 def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> dict[str, Any]:
     m = full.get("metrics") or {}
     res = full.get("resolved") or {}
@@ -399,6 +404,7 @@ def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> d
         "summary": strategy_summary(res),
         "total_return": _num(m.get("total_return")),
         "benchmark_return": _num(bench.get("total_return")),
+        "benchmark_symbol": _symbol(bench.get("symbol") or res.get("benchmark")),
         "max_drawdown": _num(m.get("max_drawdown")),
         "sharpe": _num(m.get("sharpe")),
         "trades": m.get("trades"),
