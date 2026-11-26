@@ -2,16 +2,56 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
-import { FirstDifferenceReadout } from "@/components/FirstDiff";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
+import { EquityChart } from "@/components/EquityChart";
 import { Specimen } from "@/components/Specimen";
-import { FillsTable } from "@/components/tables";
+import { PairedStats } from "@/components/StatBreakdown";
+import { TradeChartDialog } from "@/components/TradeChartDialog";
+import { DecisionsTable, FillsTable } from "@/components/tables";
+import { RunTracker } from "@/components/RunTracker";
 import { Badge, ErrorBox, Loading } from "@/components/ui";
-import { LowSample, signed } from "@/components/Analysis";
-import { fillBreakdown, pnlSummary } from "@/lib/analysis";
-import { api, type EquityRow, type FirstDifference, type RunMetrics, type RunSummary } from "@/lib/api";
-import { int, money, num, pct, plain, pp, sharpe, versusSpy, versusSpyDollars } from "@/lib/format";
+import {
+  drawdownSeries,
+  fillBreakdown,
+  ownFills,
+  pnlSummary,
+  reasonCounts,
+  roundTrips,
+  timeInMarket,
+  type RoundTrip,
+} from "@/lib/analysis";
+import {
+  api,
+  type DecisionRow,
+  type EquityRow,
+  type FillRow,
+  type RunDetail,
+  type RunMetrics,
+  type RunSummary,
+  type Watchlist,
+} from "@/lib/api";
+import { int, money, pct, versusSpy, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
+import { pairedMetrics, type SideMetrics } from "@/lib/reportMetrics";
+
+const PAGE = 50;
+const ACTIONS = [
+  { value: "", label: "Trading decisions (buy, sell, skip)" },
+  { value: "enter", label: "Buy orders" },
+  { value: "exit", label: "Sell orders" },
+  { value: "skip", label: "Skips" },
+  { value: "no_signal", label: "Near misses" },
+  { value: "ineligible", label: "Not eligible" },
+  { value: "all", label: "Everything" },
+];
+
+type ResolvedRun = {
+  benchmark?: string;
+  timeframe?: string;
+  portfolio?: { starting_cash?: number };
+  exit?: { kind?: string };
+  watchlist?: Watchlist;
+};
 
 function defaultPair(runs: RunSummary[]): [string, string] | null {
   if (runs.length < 2) return null;
@@ -46,13 +86,7 @@ function humanSetting(path: string): string {
       .replace(/\s*id$/, "")
       .trim();
     const word =
-      rest === "value"
-        ? "threshold"
-        : rest === "op"
-          ? "comparison"
-          : rest === "pct"
-            ? "percent"
-            : rest || "setting";
+      rest === "value" ? "threshold" : rest === "op" ? "comparison" : rest === "pct" ? "percent" : rest || "setting";
     return `${kind} ${n} ${word}`;
   }
   return path.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -65,51 +99,68 @@ function showSetting(path: string, v: unknown): string {
   return show(v);
 }
 
-function signedOrBlank(v: number | null): string {
-  return typeof v === "number" ? signed(v) : "";
-}
-
 function startCash(resolved: Record<string, unknown> | undefined): number {
   const pf = resolved?.portfolio as { starting_cash?: number } | undefined;
   return pf?.starting_cash ?? 100000;
 }
 
-function spyTone(symbol: string, strategy: number | null | undefined, spy: number | null | undefined): string {
-  if (symbol !== "SPY" || typeof strategy !== "number" || typeof spy !== "number") return "num";
-  return strategy >= spy ? "num pos" : "num neg";
+function benchNameOf(metrics: RunMetrics, resolved: ResolvedRun | undefined): string {
+  return String(metrics.benchmark?.symbol || resolved?.benchmark || "SPY").toUpperCase();
 }
 
-function dollarTone(symbol: string, delta: number | null | undefined): string {
-  if (symbol !== "SPY" || typeof delta !== "number") return "num";
-  return delta >= 0 ? "num pos" : "num neg";
+function sideOf(
+  run: RunDetail,
+  fills: FillRow[],
+  equity: EquityRow[],
+): SideMetrics {
+  const resolved = run.resolved as ResolvedRun;
+  const m = run.metrics as RunMetrics;
+  return {
+    benchName: benchNameOf(m, resolved),
+    m,
+    b: m.benchmark ?? {},
+    pnl: pnlSummary(fills, equity, m, startCash(run.resolved as Record<string, unknown>)),
+    inMkt: timeInMarket(equity),
+    an: run.analysis ?? null,
+  };
 }
 
-function benchSymbol(metrics: RunMetrics, resolved: unknown): string {
-  const fromRun = (resolved as { benchmark?: string } | undefined)?.benchmark;
-  return String(metrics.benchmark?.symbol || fromRun || "SPY").toUpperCase();
+function valueOn(
+  by: Map<string, EquityRow>,
+  sessions: string[],
+  pick: (row: EquityRow) => number | null | undefined,
+): (number | null)[] {
+  return sessions.map((session) => {
+    const row = by.get(session);
+    if (!row) return null;
+    const value = pick(row);
+    return typeof value === "number" ? value : null;
+  });
 }
 
-/** Buy-and-hold SPY on the shared date axis. One line when both runs share that path. */
-function spySeries(
+/** Dashed benchmark paths. One line when both runs share it. */
+function referenceSeries(
   sessions: string[],
   byA: Map<string, EquityRow>,
   byB: Map<string, EquityRow>,
   symbolA: string,
   symbolB: string,
+  pick: (row: EquityRow) => number | null | undefined,
 ): { name: string; values: (number | null)[]; color: string; dashed: true }[] {
-  const aVals = sessions.map((s) => (symbolA === "SPY" ? (byA.get(s)?.benchmark_equity ?? null) : null));
-  const bVals = sessions.map((s) => (symbolB === "SPY" ? (byB.get(s)?.benchmark_equity ?? null) : null));
-  if (symbolA !== "SPY" && symbolB !== "SPY") return [];
+  const aVals = valueOn(byA, sessions, pick);
+  const bVals = valueOn(byB, sessions, pick);
   const same = sessions.every((_, i) => {
     const x = aVals[i];
     const y = bVals[i];
     if (typeof x !== "number" || typeof y !== "number") return true;
     return Math.abs(x - y) < 0.05;
   });
-  if (symbolA !== "SPY" || symbolB !== "SPY" || same) {
+  const nameA = symbolA === "SPY" ? "SPY" : symbolA;
+  const nameB = symbolB === "SPY" ? "SPY" : symbolB;
+  if (symbolA === symbolB && same) {
     return [
       {
-        name: "SPY",
+        name: nameA,
         values: sessions.map((_, i) => (typeof aVals[i] === "number" ? aVals[i] : bVals[i])),
         color: "var(--series-bench)",
         dashed: true,
@@ -117,9 +168,40 @@ function spySeries(
     ];
   }
   return [
-    { name: "SPY (A)", values: aVals, color: "var(--series-bench)", dashed: true },
-    { name: "SPY (B)", values: bVals, color: "var(--ink-2)", dashed: true },
+    { name: `${nameA} (A)`, values: aVals, color: "var(--series-bench)", dashed: true },
+    { name: `${nameB} (B)`, values: bVals, color: "var(--ink-2)", dashed: true },
   ];
+}
+
+function exposureOn(by: Map<string, EquityRow>, sessions: string[]): (number | null)[] {
+  return sessions.map((session) => {
+    const row = by.get(session);
+    if (!row?.equity) return null;
+    return row.positions_value / row.equity;
+  });
+}
+
+function tripKey(trip: RoundTrip): string {
+  return [trip.symbol, trip.entrySession, trip.exitSession, trip.qty, trip.entryPrice.toFixed(4), trip.exitPrice.toFixed(4)].join("|");
+}
+
+function fillKey(fill: FillRow): string {
+  return [fill.session, fill.symbol, fill.side, fill.qty, fill.price].join("|");
+}
+
+/** True when this row has no unused match on the other side. */
+function onlyHere<T>(rows: T[], other: T[], key: (row: T) => string): boolean[] {
+  const left = new Map<string, number>();
+  for (const row of other) left.set(key(row), (left.get(key(row)) ?? 0) + 1);
+  return rows.map((row) => {
+    const id = key(row);
+    const n = left.get(id) ?? 0;
+    if (n > 0) {
+      left.set(id, n - 1);
+      return false;
+    }
+    return true;
+  });
 }
 
 function RunPicker({
@@ -149,6 +231,142 @@ function RunPicker({
   );
 }
 
+function RunLead({ label, run }: { label: "A" | "B"; run: RunDetail }) {
+  const m = run.metrics as RunMetrics;
+  const b = m.benchmark ?? {};
+  const resolved = run.resolved as ResolvedRun;
+  const benchName = benchNameOf(m, resolved);
+  return (
+    <div>
+      <h2>
+        <span className={label === "A" ? "side-a" : "side-b"}>{label}</span>{" "}
+        <Link href={`/report?id=${encodeURIComponent(run.id)}`}>{run.name}</Link>
+      </h2>
+      <p className="lead">
+        {pct(m.total_return, true)} · {versusSpy(m.total_return, b.total_return, benchName)} · drawdown {pct(m.max_drawdown)}
+      </p>
+      <p className="caption">
+        <Badge kind={run.source_kind}>{run.source_label}</Badge> · {run.snapshot_name} · {resolved.timeframe ?? "1d"} bars ·{" "}
+        <code>{run.id}</code> · {run.engine_version} · {when(run.created_at)}
+      </p>
+      <p className="plain-summary">{run.summary}</p>
+    </div>
+  );
+}
+
+function BenchFacts({ label, run }: { label: string; run: RunDetail }) {
+  const m = run.metrics as RunMetrics;
+  const b = m.benchmark ?? {};
+  const resolved = run.resolved as ResolvedRun;
+  const benchName = benchNameOf(m, resolved);
+  const wl = resolved.watchlist;
+  return (
+    <p className="caption">
+      <strong>{label}.</strong> Open positions at the end: {int(m.open_positions ?? 0)}
+      {b.invested_session ? (
+        <>
+          {" "}
+          · {benchName === "SPY" ? "SPY" : benchName} bought {int(b.shares)} {b.shares === 1 ? "share" : "shares"} at the{" "}
+          {b.invested_session} open for {money(b.price)} each ({money((b.shares ?? 0) * (b.price ?? 0))} invested, {money(b.cost)} in
+          trading costs, {money(b.cash_left)} cash left). The dashed line is that buy-and-hold path.
+          {benchName === "SPY" ? " Beating it means this run finished ahead of the S&P." : ` This run was not scored against SPY.`}
+        </>
+      ) : null}
+      {wl?.created_at ? (
+        <>
+          {" "}
+          · Watchlist {wl.name} v{wl.version} selected {wl.created_at.slice(0, 10)}: a list chosen today describes past performance of
+          today&apos;s picks.
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+function ReasonList({ rows, other, prefix }: { rows: [string, number][]; other: Map<string, number>; prefix?: string }) {
+  if (!rows.length) return <p className="muted">None in this sample.</p>;
+  return (
+    <ul className="plain-list">
+      {rows.slice(0, 6).map(([k, n]) => (
+        <li key={`${prefix ?? ""}${k}`} className={other.get(k) === n ? undefined : "only-side"}>
+          {prefix ? `${prefix} · ` : null}
+          {k} <span className="num">{int(n)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TripTable({
+  trips,
+  only,
+  onOpen,
+}: {
+  trips: RoundTrip[];
+  only: boolean[];
+  onOpen: (decisionId: number, title: string, el: HTMLElement) => void;
+}) {
+  if (!trips.length) return <p className="muted">No closed round trips.</p>;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th className="num">Qty</th>
+            <th className="num">P&L</th>
+            <th className="num">Hold</th>
+            <th className="num">Costs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {trips.map((t, i) => (
+            <tr key={`${t.symbol}-${t.entrySession}-${i}`} className={only[i] ? "only-side" : undefined}>
+              <td>{t.symbol}</td>
+              <td>
+                {t.entryDecisionId != null ? (
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={(e) => onOpen(t.entryDecisionId as number, `${t.symbol} buy · ${t.entrySession}`, e.currentTarget)}
+                  >
+                    {t.entrySession} @ {money(t.entryPrice)}
+                  </button>
+                ) : (
+                  <>
+                    {t.entrySession} @ {money(t.entryPrice)}
+                  </>
+                )}
+              </td>
+              <td>
+                {t.exitDecisionId != null ? (
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={(e) => onOpen(t.exitDecisionId as number, `${t.symbol} sell · ${t.exitSession}`, e.currentTarget)}
+                  >
+                    {t.exitSession} @ {money(t.exitPrice)}
+                  </button>
+                ) : (
+                  <>
+                    {t.exitSession} @ {money(t.exitPrice)}
+                  </>
+                )}
+              </td>
+              <td className="num">{int(t.qty)}</td>
+              <td className={`num ${t.pnl >= 0 ? "pos" : "neg"}`}>{money(t.pnl)}</td>
+              <td className="num">{t.holdSessions != null ? `${int(t.holdSessions)} sess` : "–"}</td>
+              <td className="num">{money(t.costs)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function CompareView() {
   const params = useSearchParams();
   const router = useRouter();
@@ -161,13 +379,51 @@ function CompareView() {
   const fillsB = useAsync(() => api.fills(b), [b], !!b);
   const eqA = useAsync(() => api.equity(a), [a], !!a);
   const eqB = useAsync(() => api.equity(b), [b], !!b);
+  const tradesA = useAsync(() => api.trades(a), [a], !!a);
+  const tradesB = useAsync(() => api.trades(b), [b], !!b);
   const [detailed, setDetailed] = useState(false);
+  const [action, setAction] = useState("");
+  const [symbol, setSymbol] = useState("");
+  const [offsetA, setOffsetA] = useState(0);
+  const [offsetB, setOffsetB] = useState(0);
+  const actionFilter = action === "all" ? undefined : action ? [action] : ["enter", "exit", "skip"];
+  const skipsA = useAsync(() => api.decisions(a, { action: ["skip"], limit: 1000 }), [a], !!a && detailed);
+  const skipsB = useAsync(() => api.decisions(b, { action: ["skip"], limit: 1000 }), [b], !!b && detailed);
+  const nearA = useAsync(() => api.decisions(a, { action: ["no_signal"], limit: 500 }), [a], !!a && detailed);
+  const nearB = useAsync(() => api.decisions(b, { action: ["no_signal"], limit: 500 }), [b], !!b && detailed);
+  const decisionsA = useAsync(
+    () => api.decisions(a, { offset: offsetA, limit: PAGE, action: actionFilter, symbol: symbol || undefined }),
+    [a, action, symbol, offsetA],
+    !!a && detailed,
+  );
+  const decisionsB = useAsync(
+    () => api.decisions(b, { offset: offsetB, limit: PAGE, action: actionFilter, symbol: symbol || undefined }),
+    [b, action, symbol, offsetB],
+    !!b && detailed,
+  );
+  const opener = useRef<HTMLElement | null>(null);
+  const [chartPick, setChartPick] = useState<{ runId: string; decisionId: number; title: string } | null>(null);
+  const openChart = useCallback((runId: string, decisionId: number, title: string, el: HTMLElement) => {
+    opener.current = el;
+    setChartPick({ runId, decisionId, title });
+  }, []);
+  const closeChart = useCallback(() => {
+    setChartPick(null);
+    opener.current?.focus();
+  }, []);
 
   function pick(next: { a?: string; b?: string }) {
     const na = next.a ?? a;
     const nb = next.b ?? b;
+    setOffsetA(0);
+    setOffsetB(0);
     router.replace(`/compare?a=${encodeURIComponent(na)}&b=${encodeURIComponent(nb)}`);
   }
+
+  const skipReasonsA = useMemo(() => reasonCounts((skipsA.data?.rows ?? []) as DecisionRow[]), [skipsA.data]);
+  const skipReasonsB = useMemo(() => reasonCounts((skipsB.data?.rows ?? []) as DecisionRow[]), [skipsB.data]);
+  const nearReasonsA = useMemo(() => reasonCounts((nearA.data?.rows ?? []) as DecisionRow[]), [nearA.data]);
+  const nearReasonsB = useMemo(() => reasonCounts((nearB.data?.rows ?? []) as DecisionRow[]), [nearB.data]);
 
   if (runs.error) return <ErrorBox error={runs.error} title="Could not load runs" />;
   if (!runs.data) return <Loading what="Loading runs" />;
@@ -175,6 +431,7 @@ function CompareView() {
     return (
       <div className="bench">
         <h1>Compare</h1>
+        {runs.data.length ? <RunTracker runs={runs.data} /> : null}
         <p className="muted">
           You need at least two runs. Open a report and use <em>Duplicate and edit</em>, or build one in the{" "}
           <Link href="/builder">Builder</Link>.
@@ -183,58 +440,28 @@ function CompareView() {
     );
 
   const c = cmp.data;
-  const fd = (c?.first_difference ?? null) as FirstDifference | null;
-  const ma = (c?.a.metrics ?? {}) as RunMetrics;
-  const mb = (c?.b.metrics ?? {}) as RunMetrics;
-  const benchA = ma.benchmark ?? {};
-  const benchB = mb.benchmark ?? {};
-  const symbolA = c ? benchSymbol(ma, c.a.resolved) : "SPY";
-  const symbolB = c ? benchSymbol(mb, c.b.resolved) : "SPY";
   const sessions = Array.from(new Set([...(eqA.data ?? []).map((e) => e.session), ...(eqB.data ?? []).map((e) => e.session)])).sort();
   const byA = new Map((eqA.data ?? []).map((e) => [e.session, e]));
   const byB = new Map((eqB.data ?? []).map((e) => [e.session, e]));
+  const sideA = c ? sideOf(c.a, fillsA.data ?? [], eqA.data ?? []) : null;
+  const sideB = c ? sideOf(c.b, fillsB.data ?? [], eqB.data ?? []) : null;
+  const metrics = sideA && sideB ? pairedMetrics(sideA, sideB) : [];
+  const bothSpy = sideA?.benchName === "SPY" && sideB?.benchName === "SPY";
+  const tripsA = roundTrips(tradesA.data ?? []);
+  const tripsB = roundTrips(tradesB.data ?? []);
+  const onlyA = onlyHere(tripsA, tripsB, tripKey);
+  const onlyB = onlyHere(tripsB, tripsA, tripKey);
+  const fillsOnlyA = onlyHere(fillsA.data ?? [], fillsB.data ?? [], fillKey);
+  const fillsOnlyB = onlyHere(fillsB.data ?? [], fillsA.data ?? [], fillKey);
   const brA = fillBreakdown(fillsA.data ?? []);
   const brB = fillBreakdown(fillsB.data ?? []);
-  const pnlA = pnlSummary(fillsA.data ?? [], eqA.data ?? [], ma, startCash(c?.a.resolved as Record<string, unknown>));
-  const pnlB = pnlSummary(fillsB.data ?? [], eqB.data ?? [], mb, startCash(c?.b.resolved as Record<string, unknown>));
-
-  const delta = (x: number | null | undefined, y: number | null | undefined) =>
-    typeof x === "number" && typeof y === "number" ? y - x : null;
-  const bn = symbolA === symbolB ? symbolA : "the benchmark";
-  const aa = c?.a.analysis ?? null;
-  const ab = c?.b.analysis ?? null;
-  // One row of the statistics table: the value for each run and B − A.
-  const statRow = (
-    label: string,
-    va: number | null | undefined,
-    vb: number | null | undefined,
-    kind: "pct" | "ratio" | "int" | "years",
-    help?: string,
-  ) => {
-    const fmt = (v: number | null | undefined) =>
-      kind === "pct" ? pct(v) : kind === "int" ? int(v) : kind === "years" ? (typeof v === "number" ? `${int(v)} sessions` : "–") : num(v);
-    const d =
-      kind === "pct"
-        ? pp(vb, va)
-        : kind === "ratio"
-          ? typeof va === "number" && typeof vb === "number"
-            ? signed(vb - va)
-            : ""
-          : typeof va === "number" && typeof vb === "number"
-            ? `${vb - va > 0 ? "+" : ""}${int(vb - va)}`
-            : "";
-    return (
-      <tr key={label} title={help}>
-        <td>{label}</td>
-        <td className="num">{fmt(va)}</td>
-        <td className="num">{fmt(vb)}</td>
-        <td className="num">{d}</td>
-      </tr>
-    );
-  };
+  const signalA = (c?.a.resolved as ResolvedRun | undefined)?.exit?.kind === "signal";
+  const signalB = (c?.b.resolved as ResolvedRun | undefined)?.exit?.kind === "signal";
+  const buyCost = (fills: FillRow[]) => ownFills(fills).filter((f) => f.side === "buy").reduce((s, f) => s + f.cost, 0);
 
   return (
     <div className="bench">
+      <RunTracker runs={runs.data} />
       <div className="picker-bar">
         <RunPicker id="compare-a" label="A" value={a} runs={runs.data} onChange={(v) => pick({ a: v })} />
         <RunPicker id="compare-b" label="B" value={b} runs={runs.data} onChange={(v) => pick({ b: v })} />
@@ -254,12 +481,12 @@ function CompareView() {
       <ErrorBox error={cmp.error} title="Could not compare these runs" />
       {cmp.loading && !c ? <Loading what="Comparing" /> : null}
 
-      {c ? (
+      {c && sideA && sideB ? (
         <>
           {c.data_differs ? (
             <p className="notice">
-              Different price data. A: <Badge kind={c.a.source_kind}>{c.a.source_label}</Badge> {c.a.snapshot_name}{" "}
-              B: <Badge kind={c.b.source_kind}>{c.b.source_label}</Badge> {c.b.snapshot_name}
+              Different price data. A: <Badge kind={c.a.source_kind}>{c.a.source_label}</Badge> {c.a.snapshot_name} B:{" "}
+              <Badge kind={c.b.source_kind}>{c.b.source_label}</Badge> {c.b.snapshot_name}
             </p>
           ) : null}
 
@@ -280,273 +507,309 @@ function CompareView() {
             </p>
           )}
 
+          <div className="compare-leads" data-testid="compare-leads">
+            <RunLead label="A" run={c.a} />
+            <RunLead label="B" run={c.b} />
+          </div>
+
           {sessions.length >= 2 ? (
             <Specimen
               dates={sessions}
               series={[
-                { name: c.a.name, values: sessions.map((s) => byA.get(s)?.equity ?? null), color: "var(--series-1)" },
-                { name: c.b.name, values: sessions.map((s) => byB.get(s)?.equity ?? null), color: "var(--series-2)" },
-                ...spySeries(sessions, byA, byB, symbolA, symbolB),
+                { name: c.a.name, values: valueOn(byA, sessions, (e) => e.equity), color: "var(--series-1)" },
+                { name: c.b.name, values: valueOn(byB, sessions, (e) => e.equity), color: "var(--series-2)" },
+                ...referenceSeries(sessions, byA, byB, sideA.benchName, sideB.benchName, (e) => e.benchmark_equity),
               ]}
-              pinDate={fd?.session}
               caption={[
-                fd ? `${fd.session} · ${fd.symbol}` : null,
-                symbolA === "SPY" ? `A ${versusSpy(ma.total_return, benchA.total_return).replace(/^./, (c) => c.toLowerCase())}` : `A benchmark is ${symbolA}, not SPY`,
-                symbolB === "SPY" ? `B ${versusSpy(mb.total_return, benchB.total_return).replace(/^./, (c) => c.toLowerCase())}` : `B benchmark is ${symbolB}, not SPY`,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            >
-              <FirstDifferenceReadout fd={fd} a={c.a} b={c.b} />
-            </Specimen>
+                `A ${versusSpy(sideA.m.total_return, sideA.b.total_return, sideA.benchName)}`,
+                `B ${versusSpy(sideB.m.total_return, sideB.b.total_return, sideB.benchName)}`,
+                bothSpy ? "Dashed line is buy-and-hold SPY, the S&P" : "Dashed lines are each run's buy-and-hold benchmark",
+              ].join(" · ")}
+            />
+          ) : eqA.loading || eqB.loading ? (
+            <div className="specimen-well specimen-wait" />
           ) : (
-            <>
-              {eqA.loading || eqB.loading ? (
-                <div className="specimen-well specimen-wait" />
-              ) : (
-                <p className="muted">Not enough equity points to draw a specimen.</p>
-              )}
-              <FirstDifferenceReadout fd={fd} a={c.a} b={c.b} />
-            </>
+            <p className="muted">Not enough equity points to draw a specimen.</p>
           )}
 
           <section className="stack-block">
-            <h2>Breakdown</h2>
-            <div className="table-wrap">
-              <table className="pair">
-                <thead>
-                  <tr>
-                    <th></th>
-                    <th className="num side-a">A</th>
-                    <th className="num side-b">B</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Buys / sells</td>
-                    <td className="num">
-                      {int(brA.buys)} / {int(brA.sells)}
-                    </td>
-                    <td className="num">
-                      {int(brB.buys)} / {int(brB.sells)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Symbols traded</td>
-                    <td className="num">{brA.symbols.length ? brA.symbols.join(", ") : "–"}</td>
-                    <td className="num">{brB.symbols.length ? brB.symbols.join(", ") : "–"}</td>
-                  </tr>
-                  <tr>
-                    <td>Still open</td>
-                    <td className="num">{brA.held.length ? brA.held.join(", ") : int(0)}</td>
-                    <td className="num">{brB.held.length ? brB.held.join(", ") : int(0)}</td>
-                  </tr>
-                  <tr>
-                    <td>Costs</td>
-                    <td className="num">{money(brA.costs)}</td>
-                    <td className="num">{money(brB.costs)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="stack-block">
-            <h2>Statistics</h2>
-            <div className="table-wrap">
-              <table className="pair">
-                <thead>
-                  <tr>
-                    <th></th>
-                    <th className="num side-a">
-                      <Link href={`/report?id=${encodeURIComponent(c.a.id)}`}>A</Link>
-                    </th>
-                    <th className="num side-b">
-                      <Link href={`/report?id=${encodeURIComponent(c.b.id)}`}>B</Link>
-                    </th>
-                    <th className="num">B − A</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Return</td>
-                    <td className="num">{pct(ma.total_return)}</td>
-                    <td className="num">{pct(mb.total_return)}</td>
-                    <td className="num">{pp(mb.total_return, ma.total_return)}</td>
-                  </tr>
-                  <tr>
-                    <td>SPY return</td>
-                    <td className="num">{symbolA === "SPY" ? pct(benchA.total_return) : "–"}</td>
-                    <td className="num">{symbolB === "SPY" ? pct(benchB.total_return) : "–"}</td>
-                    <td className="num">
-                      {symbolA === "SPY" && symbolB === "SPY" ? pp(benchB.total_return, benchA.total_return) : ""}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>vs SPY</td>
-                    <td className={spyTone(symbolA, ma.total_return, benchA.total_return)}>
-                      {symbolA === "SPY" ? versusSpy(ma.total_return, benchA.total_return) : `Benchmark is ${plain(symbolA)}`}
-                    </td>
-                    <td className={spyTone(symbolB, mb.total_return, benchB.total_return)}>
-                      {symbolB === "SPY" ? versusSpy(mb.total_return, benchB.total_return) : `Benchmark is ${plain(symbolB)}`}
-                    </td>
-                    <td className="num">
-                      {symbolA === "SPY" && symbolB === "SPY"
-                        ? pp(
-                            typeof mb.total_return === "number" && typeof benchB.total_return === "number"
-                              ? mb.total_return - benchB.total_return
-                              : null,
-                            typeof ma.total_return === "number" && typeof benchA.total_return === "number"
-                              ? ma.total_return - benchA.total_return
-                              : null,
-                          )
-                        : ""}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Max drawdown</td>
-                    <td className="num">{pct(ma.max_drawdown)}</td>
-                    <td className="num">{pct(mb.max_drawdown)}</td>
-                    <td className="num">{pp(mb.max_drawdown, ma.max_drawdown)}</td>
-                  </tr>
-                  <tr>
-                    <td>Sharpe</td>
-                    <td className="num">{sharpe(ma.sharpe)}</td>
-                    <td className="num">{sharpe(mb.sharpe)}</td>
-                    <td className="num">{signedOrBlank(delta(ma.sharpe, mb.sharpe))}</td>
-                  </tr>
-                  {aa && ab ? (
-                    <>
-                      {statRow("CAGR (per year)", aa.returns.cagr, ab.returns.cagr, "pct")}
-                      {statRow("Win rate", aa.trades.win_rate, ab.trades.win_rate, "pct")}
-                      {statRow("Profit factor", aa.trades.profit_factor, ab.trades.profit_factor, "ratio")}
-                      {statRow(`Edge per trade vs ${bn}`, aa.edge.mean, ab.edge.mean, "pct")}
-                      {statRow("Edge t-statistic", aa.edge.t_stat, ab.edge.t_stat, "ratio")}
-                      {statRow("Sortino", aa.returns.sortino, ab.returns.sortino, "ratio")}
-                      {statRow("Calmar", aa.returns.calmar, ab.returns.calmar, "ratio")}
-                      <tr>
-                        <td>Closed trades</td>
-                        <td className="num">
-                          {int(aa.trades.count)} <LowSample trades={aa.trades.count} />
-                        </td>
-                        <td className="num">
-                          {int(ab.trades.count)} <LowSample trades={ab.trades.count} />
-                        </td>
-                        <td className="num">{`${ab.trades.count - aa.trades.count > 0 ? "+" : ""}${int(ab.trades.count - aa.trades.count)}`}</td>
-                      </tr>
-                    </>
-                  ) : null}
-                  <tr>
-                    <td>P&L</td>
-                    <td className={`num ${pnlA.total >= 0 ? "pos" : "neg"}`}>{money(pnlA.total)}</td>
-                    <td className={`num ${pnlB.total >= 0 ? "pos" : "neg"}`}>{money(pnlB.total)}</td>
-                    <td className="num">{money(delta(pnlA.total, pnlB.total))}</td>
-                  </tr>
-                  <tr>
-                    <td>vs SPY $</td>
-                    <td className={dollarTone(symbolA, pnlA.vsBenchmark)}>
-                      {symbolA === "SPY" ? versusSpyDollars(pnlA.vsBenchmark) : "–"}
-                    </td>
-                    <td className={dollarTone(symbolB, pnlB.vsBenchmark)}>
-                      {symbolB === "SPY" ? versusSpyDollars(pnlB.vsBenchmark) : "–"}
-                    </td>
-                    <td className="num">
-                      {symbolA === "SPY" && symbolB === "SPY" ? money(delta(pnlA.vsBenchmark, pnlB.vsBenchmark)) : ""}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Final equity</td>
-                    <td className="num">{money(ma.final_equity)}</td>
-                    <td className="num">{money(mb.final_equity)}</td>
-                    <td className="num">{money(delta(ma.final_equity, mb.final_equity))}</td>
-                  </tr>
-                  {detailed ? (
-                    <>
-                      <tr>
-                        <td>Realized P&L</td>
-                        <td className="num">{money(pnlA.realized)}</td>
-                        <td className="num">{money(pnlB.realized)}</td>
-                        <td className="num">{money(delta(pnlA.realized, pnlB.realized))}</td>
-                      </tr>
-                      <tr>
-                        <td>Unrealized P&L</td>
-                        <td className="num">{money(pnlA.unrealized)}</td>
-                        <td className="num">{money(pnlB.unrealized)}</td>
-                        <td className="num">{money(delta(pnlA.unrealized, pnlB.unrealized))}</td>
-                      </tr>
-                      <tr>
-                        <td>Avg exposure</td>
-                        <td className="num">{pct(ma.avg_exposure)}</td>
-                        <td className="num">{pct(mb.avg_exposure)}</td>
-                        <td className="num">{pp(mb.avg_exposure, ma.avg_exposure)}</td>
-                      </tr>
-                      {aa && ab ? (
-                        <>
-                          {statRow(`Trades that beat ${bn}`, aa.edge.beat_rate, ab.edge.beat_rate, "pct")}
-                          {statRow("Volatility (per year)", aa.returns.volatility, ab.returns.volatility, "pct")}
-                          {statRow(`Beta to ${bn}`, aa.market?.beta, ab.market?.beta, "ratio")}
-                          {statRow("Alpha (per year)", aa.market?.alpha, ab.market?.alpha, "pct")}
-                          {statRow("Longest time underwater", aa.drawdown.longest_underwater, ab.drawdown.longest_underwater, "years")}
-                          {statRow("Drops over 10%", aa.drawdown.drawdowns_over_10pct, ab.drawdown.drawdowns_over_10pct, "int")}
-                          {statRow("Turnover per year", aa.costs.turnover, ab.costs.turnover, "ratio")}
-                          {statRow("Costs share of trade profit", aa.costs.share_of_gross_profit, ab.costs.share_of_gross_profit, "pct")}
-                          {statRow("Most losing trades in a row", aa.streaks.max_consecutive_losing_trades, ab.streaks.max_consecutive_losing_trades, "int")}
-                        </>
-                      ) : null}
-                      <tr>
-                        <td>Round trips</td>
-                        <td className="num">{int(ma.trades)}</td>
-                        <td className="num">{int(mb.trades)}</td>
-                        <td className="num">{int(delta(ma.trades, mb.trades))}</td>
-                      </tr>
-                      <tr>
-                        <td>Costs</td>
-                        <td className="num">{money(ma.costs)}</td>
-                        <td className="num">{money(mb.costs)}</td>
-                        <td className="num">{money(delta(ma.costs, mb.costs))}</td>
-                      </tr>
-                      {fd ? (
-                        <>
-                          <tr>
-                            <td>Cash at first difference</td>
-                            <td className="num">{money(fd.impact.cash_a)}</td>
-                            <td className="num">{money(fd.impact.cash_b)}</td>
-                            <td className="num">{money(delta(fd.impact.cash_a, fd.impact.cash_b))}</td>
-                          </tr>
-                          <tr>
-                            <td>Final equity (from fork)</td>
-                            <td className="num">{money(fd.impact.final_equity_a)}</td>
-                            <td className="num">{money(fd.impact.final_equity_b)}</td>
-                            <td className="num">{money(fd.impact.final_equity_delta)}</td>
-                          </tr>
-                        </>
-                      ) : null}
-                    </>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+            <h2>Metrics</h2>
+            <PairedStats
+              aLabel={<Link href={`/report?id=${encodeURIComponent(c.a.id)}`}>A</Link>}
+              bLabel={<Link href={`/report?id=${encodeURIComponent(c.b.id)}`}>B</Link>}
+              rows={metrics.map((row) => ({
+                key: row.key,
+                label: row.label,
+                meaning: row.meaning,
+                a: row.aText,
+                b: row.bText,
+                delta: row.delta,
+                toneA: row.toneA,
+                toneB: row.toneB,
+                changed: row.changed,
+              }))}
+            />
+            <BenchFacts label="A" run={c.a} />
+            <BenchFacts label="B" run={c.b} />
             <p className="caption">
-              SPY is buy-and-hold of the S&P 500 ETF on each run&apos;s own dates, starting cash, and trading costs. Beat
-              SPY means that run finished ahead of the S&P. The B − A column on vs SPY is how much more B beat the S&P
-              than A did. Percent rows show B − A in percentage points; ratio rows show the plain difference. Edge, win
-              rate and profit factor come from closed trades, so runs with fewer than 30 trades are flagged.
+              SPY is buy-and-hold of the S&P 500 ETF on each run&apos;s own dates, starting cash, and trading costs. Beat SPY means that
+              run finished ahead of the S&P. The B − A column is how B differs from A. A shaded metric row is one that differs.
             </p>
           </section>
 
           {detailed ? (
-            <div className="grid-2">
+            <>
+              <div className="grid-2">
+                <section className="stack-block">
+                  <h2>Entries and exits in A</h2>
+                  <p>
+                    {int(brA.buys)} buys · {int(brA.symbols.length)} symbols · notional {money(brA.notionalBuys)} · costs{" "}
+                    {money(buyCost(fillsA.data ?? []))}
+                  </p>
+                  <p className="muted small">{brA.symbols.join(", ") || "None"}</p>
+                  <p>
+                    {int(brA.sells)} sells · notional {money(brA.notionalSells)} · still open {brA.held.length ? brA.held.join(", ") : "none"}
+                  </p>
+                </section>
+                <section className="stack-block">
+                  <h2>Entries and exits in B</h2>
+                  <p>
+                    {int(brB.buys)} buys · {int(brB.symbols.length)} symbols · notional {money(brB.notionalBuys)} · costs{" "}
+                    {money(buyCost(fillsB.data ?? []))}
+                  </p>
+                  <p className="muted small">{brB.symbols.join(", ") || "None"}</p>
+                  <p>
+                    {int(brB.sells)} sells · notional {money(brB.notionalSells)} · still open {brB.held.length ? brB.held.join(", ") : "none"}
+                  </p>
+                </section>
+              </div>
+
+              <div className="grid-2">
+                <section className="stack-block">
+                  <h2>Missed entries in A</h2>
+                  <p>
+                    {int(nearA.data?.total ?? 0)} near-misses · {int(skipsA.data?.total ?? 0)} skips
+                  </p>
+                  <ReasonList rows={nearReasonsA} other={new Map(nearReasonsB)} />
+                  <ReasonList rows={skipReasonsA} other={new Map(skipReasonsB)} prefix="skip" />
+                  <h3 className="sub-head">Missed exits</h3>
+                  {signalA ? (
+                    <p className="muted">Signal exits: no separate missed-exit ledger beyond days the exit conditions did not fire while in a position.</p>
+                  ) : (
+                    <p className="muted">Holding-period exits are scheduled, not missed.</p>
+                  )}
+                </section>
+                <section className="stack-block">
+                  <h2>Missed entries in B</h2>
+                  <p>
+                    {int(nearB.data?.total ?? 0)} near-misses · {int(skipsB.data?.total ?? 0)} skips
+                  </p>
+                  <ReasonList rows={nearReasonsB} other={new Map(nearReasonsA)} />
+                  <ReasonList rows={skipReasonsB} other={new Map(skipReasonsA)} prefix="skip" />
+                  <h3 className="sub-head">Missed exits</h3>
+                  {signalB ? (
+                    <p className="muted">Signal exits: no separate missed-exit ledger beyond days the exit conditions did not fire while in a position.</p>
+                  ) : (
+                    <p className="muted">Holding-period exits are scheduled, not missed.</p>
+                  )}
+                </section>
+              </div>
+
+              <div className="grid-2" data-testid="round-trips">
+                <section className="stack-block">
+                  <h2>Round trips in A</h2>
+                  <TripTable trips={tripsA} only={onlyA} onOpen={(id, title, el) => openChart(c.a.id, id, title, el)} />
+                </section>
+                <section className="stack-block">
+                  <h2>Round trips in B</h2>
+                  <TripTable trips={tripsB} only={onlyB} onOpen={(id, title, el) => openChart(c.b.id, id, title, el)} />
+                </section>
+              </div>
+              <p className="caption">A shaded round trip is one the other run does not have.</p>
+
+              <div className="grid-2">
+                <section className="stack-block">
+                  <h2>Drawdown vs {bothSpy ? "the S&P (SPY)" : "benchmark"}</h2>
+                  {sessions.length ? (
+                    <EquityChart
+                      label="Drawdown"
+                      dates={sessions}
+                      series={[
+                        { name: c.a.name, values: drawdownSeries(valueOn(byA, sessions, (e) => e.equity)), color: "var(--series-1)" },
+                        { name: c.b.name, values: drawdownSeries(valueOn(byB, sessions, (e) => e.equity)), color: "var(--series-2)" },
+                        ...referenceSeries(sessions, byA, byB, sideA.benchName, sideB.benchName, (e) => e.benchmark_equity).map((line) => ({
+                          ...line,
+                          values: drawdownSeries(line.values),
+                        })),
+                      ]}
+                      formatTick={(v) => pct(v)}
+                      formatValue={(v) => pct(v)}
+                    />
+                  ) : (
+                    <Loading />
+                  )}
+                </section>
+                <section className="stack-block">
+                  <h2>Exposure</h2>
+                  {sessions.length ? (
+                    <EquityChart
+                      label="Exposure"
+                      dates={sessions}
+                      series={[
+                        { name: c.a.name, values: exposureOn(byA, sessions), color: "var(--series-1)" },
+                        { name: c.b.name, values: exposureOn(byB, sessions), color: "var(--series-2)" },
+                      ]}
+                      formatTick={(v) => pct(v)}
+                      formatValue={(v) => pct(v)}
+                    />
+                  ) : (
+                    <Loading />
+                  )}
+                  <p className="muted small">
+                    Time in market {pct(sideA.inMkt)} for A and {pct(sideB.inMkt)} for B.{" "}
+                    {bothSpy ? "SPY stays invested the whole time." : "Each benchmark stays invested the whole time."}
+                  </p>
+                </section>
+              </div>
+
+              <div className="grid-2">
+                <section className="stack-block">
+                  <h2>Trades in A</h2>
+                  <ErrorBox error={fillsA.error} />
+                  {fillsA.data ? (
+                    <FillsTable
+                      fills={fillsA.data}
+                      rowClass={(_fill, index) => (fillsOnlyA[index] ? "only-side" : undefined)}
+                      onOpen={(fill, el) => openChart(c.a.id, fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)}
+                    />
+                  ) : (
+                    <Loading />
+                  )}
+                </section>
+                <section className="stack-block">
+                  <h2>Trades in B</h2>
+                  <ErrorBox error={fillsB.error} />
+                  {fillsB.data ? (
+                    <FillsTable
+                      fills={fillsB.data}
+                      rowClass={(_fill, index) => (fillsOnlyB[index] ? "only-side" : undefined)}
+                      onOpen={(fill, el) => openChart(c.b.id, fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)}
+                    />
+                  ) : (
+                    <Loading />
+                  )}
+                </section>
+              </div>
+              <p className="caption">A shaded trade is one the other run does not have. Click a buy or sell to open its chart.</p>
+
               <section className="stack-block">
-                <h2>Trades in A</h2>
-                <ErrorBox error={fillsA.error} />
-                {fillsA.data ? <FillsTable fills={fillsA.data} /> : <Loading />}
+                <div className="section-head">
+                  <h2>Decisions</h2>
+                  <div className="row">
+                    <select
+                      aria-label="Which decisions"
+                      value={action}
+                      onChange={(e) => {
+                        setAction(e.target.value);
+                        setOffsetA(0);
+                        setOffsetB(0);
+                      }}
+                      style={{ width: "auto" }}
+                    >
+                      {ACTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label="Symbol"
+                      placeholder="Symbol"
+                      value={symbol}
+                      onChange={(e) => {
+                        setSymbol(e.target.value.toUpperCase());
+                        setOffsetA(0);
+                        setOffsetB(0);
+                      }}
+                      style={{ width: 110 }}
+                    />
+                  </div>
+                </div>
+                <div className="grid-2">
+                  <div>
+                    <h3 className="sub-head">A</h3>
+                    <ErrorBox error={decisionsA.error} />
+                    {decisionsA.data ? (
+                      <>
+                        <DecisionsTable rows={decisionsA.data.rows as DecisionRow[]} />
+                        <div className="row" style={{ marginTop: 10 }}>
+                          <button disabled={offsetA === 0} onClick={() => setOffsetA(Math.max(0, offsetA - PAGE))}>
+                            Previous
+                          </button>
+                          <span className="muted small">
+                            {decisionsA.data.total === 0
+                              ? "0 rows"
+                              : `${offsetA + 1}–${Math.min(offsetA + PAGE, decisionsA.data.total)} of ${decisionsA.data.total.toLocaleString("en-US")}`}
+                          </span>
+                          <button disabled={offsetA + PAGE >= decisionsA.data.total} onClick={() => setOffsetA(offsetA + PAGE)}>
+                            Next
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <Loading />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="sub-head">B</h3>
+                    <ErrorBox error={decisionsB.error} />
+                    {decisionsB.data ? (
+                      <>
+                        <DecisionsTable rows={decisionsB.data.rows as DecisionRow[]} />
+                        <div className="row" style={{ marginTop: 10 }}>
+                          <button disabled={offsetB === 0} onClick={() => setOffsetB(Math.max(0, offsetB - PAGE))}>
+                            Previous
+                          </button>
+                          <span className="muted small">
+                            {decisionsB.data.total === 0
+                              ? "0 rows"
+                              : `${offsetB + 1}–${Math.min(offsetB + PAGE, decisionsB.data.total)} of ${decisionsB.data.total.toLocaleString("en-US")}`}
+                          </span>
+                          <button disabled={offsetB + PAGE >= decisionsB.data.total} onClick={() => setOffsetB(offsetB + PAGE)}>
+                            Next
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <Loading />
+                    )}
+                  </div>
+                </div>
               </section>
-              <section className="stack-block">
-                <h2>Trades in B</h2>
-                <ErrorBox error={fillsB.error} />
-                {fillsB.data ? <FillsTable fills={fillsB.data} /> : <Loading />}
-              </section>
-            </div>
+
+              <div className="grid-2">
+                <section className="stack-block">
+                  <details>
+                    <summary>Settings as run, A</summary>
+                    <pre className="json">{JSON.stringify(c.a.resolved, null, 2)}</pre>
+                  </details>
+                </section>
+                <section className="stack-block">
+                  <details>
+                    <summary>Settings as run, B</summary>
+                    <pre className="json">{JSON.stringify(c.b.resolved, null, 2)}</pre>
+                  </details>
+                </section>
+              </div>
+              {chartPick ? (
+                <TradeChartDialog
+                  runId={chartPick.runId}
+                  decisionId={chartPick.decisionId}
+                  title={chartPick.title}
+                  onClose={closeChart}
+                />
+              ) : null}
+            </>
           ) : null}
         </>
       ) : null}

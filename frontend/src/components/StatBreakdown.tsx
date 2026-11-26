@@ -51,6 +51,63 @@ function StatHelp({ label, meaning }: { label: string; meaning: string }) {
   );
 }
 
+export type PairedStat = {
+  key: string;
+  label: string;
+  meaning: string;
+  a: ReactNode;
+  b: ReactNode;
+  delta: ReactNode;
+  toneA?: "pos" | "neg";
+  toneB?: "pos" | "neg";
+  changed?: boolean;
+};
+
+function toneClass(tone?: "pos" | "neg"): string {
+  return tone ? `num ${tone}` : "num";
+}
+
+/** A and B for each report statistic, plus how B differs from A. */
+export function PairedStats({
+  rows,
+  aLabel,
+  bLabel,
+}: {
+  rows: PairedStat[];
+  aLabel: ReactNode;
+  bLabel: ReactNode;
+}) {
+  return (
+    <div className="table-wrap">
+      <table className="pair" data-testid="compare-metrics">
+        <thead>
+          <tr>
+            <th></th>
+            <th className="num side-a">{aLabel}</th>
+            <th className="num side-b">{bLabel}</th>
+            <th className="num">B − A</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className={row.changed ? "changed" : undefined}>
+              <td>
+                <span className="pair-label">
+                  {row.label}
+                  <StatHelp label={row.label} meaning={row.meaning} />
+                </span>
+              </td>
+              <td className={toneClass(row.toneA)}>{row.a}</td>
+              <td className={toneClass(row.toneB)}>{row.b}</td>
+              <td className="num">{row.delta}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** One result per statistic. The meaning stays behind the question mark. */
 export function StatBreakdown({ stats }: { stats: StatItem[] }) {
   return (

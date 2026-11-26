@@ -38,6 +38,7 @@ export type PaperAccount = S["PaperAccountOut"];
 export type PaperDetail = S["PaperDetail"];
 export type PaperStart = S["PaperStart"];
 export type Gate = S["GateOut"];
+export type Overview = S["Overview"];
 export type PaperStatus = {
   paper_id: string;
   name: string;
@@ -125,6 +126,7 @@ function qs(params: Record<string, string | number | string[] | undefined | null
 
 export const api = {
   health: () => request<Health>("/api/health"),
+  overview: () => request<Overview>("/api/overview"),
   components: () => request<Component[]>("/api/components"),
   defaults: () => request<Defaults>("/api/defaults"),
   validate: (body: RunSubmit) =>

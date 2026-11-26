@@ -88,7 +88,7 @@ class SnapshotOut(BaseModel):
     source_kind: Literal["real", "demo", "file"]
     source_label: str
     label: str
-    name: str = Field(description="typed label, or source, timeframe, universe and dates")
+    name: str = Field(description="typed label, then source, timeframe, universe and dates")
     timeframe: str = Field(default="1d", description="bar size: 1min, 5min, 15min, 30min, 1h or 1d")
     adjustment: str
     created_at: str
@@ -378,6 +378,7 @@ class RunSummary(BaseModel):
     summary: str
     total_return: float | None
     benchmark_return: float | None
+    benchmark_symbol: str | None
     max_drawdown: float | None
     sharpe: float | None
     trades: int | None
@@ -510,6 +511,29 @@ class PaperAccountOut(BaseModel):
     processed_sessions: int = 0
 
 
+class OverviewBest(BaseModel):
+    run_id: str
+    name: str
+    total_return: float | None
+    pnl: float | None
+    benchmark_symbol: str | None
+    benchmark_return: float | None
+
+
+class OverviewPaper(BaseModel):
+    paper_id: str
+    name: str
+    status: Literal["blocked", "waiting", "caught_up"]
+    detail: str
+
+
+class Overview(BaseModel):
+    snapshots: int
+    strategies: int
+    best: OverviewBest | None
+    paper: OverviewPaper | None
+
+
 class PaperDetail(BaseModel):
     status: dict[str, Any]
     decisions: list[dict[str, Any]]
@@ -560,6 +584,10 @@ def _num(v: Any) -> float | None:
     return float(v) if isinstance(v, int | float) and math.isfinite(v) else None
 
 
+def _symbol(v: Any) -> str | None:
+    return v if isinstance(v, str) and v else None
+
+
 def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> dict[str, Any]:
     m = full.get("metrics") or {}
     res = full.get("resolved") or {}
@@ -578,6 +606,7 @@ def _summary(row: dict[str, Any], full: dict[str, Any], snapshot_name: str) -> d
         "summary": strategy_summary(res),
         "total_return": _num(m.get("total_return")),
         "benchmark_return": _num(bench.get("total_return")),
+        "benchmark_symbol": _symbol(bench.get("symbol") or res.get("benchmark")),
         "max_drawdown": _num(m.get("max_drawdown")),
         "sharpe": _num(m.get("sharpe")),
         "trades": m.get("trades"),
@@ -602,6 +631,77 @@ def _ensure_analysis(lab: Lab, run_id: str, full: dict[str, Any]) -> dict[str, A
     except Exception:  # never let a missing or odd snapshot break opening a run
         pass
     return full
+
+
+def _paper_line(status: dict[str, Any]) -> dict[str, Any]:
+    """Blocked, waiting, or caught up, with one short line for the home tile."""
+    blocked = status.get("blocked")
+    missing = list(status.get("missing") or [])
+    waiting = list(status.get("waiting") or [])
+    if blocked:
+        kind, detail = "blocked", str(blocked)
+    elif missing or waiting:
+        n = len(missing) + len(waiting)
+        kind = "waiting"
+        detail = f"Waiting on {n} session" if n == 1 else f"Waiting on {n} sessions"
+    else:
+        kind = "caught_up"
+        latest = status.get("latest_processed")
+        detail = f"Caught up through {latest}" if latest else "Caught up"
+    return {
+        "paper_id": status["paper_id"],
+        "name": status.get("name") or status["paper_id"],
+        "status": kind,
+        "detail": detail,
+    }
+
+
+def _overview(lab: Lab) -> dict[str, Any]:
+    """Counts, the highest-return completed run, and the newest readable paper account."""
+    completed: list[tuple[dict[str, Any], dict[str, Any], float | None]] = []
+    for row in lab.store.list_runs():
+        if row.get("status") != "completed":
+            continue
+        full = lab.store.get(row["id"])
+        metrics = full.get("metrics") or {}
+        completed.append((row, full, _num(metrics.get("total_return"))))
+
+    best: dict[str, Any] | None = None
+    ranked = [item for item in completed if item[2] is not None]
+    if ranked:
+        row, full, total = max(
+            ranked, key=lambda item: (item[2], item[0]["created_at"], item[0]["id"])
+        )
+        metrics = full.get("metrics") or {}
+        resolved = full.get("resolved") or {}
+        bench = metrics.get("benchmark") or {}
+        final = _num(metrics.get("final_equity"))
+        start = _num((resolved.get("portfolio") or {}).get("starting_cash"))
+        symbol = str(bench.get("symbol") or resolved.get("benchmark") or "") or None
+        best = {
+            "run_id": row["id"],
+            "name": row["name"],
+            "total_return": total,
+            "pnl": (final - start) if final is not None and start is not None else None,
+            "benchmark_symbol": symbol,
+            "benchmark_return": _num(bench.get("total_return")),
+        }
+
+    paper: dict[str, Any] | None = None
+    for acct in lab.paper_accounts():
+        try:
+            status = lab.paper_status(acct["id"], as_of=date.today())
+        except Exception:
+            continue
+        paper = _paper_line(status)
+        break
+
+    return {
+        "snapshots": len(list_snapshots(lab.settings.snapshot_dir)),
+        "strategies": len(completed),
+        "best": best,
+        "paper": paper,
+    }
 
 
 def _detail(lab: Lab, run_id: str) -> RunDetail:
@@ -659,6 +759,11 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     @app.get("/api/health", response_model=Health, tags=["meta"])
     def health() -> Health:
         return Health()
+
+    @app.get("/api/overview", response_model=Overview, tags=["meta"])
+    def overview() -> dict[str, Any]:
+        """Home-page counts, the best completed run, and the newest paper account."""
+        return _overview(lab)
 
     # Registry ------------------------------------------------------------------------
     @app.get("/api/components", response_model=list[ComponentOut], tags=["registry"])

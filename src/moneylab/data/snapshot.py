@@ -59,21 +59,23 @@ _SYMBOLS_SHOWN = 4
 
 
 def snapshot_name(meta: dict[str, Any]) -> str:
-    """The name a person sees. A typed label wins; otherwise the data configuration.
+    """The name a person sees: the data configuration, with a typed label in front.
 
-    ``{source} · {timeframe} · {universe} · {start} → {end}``. The timeframe is
-    ``1d`` when the snapshot does not record one. A watchlist names the universe;
-    otherwise up to four symbols are listed. Dates are the requested range when
-    the snapshot has one, and the first and last bar otherwise.
+    ``{label} · {source} · {timeframe} · {universe} · {start} → {end}``. The label
+    segment is omitted when blank. The timeframe is ``1d`` when the snapshot does
+    not record one. A watchlist names the universe; otherwise up to four symbols
+    are listed. Dates are the requested range when the snapshot has one, and the
+    first and last bar otherwise.
     """
     label = str(meta.get("label") or "").strip()
-    if label:
-        return label
     raw_prov = meta.get("provenance")
     provenance: dict[str, Any] = raw_prov if isinstance(raw_prov, dict) else {}
     source = str(meta.get("source") or "unknown")
     timeframe = str(meta.get("timeframe") or provenance.get("timeframe") or "1d")
-    return f"{source} · {timeframe} · {_universe(meta, provenance)} · {_span(meta, provenance)}"
+    name = f"{source} · {timeframe} · {_universe(meta, provenance)} · {_span(meta, provenance)}"
+    if label:
+        return f"{label} · {name}"
+    return name
 
 
 def _universe(meta: dict[str, Any], provenance: dict[str, Any]) -> str:

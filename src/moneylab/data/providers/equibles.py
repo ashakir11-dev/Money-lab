@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -224,7 +224,9 @@ class EquiblesProvider:
                     if cutoff is None or start_at < cutoff:
                         cutoff = start_at
                     continue
-                if not on_grid(start_at, minutes):
+                # The 16:00 bar is the closing auction. Hourly bars are aligned to
+                # midnight, so that minute does not fall inside the 15:00 bar.
+                if not on_grid(start_at, minutes) and not _is_close_auction(start_at):
                     raise ProviderError(
                         f"Equibles returned {symbol} bar {start_at:%Y-%m-%dT%H:%M}, "
                         f"which is not on the {interval} regular-session grid."
@@ -241,7 +243,7 @@ class EquiblesProvider:
                     }
                 )
             if not page.get("truncated"):
-                return _before(rows, cutoff), complete
+                return _before(_fold_close_auction(rows, minutes), cutoff), complete
             if not page["bars"]:
                 raise ProviderError(f"Equibles truncated an empty bar page for {symbol}.")
             # Continue from the oldest bar of this page. The wire time is kept.
@@ -378,6 +380,46 @@ class EquiblesProvider:
             if csv:
                 return _csv_page(resp)
             return {"json": resp.json()}
+
+
+def _is_close_auction(start: datetime) -> bool:
+    """True for the bar that starts at the 16:00 New York close.
+
+    Equibles builds bars from midnight, and the regular session includes the
+    minute that starts at the close. That print is its own bar at 16:00.
+    """
+    return start.hour == 16 and start.minute == 0
+
+
+def _fold_close_auction(rows: list[dict[str, Any]], minutes: int) -> list[dict[str, Any]]:
+    """Move the 16:00 auction into the bar that ends at 16:00.
+
+    The auction close replaces that bar's close. High, low, and volume include
+    both. When the earlier bar had no trades, the auction stands in for it.
+    """
+    auctions: list[dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
+    for row in rows:
+        start = datetime.fromisoformat(row["time"])
+        if _is_close_auction(start):
+            auctions.append(row)
+        else:
+            kept.append(row)
+    by_time = {row["time"]: row for row in kept}
+    for row in auctions:
+        start = datetime.fromisoformat(row["time"])
+        target = (start - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M")
+        prior = by_time.get(target)
+        if prior is None:
+            moved = {**row, "time": target}
+            by_time[target] = moved
+            kept.append(moved)
+            continue
+        prior["high"] = max(float(prior["high"]), float(row["high"]))
+        prior["low"] = min(float(prior["low"]), float(row["low"]))
+        prior["close"] = float(row["close"])
+        prior["volume"] = int(prior["volume"]) + int(row["volume"])
+    return kept
 
 
 def _before(rows: list[dict[str, Any]], cutoff: datetime | None) -> list[dict[str, Any]]:

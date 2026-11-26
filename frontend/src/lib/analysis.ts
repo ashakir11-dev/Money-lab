@@ -1,4 +1,35 @@
-import type { DecisionRow, EquityRow, FillRow, RunMetrics } from "./api";
+import type { DecisionRow, EquityRow, FillRow, RunMetrics, TradeRow } from "./api";
+
+export type RoundTrip = {
+  symbol: string;
+  entrySession: string;
+  exitSession: string;
+  entryDecisionId: number | null;
+  exitDecisionId: number | null;
+  qty: number;
+  entryPrice: number;
+  exitPrice: number;
+  costs: number;
+  pnl: number;
+  holdSessions: number | null;
+};
+
+/** The engine's closed trades (GET /api/runs/{id}/trades) in the shape the tables use. */
+export function roundTrips(rows: TradeRow[]): RoundTrip[] {
+  return rows.map((t) => ({
+    symbol: t.symbol,
+    entrySession: t.entry_session,
+    exitSession: t.exit_session,
+    entryDecisionId: t.entry_decision_id,
+    exitDecisionId: t.exit_decision_id,
+    qty: t.qty,
+    entryPrice: t.entry_price,
+    exitPrice: t.exit_price,
+    costs: t.costs,
+    pnl: t.pnl,
+    holdSessions: t.hold_sessions,
+  }));
+}
 
 export type Pnl = {
   realized: number;

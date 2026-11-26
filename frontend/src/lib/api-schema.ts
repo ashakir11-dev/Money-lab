@@ -154,6 +154,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description Home-page counts, the best completed run, and the newest paper account.
+         */
+        get: operations["overview_api_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/paper": {
         parameters: {
             query?: never;
@@ -1007,6 +1027,44 @@ export interface components {
             /** Ret */
             ret: number | null;
         };
+        /** Overview */
+        Overview: {
+            best: components["schemas"]["OverviewBest"] | null;
+            paper: components["schemas"]["OverviewPaper"] | null;
+            /** Snapshots */
+            snapshots: number;
+            /** Strategies */
+            strategies: number;
+        };
+        /** OverviewBest */
+        OverviewBest: {
+            /** Benchmark Return */
+            benchmark_return: number | null;
+            /** Benchmark Symbol */
+            benchmark_symbol: string | null;
+            /** Name */
+            name: string;
+            /** Pnl */
+            pnl: number | null;
+            /** Run Id */
+            run_id: string;
+            /** Total Return */
+            total_return: number | null;
+        };
+        /** OverviewPaper */
+        OverviewPaper: {
+            /** Detail */
+            detail: string;
+            /** Name */
+            name: string;
+            /** Paper Id */
+            paper_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "blocked" | "waiting" | "caught_up";
+        };
         /** PaperAccountOut */
         PaperAccountOut: {
             /** Created At */
@@ -1171,6 +1229,8 @@ export interface components {
             analysis?: components["schemas"]["AnalysisOut"] | null;
             /** Benchmark Return */
             benchmark_return: number | null;
+            /** Benchmark Symbol */
+            benchmark_symbol: string | null;
             /** Cagr */
             cagr?: number | null;
             /** Config Hash */
@@ -1254,6 +1314,8 @@ export interface components {
         RunSummary: {
             /** Benchmark Return */
             benchmark_return: number | null;
+            /** Benchmark Symbol */
+            benchmark_symbol: string | null;
             /** Cagr */
             cagr?: number | null;
             /** Created At */
@@ -1346,7 +1408,7 @@ export interface components {
             last_date: string;
             /**
              * Name
-             * @description typed label, or source, timeframe, universe and dates
+             * @description typed label, then source, timeframe, universe and dates
              */
             name: string;
             /** Rows */
@@ -1827,6 +1889,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Overview"];
                 };
             };
         };

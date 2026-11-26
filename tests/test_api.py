@@ -134,6 +134,8 @@ def test_duplicate_reproduces_the_ledger(client: TestClient) -> None:
     original = _run(client, sid, 35)
     job = _wait(client, client.post(f"/api/runs/{original}/duplicate").json())
     dup = job["run_ids"][0]
+    original_name = client.get(f"/api/runs/{original}").json()["name"]
+    assert client.get(f"/api/runs/{dup}").json()["name"] == f"{original_name} v2"
     assert (
         client.get(f"/api/runs/{dup}/fills").json()
         == client.get(f"/api/runs/{original}/fills").json()

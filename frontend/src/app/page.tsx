@@ -5,8 +5,72 @@ import { useMemo } from "react";
 import { DEMO_FORK, Spark, Specimen } from "@/components/Specimen";
 import { Mark, RailIcon } from "@/components/Mark";
 import { api, type EquityRow, type FirstDifference, type RunSummary } from "@/lib/api";
-import { pct, versusSpy } from "@/lib/format";
+import { money, pct, versusSpy } from "@/lib/format";
 import { useAsync, useInterval } from "@/lib/hooks";
+import { ErrorBox } from "@/components/ui";
+
+const PAPER_STATUS = {
+  blocked: "Blocked",
+  waiting: "Waiting",
+  caught_up: "Caught up",
+} as const;
+
+function tone(v: number | null | undefined): string {
+  if (typeof v !== "number") return "";
+  return v >= 0 ? "pos" : "neg";
+}
+
+function HomeStats() {
+  const overview = useAsync(() => api.overview(), []);
+  if (overview.loading) return <div className="tiles tiles-wait" aria-hidden />;
+  if (overview.error || !overview.data) {
+    return <ErrorBox error={overview.error} title="Could not load the lab summary" />;
+  }
+  const { snapshots, strategies, best, paper } = overview.data;
+  const report = best ? `/report?id=${encodeURIComponent(best.run_id)}` : "/report";
+  const bench = best?.benchmark_symbol || "SPY";
+  const beat =
+    best && best.benchmark_return != null && best.total_return != null
+      ? best.total_return - best.benchmark_return
+      : null;
+  return (
+    <section className="tiles" aria-label="Lab summary" data-testid="home-stats">
+      <Link href={report} className="tile" data-testid="stat-best">
+        <div className="tile-label">Best strategy</div>
+        <div className="tile-value name">{best?.name ?? "–"}</div>
+      </Link>
+      <Link href="/data" className="tile" data-testid="stat-snapshots">
+        <div className="tile-label">Snapshots</div>
+        <div className="tile-value">{snapshots}</div>
+      </Link>
+      <Link href="/report" className="tile" data-testid="stat-strategies">
+        <div className="tile-label">Strategies</div>
+        <div className="tile-value">{strategies}</div>
+      </Link>
+      <Link
+        href={paper ? `/paper?id=${encodeURIComponent(paper.paper_id)}` : "/paper"}
+        className="tile"
+        data-testid="stat-paper"
+      >
+        <div className="tile-label">Paper</div>
+        <div className="tile-value name">{paper ? PAPER_STATUS[paper.status] : "–"}</div>
+        {paper ? <div className="tile-sub">{paper.detail}</div> : null}
+      </Link>
+      <Link href={report} className="tile" data-testid="stat-return">
+        <div className="tile-label">Best return</div>
+        <div className={`tile-value ${tone(best?.total_return)}`}>{pct(best?.total_return, true)}</div>
+      </Link>
+      <Link href={report} className="tile" data-testid="stat-pnl">
+        <div className="tile-label">P&L</div>
+        <div className={`tile-value ${tone(best?.pnl)}`}>{money(best?.pnl)}</div>
+      </Link>
+      <Link href={report} className="tile" data-testid="stat-beat">
+        <div className="tile-label">{bench === "SPY" ? "S&P beat" : `${bench} beat`}</div>
+        <div className={`tile-value phrase ${tone(beat)}`}>{versusSpy(best?.total_return, best?.benchmark_return, bench)}</div>
+      </Link>
+    </section>
+  );
+}
 
 const RAIL = [
   { href: "/data", label: "Data", icon: "data" as const },
@@ -108,6 +172,7 @@ export default function HomePage() {
 
   return (
     <div className="bench">
+      <HomeStats />
       {!live && ready ? (
         <div className="bench-hero">
           <Mark size={120} draw />

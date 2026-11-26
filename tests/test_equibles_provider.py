@@ -62,7 +62,7 @@ def test_hourly_bars_are_new_york_wall_times(tmp_path: Path) -> None:
 
 
 def test_a_bar_off_the_grid_is_refused(tmp_path: Path) -> None:
-    bad = CSV.replace("2026-11-25T20:00:00Z", "2026-11-25T21:00:00Z")  # 16:00 New York
+    bad = CSV.replace("2026-11-25T20:00:00Z", "2026-11-25T13:00:00Z")  # 08:00 New York
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/splits"):
@@ -71,6 +71,33 @@ def test_a_bar_off_the_grid_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ProviderError, match="not on the 1hour"):
         _provider(tmp_path, handler).fetch_history(["AAPL"], date(2026, 11, 25), date(2026, 11, 25))
+
+
+def test_the_16_00_close_auction_folds_into_the_15_00_bar(tmp_path: Path) -> None:
+    # Newest first. 21:00Z is 16:00 New York: the closing auction, rolled up from
+    # the 16:00 minute because hourly bars start on the hour from midnight.
+    auction = """time,session,open,high,low,close,volume,vwap,tradeCount,final
+2026-11-25T21:00:00Z,2026-11-25,9.2,9.4,9.1,9.3,10,,,true
+2026-11-25T20:00:00Z,2026-11-25,11,11.5,8,9,50,,,true
+2026-11-25T15:00:00Z,2026-11-25,10.5,12,10,11,200,,,true
+2026-11-25T14:00:00Z,2026-11-25,10,11,9.5,10.5,100,,,true
+"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/splits"):
+            return httpx.Response(200, json=SPLITS)
+        return httpx.Response(200, text=auction)
+
+    hist = _provider(tmp_path, handler).fetch_history(
+        ["AAPL"], date(2026, 11, 25), date(2026, 11, 25)
+    )
+    assert hist.raw["bar_start"].dt.strftime("%H:%M").tolist() == ["09:00", "10:00", "15:00"]
+    last = hist.raw.iloc[-1]
+    assert last["open"] == 11.0
+    assert last["high"] == 11.5
+    assert last["low"] == 8.0
+    assert last["close"] == 9.3
+    assert int(last["volume"]) == 60
 
 
 def test_split_value_is_numerator_over_denominator_and_a_later_split_is_dropped(

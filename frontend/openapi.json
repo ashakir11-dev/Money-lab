@@ -1493,6 +1493,145 @@
         "title": "MonthRowOut",
         "type": "object"
       },
+      "Overview": {
+        "properties": {
+          "best": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverviewBest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paper": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverviewPaper"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshots": {
+            "title": "Snapshots",
+            "type": "integer"
+          },
+          "strategies": {
+            "title": "Strategies",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshots",
+          "strategies",
+          "best",
+          "paper"
+        ],
+        "title": "Overview",
+        "type": "object"
+      },
+      "OverviewBest": {
+        "properties": {
+          "benchmark_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Return"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pnl"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          }
+        },
+        "required": [
+          "run_id",
+          "name",
+          "total_return",
+          "pnl",
+          "benchmark_symbol",
+          "benchmark_return"
+        ],
+        "title": "OverviewBest",
+        "type": "object"
+      },
+      "OverviewPaper": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "blocked",
+              "waiting",
+              "caught_up"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "paper_id",
+          "name",
+          "status",
+          "detail"
+        ],
+        "title": "OverviewPaper",
+        "type": "object"
+      },
       "PaperAccountOut": {
         "properties": {
           "created_at": {
@@ -2002,6 +2141,17 @@
             ],
             "title": "Benchmark Return"
           },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
+          },
           "cagr": {
             "anyOf": [
               {
@@ -2221,6 +2371,7 @@
           "summary",
           "total_return",
           "benchmark_return",
+          "benchmark_symbol",
           "max_drawdown",
           "sharpe",
           "trades",
@@ -2285,6 +2436,17 @@
               }
             ],
             "title": "Benchmark Return"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
           },
           "cagr": {
             "anyOf": [
@@ -2476,6 +2638,7 @@
           "summary",
           "total_return",
           "benchmark_return",
+          "benchmark_symbol",
           "max_drawdown",
           "sharpe",
           "trades",
@@ -2548,7 +2711,7 @@
             "type": "string"
           },
           "name": {
-            "description": "typed label, or source, timeframe, universe and dates",
+            "description": "typed label, then source, timeframe, universe and dates",
             "title": "Name",
             "type": "string"
           },
@@ -3835,6 +3998,28 @@
         "summary": "Get Job",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/overview": {
+      "get": {
+        "description": "Home-page counts, the best completed run, and the newest paper account.",
+        "operationId": "overview_api_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Overview",
+        "tags": [
+          "meta"
         ]
       }
     },

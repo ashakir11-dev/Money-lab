@@ -16,6 +16,7 @@ from moneylab.api.app import create_app
 from moneylab.data.snapshot import read_import_file
 from moneylab.demo import FIXTURE, rsi_strategy, run_rsi_demo
 from moneylab.service import Lab
+from test_equibles_provider import _provider
 from tiingo_util import TEST_KEY, FakeTiingo, payloads_from_csv
 
 
@@ -147,7 +148,50 @@ def test_tiingo_import_uses_a_watchlist_as_the_symbol_feed(
         assert named.status_code == 200, named.text
         assert named.json()["symbols"] == ["DDD"]
         assert named.json()["label"] == "mine"
-        assert named.json()["name"] == "mine"
+        assert named.json()["name"] == "mine · tiingo · 1d · just-ddd v1 · 2023-01-03 → 2023-03-31"
+
+
+def test_equibles_import_merges_a_typed_label_into_the_snapshot_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Equibles stores the same display name as Tiingo: the label leads the configuration."""
+
+    def provider(self: Lab, name: str = "equibles") -> Any:
+        assert name == "equibles"
+        return _provider(self.settings.cache_dir)
+
+    monkeypatch.setattr(Lab, "provider", provider)
+    lab = Lab.open(tmp_path / "home")
+    lab.save_watchlist("just-aapl", ["AAPL"], "")
+    with TestClient(create_app(lab, web_dir=tmp_path / "no-web")) as c:
+        named = c.post(
+            "/api/snapshots/equibles",
+            json={
+                "watchlist": "just-aapl",
+                "start": "2026-11-25",
+                "end": "2026-11-25",
+                "label": "  mine  ",
+                "timeframe": "1h",
+            },
+        )
+        assert named.status_code == 200, named.text
+        body = named.json()
+        assert body["label"] == "  mine  "
+        assert body["timeframe"] == "1h"
+        assert body["name"] == "mine · equibles · 1h · just-aapl v1 · 2026-11-25 → 2026-11-25"
+
+        daily = c.post(
+            "/api/snapshots/equibles",
+            json={
+                "symbols": ["AAPL"],
+                "start": "2026-11-25",
+                "end": "2026-11-25",
+                "label": "daily book",
+                "timeframe": "1d",
+            },
+        )
+        assert daily.status_code == 200, daily.text
+        assert daily.json()["name"] == "daily book · equibles · 1d · AAPL · 2026-11-25 → 2026-11-25"
 
 
 def test_tiingo_import_rejects_a_missing_watchlist_before_calling_tiingo(

@@ -7,10 +7,12 @@ export function FillsTable({
   fills,
   empty = "No trades.",
   onOpen,
+  rowClass,
 }: {
   fills: FillRow[];
   empty?: string;
   onOpen?: (fill: FillRow, opener: HTMLElement) => void;
+  rowClass?: (fill: FillRow, index: number) => string | undefined;
 }) {
   if (!fills.length) return <p className="muted">{empty}</p>;
   return (
@@ -31,10 +33,11 @@ export function FillsTable({
         <tbody>
           {fills.map((f, i) => {
             const open = onOpen && typeof f.decision_id === "number" ? onOpen : null;
+            const marked = rowClass?.(f, i);
             return (
               <tr
                 key={`${f.session}-${f.symbol}-${f.side}-${i}`}
-                className={open ? "click-row" : undefined}
+                className={[open ? "click-row" : "", marked ?? ""].filter(Boolean).join(" ") || undefined}
                 role={open ? "button" : undefined}
                 tabIndex={open ? 0 : undefined}
                 aria-label={open ? `${f.side} ${f.symbol} ${f.session}` : undefined}

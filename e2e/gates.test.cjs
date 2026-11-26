@@ -51,7 +51,7 @@ async function newPage() {
   return { page, errors };
 }
 
-test("gate 3: duplicate, change the RSI threshold, run, and reach the first difference", async () => {
+test("gate 3: duplicate, change the RSI threshold, run, and compare the two reports", async () => {
   const { page, errors } = await newPage();
   let clicks = 0;
   const click = async (loc) => { clicks += 1; await loc.click(); };
@@ -69,30 +69,22 @@ test("gate 3: duplicate, change the RSI threshold, run, and reach the first diff
   await click(page.getByTestId("run-backtest"));
   await click(page.getByTestId("compare-with-original"));
 
-  const card = page.getByTestId("first-difference");
-  await card.waitFor({ timeout: 60000 });
-  assert.equal(await card.getAttribute("data-session"), "2023-04-04");
-  assert.equal(await card.getAttribute("data-symbol"), "AAA");
+  await page.getByTestId("compare-metrics").waitFor({ timeout: 60000 });
   await page.getByTestId("config-diff").waitFor();
-  // One more click opens the inspector with the values behind the decision.
-  await click(page.getByTestId("inspect-first-difference"));
-  const inspector = page.getByTestId("inspector");
-  await inspector.waitFor();
-  // The observed RSI that passes 35 but not 30, and the account that day.
-  await page.waitForFunction(
-    () => /31\.68/.test(document.querySelector('[data-testid="inspector"]')?.innerText || "") &&
-      !/Loading/.test(document.querySelector('[data-testid="inspector"]')?.innerText || ""),
-    null,
-    { timeout: 30000 },
-  );
-  const text = await inspector.innerText();
-  assert.match(text, /31\.68/);
-  assert.match(text, /100,303\.09/); // run A's cash at that close
+  const diff = await page.getByTestId("config-diff").innerText();
+  assert.match(diff, /30/);
+  assert.match(diff, /35/);
+  const metrics = await page.getByTestId("compare-metrics").innerText();
+  assert.match(metrics, /Return/);
+  assert.match(metrics, /Versus the S&P/);
+  assert.match(metrics, /SPY return/);
+  assert.equal(await page.getByTestId("first-difference").count(), 0);
+  assert.equal(await page.getByTestId("inspector").count(), 0);
   assert.ok(clicks <= 6, `took ${clicks} interactions`);
   assert.deepEqual(errors, []);
 });
 
-test("gate 3 walkthrough: drop DDD and change the threshold; first difference is DDD", async () => {
+test("gate 3 walkthrough: drop DDD and change the threshold; compare shows the setting change", async () => {
   const { page, errors } = await newPage();
   await page.goto(`${server.base}/run?id=${original}`);
   await page.getByRole("button", { name: /duplicate and edit/i }).or(page.getByRole("link", { name: /duplicate and edit/i })).first().click();
@@ -104,11 +96,12 @@ test("gate 3 walkthrough: drop DDD and change the threshold; first difference is
   await page.getByTestId("condition-1").getByTestId("threshold-value").fill("35");
   await page.getByTestId("run-backtest").click();
   await page.getByTestId("compare-with-original").click();
-  const card = page.getByTestId("first-difference");
-  await card.waitFor({ timeout: 60000 });
-  assert.equal(await card.getAttribute("data-session"), "2023-03-07");
-  assert.equal(await card.getAttribute("data-symbol"), "DDD");
-  assert.match(await card.innerText(), /not in this run's universe/i);
+  await page.getByTestId("compare-metrics").waitFor({ timeout: 60000 });
+  const diff = await page.getByTestId("config-diff").innerText();
+  assert.match(diff, /DDD/);
+  assert.match(diff, /35/);
+  assert.match(await page.getByTestId("compare-metrics").innerText(), /Versus the S&P/);
+  assert.equal(await page.getByTestId("first-difference").count(), 0);
   assert.deepEqual(errors, []);
 });
 
