@@ -98,6 +98,7 @@ test("gate 3 walkthrough: drop DDD and change the threshold; first difference is
   await uni.waitFor();
   await page.waitForFunction(() => /DDD/.test(document.querySelector('[data-testid="builder-universe"]')?.value || ""));
   await uni.fill("AAA, BBB, CCC");
+  await page.getByTestId("condition-1").click();
   await page.getByTestId("condition-1").getByTestId("threshold-value").fill("35");
   await page.getByTestId("run-backtest").click();
   await page.getByTestId("compare-with-original").click();
@@ -147,6 +148,7 @@ test("compare opens on the newest run against its parent", async () => {
 test("builder: crossings offer only price-unit indicators; MACD fast >= slow is refused", async () => {
   const { page, errors } = await newPage();
   await page.goto(`${server.base}/builder?from=${original}`);
+  await page.getByTestId("condition-0").click();
   const first = page.getByTestId("condition-0").getByTestId("indicator-select");
   await first.waitFor();
   const crossOpts = await first.locator("option").evaluateAll((os) => os.map((o) => o.value));
@@ -203,6 +205,7 @@ test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule r
 
   await page.getByTestId("sizing-volatility").click();
   await page.getByTestId("sizing-risk_fraction").waitFor();
+  await page.getByTestId("rank-block").click();
   await page.getByTestId("rank-indicator").selectOption("rsi");
   await page.getByTestId("rank-ascending").click();
 
@@ -225,11 +228,15 @@ test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule r
 
   // Duplicating the new run brings every new setting back into the builder.
   await page.getByRole("link", { name: /duplicate and edit/i }).click();
+  await page.getByTestId("price-exit-stop_loss").click();
   await page.getByTestId("price-exit-stop_loss-pct").waitFor();
   assert.equal(Number(await page.getByTestId("price-exit-stop_loss-pct").inputValue()), 5);
+  await page.getByTestId("rank-block").click();
   assert.equal(await page.getByTestId("rank-indicator").inputValue(), "rsi");
   assert.equal(await page.getByTestId("sizing-volatility").getAttribute("class"), "on");
-  assert.equal(await page.locator('[data-testid^="condition-"]').last().getByTestId("other-select").inputValue(), "sma");
+  const restored = page.locator('[data-testid^="condition-"]').last();
+  await restored.click();
+  assert.equal(await restored.getByTestId("other-select").inputValue(), "sma");
   assert.deepEqual(errors, []);
 });
 

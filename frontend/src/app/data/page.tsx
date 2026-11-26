@@ -250,10 +250,19 @@ export default function DataPage() {
 
       <div className="tiles" style={{ marginBottom: 16 }}>
         <Tile label="Snapshots" value={int(all.length)} />
-        <Tile label="Symbols" value={int(symbols.size)} sub={[...symbols].slice(0, 8).join(" ")} />
+        <Tile label="Symbols" value={int(symbols.size)} sub={[...symbols].slice(0, 8).join(", ")} />
         <Tile
           label="Range"
-          value={earliest && latest ? `${earliest} → ${latest}` : "–"}
+          value={
+            earliest && latest ? (
+              <span className="tile-range">
+                {earliest}
+                <span>to {latest}</span>
+              </span>
+            ) : (
+              "–"
+            )
+          }
           sub={spanDays(earliest, latest)}
         />
         <Tile label="Rows" value={int(rows)} />
@@ -280,7 +289,7 @@ export default function DataPage() {
                   <th>Snapshot</th>
                   <th>Source</th>
                   <th>Symbols</th>
-                  <th>Timeframe</th>
+                  <th>Range</th>
                   <th className="num">Rows</th>
                   <th>Adjustment</th>
                   <th>Imported</th>
@@ -298,16 +307,18 @@ export default function DataPage() {
                     <td>
                       <Badge kind={s.source_kind}>{s.source_label}</Badge>
                     </td>
-                    <td className="small">
-                      {s.symbols.length} · {s.symbols.join(", ")}
+                    <td className="small" title={s.symbols.join(", ")}>
+                      {s.symbols.length}
+                      {s.symbols.length ? ` · ${s.symbols.slice(0, 4).join(", ")}` : ""}
+                      {s.symbols.length > 4 ? ` +${s.symbols.length - 4}` : ""}
                     </td>
                     <td className="small">
                       {s.first_date} → {s.last_date}
                       <div className="muted">{spanDays(s.first_date, s.last_date)}</div>
                     </td>
                     <td className="num">{int(s.rows)}</td>
-                    <td className="small">{s.adjustment}</td>
-                    <td className="small">{when(s.created_at)}</td>
+                    <td className="small">{s.adjustment.replaceAll("_", " ")}</td>
+                    <td className="small nowrap">{when(s.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -335,11 +346,19 @@ export default function DataPage() {
                   <tr key={`${w.name}-${w.version}`}>
                     <td>
                       {w.name}
-                      {w.label ? <div className="muted small">{w.label}</div> : null}
+                      {w.label ? (
+                        <div className="muted small clamp-3" title={w.label}>
+                          {w.label}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="num">v{w.version}</td>
-                    <td className="small">{w.members.join(", ")}</td>
-                    <td className="small">{when(w.created_at)}</td>
+                    <td className="small" title={w.members.join(", ")}>
+                      {w.members.length}
+                      {w.members.length ? ` · ${w.members.slice(0, 6).join(", ")}` : ""}
+                      {w.members.length > 6 ? ` +${w.members.length - 6}` : ""}
+                    </td>
+                    <td className="small nowrap">{when(w.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -348,7 +367,7 @@ export default function DataPage() {
         ) : lists.data ? (
           <p className="muted">No watchlists yet. You can still type symbols in the builder.</p>
         ) : null}
-        <h3 style={{ marginTop: 16 }}>Save a watchlist</h3>
+        <h3>Save a watchlist</h3>
         <WatchlistForm onDone={lists.reload} />
       </Section>
 

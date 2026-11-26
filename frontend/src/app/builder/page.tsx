@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { ChoiceBlock, SectionWrap, ViewBlock, type BlockIconName } from "@/components/BuildSection";
 import { ConditionEditor, PAIRED, SchemaParams, defaultsOf, type CondDraft, type Value } from "@/components/ConditionEditor";
 import { Mark } from "@/components/Mark";
 import { Specimen } from "@/components/Specimen";
@@ -262,6 +263,7 @@ function Builder() {
   const parentEq = useAsync(() => api.equity(from), [from], !!from);
 
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  const [open, setOpen] = useState("");
   const [snapshot, setSnapshot] = useState("");
   const [ready, setReady] = useState(false);
   const [job, setJob] = useState<Job>();
@@ -359,7 +361,9 @@ function Builder() {
   function addCond(which: "entry" | "exitConds") {
     const ind = byId.get("rsi") ?? (comps.data ?? []).find((c) => c.uses.includes("indicator"));
     const c: CondDraft = { kind: "threshold", indicator: ind?.id ?? "", indParams: defaultsOf(ind), params: defaultsOf(byId.get("threshold")) };
+    const index = draft[which].length;
     setDraft((d) => ({ ...d, [which]: [...d[which], c] }));
+    setOpen(which === "entry" ? `condition-${index}` : `exit-${index}`);
   }
 
   const loadError = comps.error || snaps.error || defaults.error || source.error;
@@ -372,13 +376,16 @@ function Builder() {
   const guardKinds = all.filter((c) => c.uses.includes("exit_rule") && !OWN_EXITS.has(c.id));
   const sizers = all.filter((c) => c.uses.includes("sizing"));
   const rankable = all.filter((c) => c.uses.includes("indicator"));
-  const sizer = byId.get(draft.sizingId);
   const usedGuards = new Set(draft.guards.map((g) => g.kind));
 
   function addGuard(kind: string) {
     if (!kind) return;
     setDraft((d) => ({ ...d, guards: [...d.guards, { kind, params: defaultsOf(byId.get(kind)) }] }));
+    setOpen(`guard-${kind}`);
   }
+
+  const toggle = (id: string) => setOpen((cur) => (cur === id ? "" : id));
+  const guardIcon = (kind: string): BlockIconName => (kind === "take_profit" ? "target" : kind === "trailing_stop" ? "trail" : "stop");
 
   return (
     <div className="bench">
@@ -400,15 +407,14 @@ function Builder() {
       ) : null}
 
       <div className="stack">
-        <section className="stack-block">
-          <h2>Strategy</h2>
+        <SectionWrap tone="setup" title="Setup">
           {snaps.data && snaps.data.length === 0 ? (
             <p className="notice">
               No price data yet. Import some on the <Link href="/data">Data</Link> page first.
             </p>
           ) : null}
-          <div className="fields">
-            <div className="field" style={{ gridColumn: "span 2" }}>
+          <div className="fields fields-setup">
+            <div className="field">
               <label htmlFor="snap">Price snapshot</label>
               <select id="snap" data-testid="builder-snapshot" value={snapshot} onChange={(e) => pickSnapshot(e.target.value)}>
                 {(snaps.data ?? []).map((s) => (
@@ -488,14 +494,20 @@ function Builder() {
           ) : (
             <div className="field">
               <label htmlFor="universe">Symbols</label>
-              <input
+              <textarea
                 id="universe"
                 data-testid="builder-universe"
+                rows={Math.min(6, Math.max(3, Math.ceil(draft.universe.length / 90)))}
                 value={draft.universe}
                 onChange={(e) => set("universe", e.target.value)}
                 placeholder="AAPL, MSFT, NVDA"
               />
-              {snap ? <div className="help">In this snapshot: {snap.symbols.join(", ")}</div> : null}
+              {snap ? (
+                <div className="help">
+                  {snap.symbols.length} names in this snapshot
+                  {snap.symbols.length <= 12 ? `: ${snap.symbols.join(", ")}` : ""}
+                </div>
+              ) : null}
             </div>
           )}
           {draft.universeSource !== "custom" ? (
@@ -511,237 +523,294 @@ function Builder() {
               <input id="end" type="date" value={draft.end} onChange={(e) => set("end", e.target.value)} min={snap?.first_date} max={snap?.last_date} />
             </div>
           </div>
-        </section>
+        </SectionWrap>
 
-        <section className="stack-block">
-          <div className="section-head">
-            <h2>Strategy config</h2>
-            <button data-testid="add-condition" onClick={() => addCond("entry")}>
-              Add condition
+        <SectionWrap
+          tone="signal"
+          title="Signal"
+          count={draft.entry.length}
+          action={
+            <button className="block-section-action" data-testid="add-condition" onClick={() => addCond("entry")}>
+              Add
             </button>
-          </div>
-          <p className="caption">Signals at the close. These rules decide whether a name is a candidate that session.</p>
+          }
+        >
           {draft.entry.length === 0 ? <p className="muted">Add at least one rule.</p> : null}
-          {draft.entry.map((c, i) => (
-            <ConditionEditor
-              key={i}
-              index={i}
-              prefix="condition"
-              cond={c}
-              comps={comps.data ?? []}
-              onChange={(n) => setDraft((d) => ({ ...d, entry: d.entry.map((x, j) => (j === i ? n : x)) }))}
-              onRemove={() => setDraft((d) => ({ ...d, entry: d.entry.filter((_, j) => j !== i) }))}
-            />
-          ))}
-        </section>
-
-        <section className="stack-block">
-          <h2>Entry</h2>
-          <p className="caption">When a rule passes, how the buy is placed.</p>
-          <div className="source-row" role="group" aria-label="Entry fill">
-            {(
-              [
-                ["next_open", "Next open"],
-                ["next_range", "Next candle in range"],
-                ["dip", "Dip to a level"],
-              ] as const
-            ).map(([id, label]) => (
-              <button key={id} type="button" className={draft.fillKind === id ? "on" : undefined} onClick={() => set("fillKind", id)}>
-                {label}
-              </button>
+          <div className="block-row">
+            {draft.entry.map((c, i) => (
+              <ConditionEditor
+                key={i}
+                index={i}
+                prefix="condition"
+                cond={c}
+                comps={comps.data ?? []}
+                open={open === `condition-${i}`}
+                onOpen={() => toggle(`condition-${i}`)}
+                onChange={(n) => setDraft((d) => ({ ...d, entry: d.entry.map((x, j) => (j === i ? n : x)) }))}
+                onRemove={() => setDraft((d) => ({ ...d, entry: d.entry.filter((_, j) => j !== i) }))}
+              />
             ))}
           </div>
-          {draft.fillKind === "next_open" ? (
-            <p className="help">Fill at the next session open. The default, and what the demo path uses.</p>
-          ) : draft.fillKind === "next_range" ? (
-            <>
-              <p className="help">Fill on the next bar only if it trades inside this band around the signal close. A gap outside cancels the order.</p>
-              <PctSlider id="range-below" label="Below %" value={draft.rangeBelow} onChange={(v) => set("rangeBelow", v)} />
-              <PctSlider id="range-above" label="Above %" value={draft.rangeAbove} onChange={(v) => set("rangeAbove", v)} />
-            </>
-          ) : (
-            <>
-              <p className="help">Limit below the signal close. Waits until that session’s low prints through; a gap through fills at the open.</p>
-              <PctSlider id="dip-pct" label="Dip %" value={draft.dipPct} onChange={(v) => set("dipPct", v)} />
-            </>
-          )}
-        </section>
+        </SectionWrap>
 
-        <section className="stack-block">
-          <div className="section-head">
-            <h2>Exits</h2>
-            <button onClick={() => addCond("exitConds")}>Add condition</button>
+        <SectionWrap tone="entry" title="Entry" count={1}>
+          <div className="block-row" role="group" aria-label="Entry fill">
+            {(
+              [
+                ["next_open", "Next open", "Fill at the next session open.", "arrow"],
+                ["next_range", "In range", "Fill on the next bar only if it trades inside this band around the signal close. A gap outside cancels the order.", "range"],
+                ["dip", "Dip", "Limit below the signal close. Waits until that session’s low prints through; a gap through fills at the open.", "dip"],
+              ] as const
+            ).map(([id, label, help, icon]) => (
+              <ChoiceBlock
+                key={id}
+                icon={icon}
+                selected={draft.fillKind === id}
+                label={label}
+                help={help}
+                onClick={() => set("fillKind", id)}
+              >
+                {id === "next_range" ? (
+                  <>
+                    <PctSlider id="range-below" label="Below %" value={draft.rangeBelow} onChange={(v) => set("rangeBelow", v)} />
+                    <PctSlider id="range-above" label="Above %" value={draft.rangeAbove} onChange={(v) => set("rangeAbove", v)} />
+                  </>
+                ) : id === "dip" ? (
+                  <PctSlider id="dip-pct" label="Dip %" value={draft.dipPct} onChange={(v) => set("dipPct", v)} />
+                ) : null}
+              </ChoiceBlock>
+            ))}
           </div>
-          <p className="caption">Optional. Without an exit signal, the max hold below (or the default) closes the position.</p>
-          <div className="section-head" style={{ marginTop: 16 }}>
-            <h3>Price exits</h3>
-            <select
-              data-testid="add-price-exit"
-              aria-label="Add a price exit"
-              value=""
-              onChange={(e) => addGuard(e.target.value)}
-              style={{ width: "auto" }}
-              disabled={guardKinds.every((c) => usedGuards.has(c.id))}
-            >
-              <option value="">Add price exit…</option>
-              {guardKinds.map((c) => (
-                <option key={c.id} value={c.id} disabled={usedGuards.has(c.id)} title={c.description}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="caption">Checked at each close, alongside the rules above; whichever fires first sells the whole position at the next open.</p>
-          {draft.guards.map((g, i) => {
-            const schema = byId.get(g.kind);
-            return (
-              <div className="cond" key={`${g.kind}-${i}`} data-testid={`price-exit-${g.kind}`}>
-                <div className="cond-head">
-                  <strong>{schema?.label ?? g.kind}</strong>
-                  <span className="cond-sentence">{schema?.description}</span>
-                  <button
-                    className="link"
-                    type="button"
-                    aria-label={`Remove ${schema?.label ?? g.kind}`}
-                    onClick={() => setDraft((d) => ({ ...d, guards: d.guards.filter((_, j) => j !== i) }))}
-                  >
-                    Remove
-                  </button>
-                </div>
-                <div className="cond-params">
+        </SectionWrap>
+
+        <SectionWrap
+          tone="exit"
+          title="Exit"
+          count={draft.guards.length + draft.exitConds.length + 1}
+          action={
+            <span className="block-section-action">
+              <button type="button" onClick={() => addCond("exitConds")}>
+                Add signal
+              </button>
+              <select
+                data-testid="add-price-exit"
+                aria-label="Add a price exit"
+                value=""
+                onChange={(e) => addGuard(e.target.value)}
+                style={{ width: "auto" }}
+                disabled={guardKinds.every((c) => usedGuards.has(c.id))}
+              >
+                <option value="">Add price exit…</option>
+                {guardKinds.map((c) => (
+                  <option key={c.id} value={c.id} disabled={usedGuards.has(c.id)} title={c.description}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          }
+        >
+          <div className="block-row">
+            {draft.guards.map((g, i) => {
+              const schema = byId.get(g.kind);
+              const pct = Number(g.params.pct);
+              const summary = Number.isFinite(pct) ? `${schema?.label ?? g.kind} ${+(pct * 100).toFixed(2)}%` : (schema?.label ?? g.kind);
+              return (
+                <ViewBlock
+                  key={`${g.kind}-${i}`}
+                  testId={`price-exit-${g.kind}`}
+                  icon={guardIcon(g.kind)}
+                  summary={summary}
+                  help={schema?.description ?? ""}
+                  open={open === `guard-${g.kind}`}
+                  onOpen={() => toggle(`guard-${g.kind}`)}
+                  onRemove={() => setDraft((d) => ({ ...d, guards: d.guards.filter((_, j) => j !== i) }))}
+                  removeLabel={`Remove ${schema?.label ?? g.kind}`}
+                >
                   <SchemaParams
                     schema={schema}
                     values={g.params}
                     prefix={`price-exit-${g.kind}`}
                     onChange={(v) => setDraft((d) => ({ ...d, guards: d.guards.map((x, j) => (j === i ? { ...x, params: v } : x)) }))}
                   />
-                </div>
+                </ViewBlock>
+              );
+            })}
+            {draft.exitConds.map((c, i) => (
+              <ConditionEditor
+                key={i}
+                index={i}
+                prefix="exit-condition"
+                cond={c}
+                comps={comps.data ?? []}
+                open={open === `exit-${i}`}
+                onOpen={() => toggle(`exit-${i}`)}
+                onChange={(n) => setDraft((d) => ({ ...d, exitConds: d.exitConds.map((x, j) => (j === i ? n : x)) }))}
+                onRemove={() => setDraft((d) => ({ ...d, exitConds: d.exitConds.filter((_, j) => j !== i) }))}
+              />
+            ))}
+            <ViewBlock
+              icon="clock"
+              summary={draft.maxHold ? `Hold ${draft.maxHold}` : "Hold none"}
+              help="Fill day counts as session one. With exit signals, this is a cap: the signal or this many sessions, whichever comes first."
+              open={open === "hold"}
+              onOpen={() => toggle("hold")}
+            >
+              <div className="cond-row">
+                <label className="cond-label" htmlFor="sessions">
+                  Sessions
+                </label>
+                <input
+                  id="sessions"
+                  data-testid="exit-sessions"
+                  type="number"
+                  min={1}
+                  value={draft.maxHold}
+                  onChange={(e) => set("maxHold", e.target.value)}
+                  placeholder="none"
+                />
               </div>
-            );
-          })}
-          {draft.exitConds.map((c, i) => (
-            <ConditionEditor
-              key={i}
-              index={i}
-              prefix="exit-condition"
-              cond={c}
-              comps={comps.data ?? []}
-              onChange={(n) => setDraft((d) => ({ ...d, exitConds: d.exitConds.map((x, j) => (j === i ? n : x)) }))}
-              onRemove={() => setDraft((d) => ({ ...d, exitConds: d.exitConds.filter((_, j) => j !== i) }))}
-            />
-          ))}
-        </section>
+            </ViewBlock>
+          </div>
+        </SectionWrap>
 
-        <section className="stack-block">
-          <h2>Position size</h2>
-          <div className="source-row" role="group" aria-label="Sizing method">
+        <SectionWrap tone="size" title="Size" count={1}>
+          <div className="block-row" role="group" aria-label="Sizing method">
             {sizers.map((c) => (
-              <button
+              <ChoiceBlock
                 key={c.id}
-                type="button"
-                data-testid={`sizing-${c.id}`}
-                title={c.description}
-                className={draft.sizingId === c.id ? "on" : undefined}
+                icon="bars"
+                testId={`sizing-${c.id}`}
+                label={c.id === "percent_of_equity" ? "% equity" : c.id === "fixed_dollar" ? "Fixed $" : "ATR risk"}
+                help={c.description}
+                selected={draft.sizingId === c.id}
                 onClick={() => setDraft((d) => ({ ...d, sizingId: c.id, sizingParams: defaultsOf(c) }))}
               >
-                {c.label}
-              </button>
+                {c.params.length ? (
+                  <SchemaParams schema={c} values={draft.sizingParams} prefix="sizing" onChange={(v) => set("sizingParams", v)} />
+                ) : null}
+              </ChoiceBlock>
             ))}
-          </div>
-          {sizer?.description ? <p className="help">{sizer.description}</p> : null}
-          {sizer?.params.length ? (
-            <div className="cond-params">
-              <SchemaParams schema={sizer} values={draft.sizingParams} prefix="sizing" onChange={(v) => set("sizingParams", v)} />
-            </div>
-          ) : null}
-          <div className="field">
-            <label htmlFor="target">{draft.sizingId === "percent_of_equity" ? "Percent of equity per position" : "Largest position (percent of equity)"}</label>
-            <input id="target" type="number" value={draft.targetPct} placeholder={dflt ? String(dflt.target_allocation * 100) : ""} onChange={(e) => set("targetPct", e.target.value)} />
-          </div>
-        </section>
-
-        <section className="stack-block">
-          <h2>Amount of positions</h2>
-          <div className="field">
-            <label htmlFor="maxpos">Max positions at once</label>
-            <input id="maxpos" type="number" value={draft.maxPositions} placeholder={dflt ? String(dflt.max_positions) : ""} onChange={(e) => set("maxPositions", e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="rank">When more names qualify than there is room for, buy first</label>
-            <select
-              id="rank"
-              data-testid="rank-indicator"
-              value={draft.rankInd}
-              onChange={(e) => {
-                const id = e.target.value;
-                setDraft((d) => ({ ...d, rankInd: id, rankParams: defaultsOf(byId.get(id)) }));
-              }}
+            <ViewBlock
+              icon="bars"
+              summary={draft.targetPct ? `${draft.targetPct}% cap` : "Size cap"}
+              help={draft.sizingId === "percent_of_equity" ? "Percent of equity used for each new position." : "Largest position, as a percent of equity."}
+              open={open === "cap"}
+              onOpen={() => toggle("cap")}
             >
-              <option value="">By symbol, A to Z</option>
-              {rankable.map((c) => (
-                <option key={c.id} value={c.id} title={c.description}>
-                  By {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {draft.rankInd ? (
-            <>
-              <div className="source-row" role="group" aria-label="Ranking order">
-                {(
-                  [
-                    ["ascending", "Lowest first"],
-                    ["descending", "Highest first"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    data-testid={`rank-${id}`}
-                    className={draft.rankOrder === id ? "on" : undefined}
-                    onClick={() => set("rankOrder", id)}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="cond-row">
+                <label className="cond-label" htmlFor="target">
+                  {draft.sizingId === "percent_of_equity" ? "Each position" : "Largest"}
+                </label>
+                <input id="target" type="number" value={draft.targetPct} placeholder={dflt ? String(dflt.target_allocation * 100) : ""} onChange={(e) => set("targetPct", e.target.value)} />
               </div>
-              <div className="cond-params">
-                <SchemaParams schema={byId.get(draft.rankInd)} values={draft.rankParams} prefix="rank" onChange={(v) => set("rankParams", v)} />
+            </ViewBlock>
+          </div>
+        </SectionWrap>
+
+        <SectionWrap tone="positions" title="Positions" count={draft.rankInd ? 2 : 1}>
+          <div className="block-row">
+            <ViewBlock
+              icon="grid"
+              summary={draft.maxPositions ? `Max ${draft.maxPositions}` : "Max positions"}
+              help="How many names can be held at once. Extra signals wait."
+              open={open === "maxpos"}
+              onOpen={() => toggle("maxpos")}
+            >
+              <div className="cond-row">
+                <label className="cond-label" htmlFor="maxpos">
+                  Positions
+                </label>
+                <input id="maxpos" type="number" value={draft.maxPositions} placeholder={dflt ? String(dflt.max_positions) : ""} onChange={(e) => set("maxPositions", e.target.value)} />
               </div>
-            </>
-          ) : null}
-        </section>
-
-        <section className="stack-block">
-          <h2>Capital</h2>
-          <div className="fields">
-            <div className="field">
-              <label htmlFor="cash">Starting cash ($)</label>
-              <input id="cash" type="number" value={draft.startingCash} placeholder={dflt ? String(dflt.starting_cash) : ""} onChange={(e) => set("startingCash", e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="bps">Cost per side (bps)</label>
-              <input id="bps" type="number" value={draft.costBps} placeholder={dflt ? String(dflt.cost_bps_per_side) : ""} onChange={(e) => set("costBps", e.target.value)} />
-            </div>
+            </ViewBlock>
+            <ViewBlock
+              testId="rank-block"
+              icon="rank"
+              summary={draft.rankInd ? `By ${byId.get(draft.rankInd)?.label ?? draft.rankInd}` : "A to Z"}
+              help="When more names qualify than there is room for, this decides which ones are bought."
+              open={open === "rank"}
+              onOpen={() => toggle("rank")}
+            >
+              <div className="cond-row">
+                <label className="cond-label" htmlFor="rank">
+                  Order
+                </label>
+                <select
+                  id="rank"
+                  data-testid="rank-indicator"
+                  value={draft.rankInd}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setDraft((d) => ({ ...d, rankInd: id, rankParams: defaultsOf(byId.get(id)) }));
+                  }}
+                >
+                  <option value="">By symbol, A to Z</option>
+                  {rankable.map((c) => (
+                    <option key={c.id} value={c.id} title={c.description}>
+                      By {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {draft.rankInd ? (
+                <>
+                  <div className="block-row" role="group" aria-label="Ranking order">
+                    {(
+                      [
+                        ["ascending", "Lowest first"],
+                        ["descending", "Highest first"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <ChoiceBlock
+                        key={id}
+                        icon="rank"
+                        testId={`rank-${id}`}
+                        label={label}
+                        selected={draft.rankOrder === id}
+                        onClick={() => set("rankOrder", id)}
+                      />
+                    ))}
+                  </div>
+                  <SchemaParams schema={byId.get(draft.rankInd)} values={draft.rankParams} prefix="rank" onChange={(v) => set("rankParams", v)} />
+                </>
+              ) : null}
+            </ViewBlock>
           </div>
-        </section>
+        </SectionWrap>
 
-        <section className="stack-block">
-          <h2>Maximum hold time</h2>
-          <div className="field">
-            <label htmlFor="sessions">Sessions (optional)</label>
-            <input
-              id="sessions"
-              data-testid="exit-sessions"
-              type="number"
-              min={1}
-              value={draft.maxHold}
-              onChange={(e) => set("maxHold", e.target.value)}
-              placeholder="none"
-            />
-            <div className="help">Fill day counts as session one. With exit signals, this is a cap: signal or this many sessions, whichever first.</div>
+        <SectionWrap tone="capital" title="Capital" count={2}>
+          <div className="block-row">
+            <ViewBlock
+              icon="cash"
+              summary={draft.startingCash ? `$${draft.startingCash}` : "Cash"}
+              help="The account balance the backtest starts with."
+              open={open === "cash"}
+              onOpen={() => toggle("cash")}
+            >
+              <div className="cond-row">
+                <label className="cond-label" htmlFor="cash">
+                  Cash ($)
+                </label>
+                <input id="cash" type="number" value={draft.startingCash} placeholder={dflt ? String(dflt.starting_cash) : ""} onChange={(e) => set("startingCash", e.target.value)} />
+              </div>
+            </ViewBlock>
+            <ViewBlock
+              icon="cost"
+              summary={draft.costBps ? `${draft.costBps} bp` : "Cost"}
+              help="Trading cost charged on each buy and each sell, in basis points."
+              open={open === "cost"}
+              onOpen={() => toggle("cost")}
+            >
+              <div className="cond-row">
+                <label className="cond-label" htmlFor="bps">
+                  Per side
+                </label>
+                <input id="bps" type="number" value={draft.costBps} placeholder={dflt ? String(dflt.cost_bps_per_side) : ""} onChange={(e) => set("costBps", e.target.value)} />
+              </div>
+            </ViewBlock>
           </div>
-        </section>
+        </SectionWrap>
 
         <section className="stack-block">
           {check.error ? (

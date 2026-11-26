@@ -24,9 +24,9 @@ export default function GatesPage() {
         {list.map((g) => (
           <div className="tile gate" key={g.number} data-testid={`gate-${g.number}`} data-passing={g.passing}>
             <div className="tile-label">Gate {g.number}</div>
-            <div className="tile-value" style={{ fontSize: "1rem" }}>
+            <p className="gate-title">
               {g.title} · <span className={g.passing ? "pos" : "muted"}>{g.passing ? "Pass" : "Pending"}</span>
-            </div>
+            </p>
             {g.depends_on ? (
               <p className="small">
                 <strong>Waiting on:</strong> {g.depends_on}

@@ -49,8 +49,9 @@ function StartForm({ onStarted }: { onStarted: (id: string) => void }) {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="paper-start">Last history session (blank: the data&apos;s last)</label>
+          <label htmlFor="paper-start">Last history session</label>
           <input id="paper-start" data-testid="paper-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+          <div className="help">Leave blank to use the last session in the data.</div>
         </div>
         <div className="field">
           <label htmlFor="paper-name">Name (optional)</label>

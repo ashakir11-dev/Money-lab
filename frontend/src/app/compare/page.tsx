@@ -35,15 +35,33 @@ function humanSetting(path: string): string {
     end: "Last session",
   };
   if (named[path]) return named[path];
-  const entryVal = path.match(/^entry\[(\d+)\]\.params\.value$/);
-  if (entryVal) return `Entry ${Number(entryVal[1]) + 1} threshold`;
-  const entryOp = path.match(/^entry\[(\d+)\]\.params\.op$/);
-  if (entryOp) return `Entry ${Number(entryOp[1]) + 1} comparison`;
-  const entryKind = path.match(/^entry\[(\d+)\]\.kind$/);
-  if (entryKind) return `Entry ${Number(entryKind[1]) + 1} type`;
-  const entryInd = path.match(/^entry\[(\d+)\]\.indicator/);
-  if (entryInd) return `Entry ${Number(entryInd[1]) + 1} indicator`;
-  return path.replace(/_/g, " ");
+  const indexed = path.match(/^(entry|exits|exit)\[(\d+)\](?:\.(.+))?$/);
+  if (indexed) {
+    const kind = indexed[1] === "entry" ? "Entry" : "Exit";
+    const n = Number(indexed[2]) + 1;
+    const rest = (indexed[3] ?? "")
+      .replace(/^params\./, "")
+      .replace(/[._]/g, " ")
+      .replace(/\s*id$/, "")
+      .trim();
+    const word =
+      rest === "value"
+        ? "threshold"
+        : rest === "op"
+          ? "comparison"
+          : rest === "pct"
+            ? "percent"
+            : rest || "setting";
+    return `${kind} ${n} ${word}`;
+  }
+  return path.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function showSetting(path: string, v: unknown): string {
+  if (typeof v === "number" && /pct|fraction/i.test(path) && Math.abs(v) <= 1) {
+    return `${(v * 100).toFixed(2)}%`;
+  }
+  return show(v);
 }
 
 function startCash(resolved: Record<string, unknown> | undefined): number {
@@ -213,9 +231,9 @@ function CompareView() {
               {c.config_diff.map((d) => (
                 <span key={d.setting} className="chip">
                   <strong>{humanSetting(d.setting)}</strong>
-                  <span>{show(d.a)}</span>
+                  <span>{showSetting(d.setting, d.a)}</span>
                   <span aria-hidden="true">→</span>
-                  <span>{show(d.b)}</span>
+                  <span>{showSetting(d.setting, d.b)}</span>
                 </span>
               ))}
             </div>

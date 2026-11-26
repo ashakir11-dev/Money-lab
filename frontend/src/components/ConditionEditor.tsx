@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ViewBlock, type BlockIconName } from "@/components/BuildSection";
 import type { Component, Param } from "@/lib/api";
 
 export type Value = string | number;
@@ -315,6 +316,13 @@ export function partnersOf(main: Component | undefined, indicators: Component[])
   return main.price_scale ? indicators.filter((c) => c.price_scale) : indicators.filter((c) => c.id === main.id);
 }
 
+const KIND_ICON: Record<CondKind, BlockIconName> = {
+  threshold: "level",
+  price_cross: "cross",
+  indicator_compare: "compare",
+  indicator_cross: "cross",
+};
+
 export function ConditionEditor({
   index,
   cond,
@@ -322,6 +330,8 @@ export function ConditionEditor({
   onChange,
   onRemove,
   prefix,
+  open,
+  onOpen,
 }: {
   index: number;
   cond: CondDraft;
@@ -329,6 +339,8 @@ export function ConditionEditor({
   onChange: (c: CondDraft) => void;
   onRemove: () => void;
   prefix: string;
+  open: boolean;
+  onOpen: () => void;
 }) {
   const byId = new Map(comps.map((c) => [c.id, c]));
   const indicators = comps.filter((c) => c.uses.includes("indicator"));
@@ -339,7 +351,6 @@ export function ConditionEditor({
   const kindSchema = byId.get(cond.kind);
   const partners = partnersOf(ind, indicators);
   const otherInd = byId.get(cond.other ?? "");
-  const where = prefix === "condition" ? "Rule" : "Exit";
 
   /** Keep `other` valid for the main indicator; default to a second copy of it. */
   function withPartner(next: CondDraft): CondDraft {
@@ -369,21 +380,27 @@ export function ConditionEditor({
 
   const pairChoice = paired ? kindSchema?.params.find((x) => x.choices && x.choices.length) : undefined;
 
+  const direction = cond.kind === "price_cross" ? kindSchema?.params.find((x) => x.name === "direction") : undefined;
+  const op = kindSchema?.params.find((x) => x.name === "op");
+  const text = sentence(cond, byId);
+
   return (
-    <div className="cond" data-testid={`${prefix}-${index}`}>
-      <div className="cond-head">
-        <strong>
-          {where} {index + 1}
-        </strong>
-        <span className="cond-sentence" title={sentence(cond, byId)}>
-          {sentence(cond, byId)}
-        </span>
-        <button className="link" type="button" onClick={onRemove} aria-label={`Remove condition ${index + 1}`}>
-          Remove
-        </button>
-      </div>
-      <div className="cond-toolbar">
+    <ViewBlock
+      testId={`${prefix}-${index}`}
+      icon={KIND_ICON[cond.kind]}
+      summary={text}
+      help={[kindSchema?.description, ind?.description].filter(Boolean).join(" ")}
+      open={open}
+      onOpen={onOpen}
+      onRemove={onRemove}
+      removeLabel={`Remove condition ${index + 1}`}
+    >
+      <div className="cond-row">
+        <label className="cond-label" htmlFor={`${prefix}-${index}-kind`}>
+          Type
+        </label>
         <select
+          id={`${prefix}-${index}-kind`}
           className="cond-kind"
           value={cond.kind}
           onChange={(e) => setKind(e.target.value as CondKind)}
@@ -396,7 +413,13 @@ export function ConditionEditor({
             </option>
           ))}
         </select>
+      </div>
+      <div className="cond-row">
+        <label className="cond-label" htmlFor={`${prefix}-${index}-indicator`}>
+          Indicator
+        </label>
         <select
+          id={`${prefix}-${index}-indicator`}
           className="cond-indicator"
           value={cond.indicator}
           onChange={(e) => setIndicator(e.target.value)}
@@ -410,85 +433,92 @@ export function ConditionEditor({
           ))}
         </select>
       </div>
-      <div className="cond-params">
-        {(ind?.params ?? []).map((p) => {
-          const dir = cond.kind === "price_cross" ? kindSchema?.params.find((x) => x.name === "direction") : undefined;
-          const firstNum = (ind?.params ?? []).find((x) => x.type === "int" || x.type === "float")?.name;
-          return (
+      {(ind?.params ?? []).map((p) => (
+        <ParamControl
+          key={`${cond.indicator}-${p.name}`}
+          p={p}
+          value={cond.indParams[p.name] ?? ""}
+          testid={`param-${p.name}`}
+          inputId={`${prefix}-${index}-param-${p.name}`}
+          indicator={cond.indicator}
+          onChange={(v) => onChange({ ...cond, indParams: { ...cond.indParams, [p.name]: v } })}
+        />
+      ))}
+      {direction ? (
+        <div className="cond-row">
+          <span className="cond-label">When</span>
+          <ChoicePills
+            p={direction}
+            value={cond.params.direction ?? ""}
+            testid="cross-direction"
+            onChange={(v) => onChange({ ...cond, params: { ...cond.params, direction: v } })}
+          />
+        </div>
+      ) : null}
+      {paired ? (
+        <>
+          {pairChoice ? (
             <ParamControl
-              key={`${cond.indicator}-${p.name}`}
-              p={p}
-              value={cond.indParams[p.name] ?? ""}
-              testid={`param-${p.name}`}
-              inputId={`${prefix}-${index}-param-${p.name}`}
+              p={pairChoice}
+              value={cond.params[pairChoice.name] ?? ""}
+              testid={`pair-${pairChoice.name}`}
+              inputId={`${prefix}-${index}-pair-${pairChoice.name}`}
               indicator={cond.indicator}
-              extra={
-                dir && p.name === firstNum ? (
-                  <ChoicePills
-                    p={dir}
-                    value={cond.params.direction ?? ""}
-                    testid="cross-direction"
-                    onChange={(v) => onChange({ ...cond, params: { ...cond.params, direction: v } })}
-                  />
-                ) : undefined
-              }
-              onChange={(v) => onChange({ ...cond, indParams: { ...cond.indParams, [p.name]: v } })}
+              onChange={(v) => onChange({ ...cond, params: { ...cond.params, [pairChoice.name]: v } })}
             />
-          );
-        })}
-        {paired ? (
-          <>
-            {pairChoice ? (
-              <ParamControl
-                p={pairChoice}
-                value={cond.params[pairChoice.name] ?? ""}
-                testid={`pair-${pairChoice.name}`}
-                inputId={`${prefix}-${index}-pair-${pairChoice.name}`}
-                indicator={cond.indicator}
-                onChange={(v) => onChange({ ...cond, params: { ...cond.params, [pairChoice.name]: v } })}
-              />
-            ) : null}
+          ) : null}
+          <div className="cond-row">
+            <label className="cond-label" htmlFor={`${prefix}-${index}-other`}>
+              Than
+            </label>
+            <select
+              id={`${prefix}-${index}-other`}
+              className="cond-indicator"
+              value={cond.other ?? ""}
+              data-testid="other-select"
+              aria-label="Second indicator"
+              onChange={(e) => onChange({ ...cond, other: e.target.value, otherParams: defaultsOf(byId.get(e.target.value)) })}
+            >
+              {partners.map((c) => (
+                <option key={c.id} value={c.id} title={c.description}>
+                  {shortIndicator(c)}
+                </option>
+              ))}
+            </select>
+          </div>
+          {(otherInd?.params ?? []).map((p) => (
+            <ParamControl
+              key={`other-${cond.other}-${p.name}`}
+              p={p}
+              value={cond.otherParams?.[p.name] ?? ""}
+              testid={`other-param-${p.name}`}
+              inputId={`${prefix}-${index}-other-param-${p.name}`}
+              indicator={cond.other ?? ""}
+              onChange={(v) => onChange({ ...cond, otherParams: { ...(cond.otherParams ?? {}), [p.name]: v } })}
+            />
+          ))}
+          {!ind?.price_scale ? (
+            <p className="help">
+              {ind ? shortIndicator(ind) : "This indicator"} is not in price units, so it can only be compared with another {ind ? shortIndicator(ind) : "copy"}.
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {op ? (
             <div className="cond-row">
-              <label className="cond-label" htmlFor={`${prefix}-${index}-other`}>
-                Than
-              </label>
-              <select
-                id={`${prefix}-${index}-other`}
-                className="cond-indicator"
-                value={cond.other ?? ""}
-                data-testid="other-select"
-                aria-label="Second indicator"
-                onChange={(e) => onChange({ ...cond, other: e.target.value, otherParams: defaultsOf(byId.get(e.target.value)) })}
-              >
-                {partners.map((c) => (
-                  <option key={c.id} value={c.id} title={c.description}>
-                    {shortIndicator(c)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {(otherInd?.params ?? []).map((p) => (
-              <ParamControl
-                key={`other-${cond.other}-${p.name}`}
-                p={p}
-                value={cond.otherParams?.[p.name] ?? ""}
-                testid={`other-param-${p.name}`}
-                inputId={`${prefix}-${index}-other-param-${p.name}`}
-                indicator={cond.other ?? ""}
-                onChange={(v) => onChange({ ...cond, otherParams: { ...(cond.otherParams ?? {}), [p.name]: v } })}
+              <span className="cond-label">When</span>
+              <ChoicePills
+                p={op}
+                value={cond.params.op ?? ""}
+                testid="threshold-op"
+                onChange={(v) => onChange({ ...cond, params: { ...cond.params, op: v } })}
               />
-            ))}
-            {!ind?.price_scale ? (
-              <p className="help">
-                {ind ? shortIndicator(ind) : "This indicator"} is not in price units, so it can only be compared with another {ind ? shortIndicator(ind) : "copy"}.
-              </p>
-            ) : null}
-          </>
-        ) : (
-          (kindSchema?.params ?? []).map((p) => {
+            </div>
+          ) : null}
+          {(kindSchema?.params ?? []).map((p) => {
             if (p.name === "op" || p.name === "direction") return null;
             const testid = cond.kind === "threshold" ? `threshold-${p.name}` : `cross-${p.name}`;
-            const op = kindSchema?.params.find((x) => x.name === "op");
             return (
               <ParamControl
                 key={`${cond.kind}-${p.name}`}
@@ -497,22 +527,12 @@ export function ConditionEditor({
                 testid={testid}
                 inputId={`${prefix}-${index}-${testid}`}
                 indicator={cond.indicator}
-                extra={
-                  p.name === "value" && op ? (
-                    <ChoicePills
-                      p={op}
-                      value={cond.params.op ?? ""}
-                      testid="threshold-op"
-                      onChange={(v) => onChange({ ...cond, params: { ...cond.params, op: v } })}
-                    />
-                  ) : undefined
-                }
                 onChange={(v) => onChange({ ...cond, params: { ...cond.params, [p.name]: v } })}
               />
             );
-          })
-        )}
-      </div>
-    </div>
+          })}
+        </>
+      )}
+    </ViewBlock>
   );
 }

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 const W = 920;
 const H = 340;
-const M = { left: 8, right: 8, top: 28, bottom: 36 };
+const M = { left: 8, right: 28, top: 28, bottom: 36 };
 
 export type SpecimenSeries = {
   name: string;
@@ -74,7 +74,14 @@ export function Specimen({
   const y = (v: number) => M.top + (1 - (v - lo) / (hi - lo)) * (H - M.top - M.bottom);
   const pinIndex = pinDate ? dates.indexOf(pinDate) : -1;
   const step = Math.max(1, Math.round((dates.length - 1) / 4));
-  const xTicks = dates.map((_, i) => i).filter((i) => i % step === 0 || i === dates.length - 1);
+  const last = dates.length - 1;
+  const xTicks = dates
+    .map((_, i) => i)
+    .filter((i) => {
+      if (i === 0 || i === last) return true;
+      if (i % step !== 0) return false;
+      return x(last) - x(i) > 72 && x(i) - x(0) > 72;
+    });
 
   const chart = (
     <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={caption ?? "Equity specimen"}>

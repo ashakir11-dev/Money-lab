@@ -76,7 +76,12 @@ export function EquityChart({
     });
     const yTicks = niceTicks(lo, hi);
     const step = Math.max(1, Math.round((dates.length - 1) / 5));
-    const xTicks = dates.map((_, i) => i).filter((i) => i % step === 0);
+    const last = dates.length - 1;
+    const xTicks = dates.map((_, i) => i).filter((i) => {
+      if (i === 0 || i === last) return true;
+      if (i % step !== 0) return false;
+      return x(last) - x(i) > 64 && x(i) - x(0) > 64;
+    });
     return { x, y, paths, yTicks, xTicks };
   }, [dates, shown]);
 
@@ -121,7 +126,13 @@ export function EquityChart({
           </g>
         ))}
         {geo.xTicks.map((i) => (
-          <text key={i} x={geo.x(i)} y={H - 10} textAnchor="middle" className="tick">
+          <text
+            key={i}
+            x={geo.x(i)}
+            y={H - 10}
+            textAnchor={i === 0 ? "start" : i === dates.length - 1 ? "end" : "middle"}
+            className="tick"
+          >
             {shortDate(dates[i])}
           </text>
         ))}
