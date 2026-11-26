@@ -12,9 +12,9 @@ changed and why. Batches of variants run concurrently on a worker pool
 
 On GitHub, click **Code > Codespaces > Create codespace on main**. The codespace installs
 everything, loads the demo data and starts the dashboard; a browser tab opens on it
-(or open the **Ports** tab and click port 8501). Then follow
-[docs/walkthrough.md](docs/walkthrough.md). Live Tiingo data needs `TIINGO_API_KEY`
-added as a Codespaces secret; the demo does not.
+(or open the **Ports** tab and click port 8000). Then follow
+[docs/walkthrough.md](docs/walkthrough.md). Live data needs `EQUIBLES_API_KEY` (any bar
+size) or `TIINGO_API_KEY` (daily) added as a Codespaces secret; the demo does not.
 
 ## Setup
 
