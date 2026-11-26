@@ -654,6 +654,9 @@ function Builder() {
             </span>
           }
         >
+          <p className="muted">
+            Any one of these sells. A stop and a profit target do not both have to hit, and an exit signal fires when any of its conditions pass.
+          </p>
           <div className="block-row">
             {draft.guards.map((g, i) => {
               const schema = byId.get(g.kind);

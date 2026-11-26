@@ -1573,7 +1573,7 @@ button.linkish {
 }
 .trade-dialog-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
 }
 .trade-chart svg {
@@ -1613,6 +1613,15 @@ button.linkish {
   min-width: 0;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
+}
+.trade-leg + .trade-leg {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.trade-leg h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
 }
 @media (max-width: 800px) {
   .trade-dialog-grid {

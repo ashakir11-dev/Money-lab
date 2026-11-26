@@ -457,6 +457,11 @@ class ChartSignalOut(BaseModel):
     values: dict[str, Any]
 
 
+class ChartLegOut(BaseModel):
+    fill: ChartFillOut
+    signal: ChartSignalOut
+
+
 class TradeChartOut(BaseModel):
     symbol: str
     timeframe: str
@@ -465,6 +470,9 @@ class TradeChartOut(BaseModel):
     series: list[IndicatorSeriesOut]
     fill: ChartFillOut
     signal: ChartSignalOut
+    legs: list[ChartLegOut] = Field(
+        description="The clicked fill, or the buy and the sell when a round trip is opened."
+    )
 
 
 class DecisionPage(BaseModel):
@@ -967,14 +975,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         _detail(lab, run_id)
         return records(lab.store.ledgers(run_id).fills)
 
-    @app.get("/api/runs/{run_id}/chart", response_model=TradeChartOut, tags=["runs"])
-    def trade_chart(run_id: str, decision_id: Annotated[int, Query()]) -> Any:
-        """Candles and indicator lines around one fill. ``decision_id`` is the fill's."""
-        try:
-            full = lab.store.get(run_id)
-        except KeyError:
-            raise HTTPException(404, f"run {run_id} not found") from None
-        led = lab.store.ledgers(run_id)
+    def _filled_decision(led: Any, decision_id: int) -> tuple[dict[str, Any], dict[str, Any]]:
         decisions = led.decisions
         if "decision_id" not in decisions.columns or decisions.empty:
             raise HTTPException(404, f"decision {decision_id} not found")
@@ -989,6 +990,33 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
             raise HTTPException(404, f"decision {decision_id} not found")
         if len(matched_fills) > 1:
             raise HTTPException(422, f"decision {decision_id} has more than one fill")
+        decision = {str(k): v for k, v in matched.iloc[0].to_dict().items()}
+        fill = {str(k): v for k, v in matched_fills.iloc[0].to_dict().items()}
+        return decision, fill
+
+    @app.get("/api/runs/{run_id}/chart", response_model=TradeChartOut, tags=["runs"])
+    def trade_chart(
+        run_id: str,
+        decision_id: Annotated[int, Query()],
+        paired_decision_id: Annotated[int | None, Query()] = None,
+    ) -> Any:
+        """Candles around a fill. A paired id adds the other leg of that round trip."""
+        try:
+            full = lab.store.get(run_id)
+        except KeyError:
+            raise HTTPException(404, f"run {run_id} not found") from None
+        led = lab.store.ledgers(run_id)
+        decision, fill = _filled_decision(led, decision_id)
+        paired = None
+        if paired_decision_id is not None and paired_decision_id != decision_id:
+            other_decision, other_fill = _filled_decision(led, paired_decision_id)
+            if str(other_fill["symbol"]) != str(fill["symbol"]):
+                other_symbol = other_fill["symbol"]
+                raise HTTPException(
+                    422,
+                    f"decision {paired_decision_id} is {other_symbol}, not {fill['symbol']}",
+                )
+            paired = (other_decision, other_fill)
         resolved = full["resolved"]
         sid = full["snapshot_id"]
         if not (lab.settings.snapshot_dir / f"{sid}.parquet").is_file():
@@ -1003,9 +1031,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         except FileNotFoundError:
             raise HTTPException(404, f"snapshot {sid} not found") from None
         try:
-            decision = {str(k): v for k, v in matched.iloc[0].to_dict().items()}
-            fill = {str(k): v for k, v in matched_fills.iloc[0].to_dict().items()}
-            payload = assemble_chart(resolved, data, decision, fill)
+            payload = assemble_chart(resolved, data, decision, fill, paired=paired)
         except ChartRejected as exc:
             raise HTTPException(422, str(exc)) from exc
         return payload

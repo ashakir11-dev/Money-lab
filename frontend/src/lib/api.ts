@@ -146,8 +146,13 @@ export const api = {
   equity: (id: string) => request<EquityRow[]>(`/api/runs/${encodeURIComponent(id)}/equity`),
   trades: (id: string) => request<TradeRow[]>(`/api/runs/${encodeURIComponent(id)}/trades`),
   fills: (id: string) => request<FillRow[]>(`/api/runs/${encodeURIComponent(id)}/fills`),
-  chart: (id: string, decisionId: number) =>
-    request<TradeChart>(`/api/runs/${encodeURIComponent(id)}/chart${qs({ decision_id: decisionId })}`),
+  chart: (id: string, decisionId: number, pairedDecisionId?: number) =>
+    request<TradeChart>(
+      `/api/runs/${encodeURIComponent(id)}/chart${qs({
+        decision_id: decisionId,
+        paired_decision_id: pairedDecisionId,
+      })}`,
+    ),
   decisions: (
     id: string,
     q: { offset?: number; limit?: number; action?: string[]; symbol?: string; session?: string } = {},

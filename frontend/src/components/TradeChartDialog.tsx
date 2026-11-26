@@ -11,19 +11,24 @@ import { useAsync } from "@/lib/hooks";
 export function TradeChartDialog({
   runId,
   decisionId,
+  pairedDecisionId,
   title,
   onClose,
 }: {
   runId: string;
   decisionId: number;
+  pairedDecisionId?: number;
   title: string;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  const chart = useAsync(() => api.chart(runId, decisionId), [runId, decisionId]);
+  const chart = useAsync(
+    () => api.chart(runId, decisionId, pairedDecisionId),
+    [runId, decisionId, pairedDecisionId],
+  );
   useEffect(() => {
     closeRef.current?.focus();
-  }, [decisionId]);
+  }, [decisionId, pairedDecisionId]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -34,7 +39,7 @@ export function TradeChartDialog({
 
   const data = chart.loading ? undefined : chart.data;
   const noBars = !!data && data.candles.every((c) => c == null);
-  const conditions = (data?.signal.conditions ?? []) as ConditionResult[];
+  const legs = data?.legs?.length ? data.legs : data ? [{ fill: data.fill, signal: data.signal }] : [];
   const timeframe =
     data?.timeframe === "1d"
       ? "1 day"
@@ -64,20 +69,33 @@ export function TradeChartDialog({
               <dl className="trade-facts">
                 <dt>Timeframe</dt>
                 <dd>{timeframe}</dd>
-                <dt>Filled</dt>
-                <dd>
-                  {data.fill.session.replace("T", " ")} · {data.fill.side} · {money(data.fill.price)}
-                </dd>
-                <dt>Signal</dt>
-                <dd>{data.signal.session.replace("T", " ")}</dd>
-                <dt>Reason</dt>
-                <dd>{data.signal.reason}</dd>
               </dl>
-              {conditions.length ? (
-                <div className="table-wrap">
-                  <ConditionsTable conditions={conditions} />
-                </div>
-              ) : null}
+              {legs.map((leg) => {
+                const conditions = (leg.signal.conditions ?? []) as ConditionResult[];
+                const name = leg.fill.side === "buy" ? "Buy" : leg.fill.side === "sell" ? "Sell" : leg.fill.side;
+                return (
+                  <section key={`${leg.fill.side}-${leg.fill.session}`} className="trade-leg">
+                    <h3>
+                      <span className={`side side-${leg.fill.side}`}>{name}</span>
+                    </h3>
+                    <dl className="trade-facts">
+                      <dt>Filled</dt>
+                      <dd>
+                        {leg.fill.session.replace("T", " ")} · {money(leg.fill.price)}
+                      </dd>
+                      <dt>Signal</dt>
+                      <dd>{leg.signal.session.replace("T", " ")}</dd>
+                      <dt>Reason</dt>
+                      <dd>{leg.signal.reason}</dd>
+                    </dl>
+                    {conditions.length ? (
+                      <div className="table-wrap">
+                        <ConditionsTable conditions={conditions} />
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
             </aside>
           </div>
         ) : null}

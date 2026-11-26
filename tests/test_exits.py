@@ -63,6 +63,37 @@ ENTRY = [(9.0, 9.0), (9.0, 10.0), (10.0, 9.5)]
 BOUGHT = (day(2), "XA", "buy", 50, 10.0, 0.0, 500.0)
 
 
+def test_signal_exit_fires_when_any_condition_passes() -> None:
+    # Close 10 is the only entry. The exit is "close below 1 or close above 12".
+    # Day 4 close 12.5 passes only the second condition, so the position sells.
+    # Waiting for both would never exit: a price cannot be under 1 and over 12.
+    signal = ExitRule(
+        kind="signal",
+        conditions=[
+            Condition(kind="threshold", indicator=CLOSE, params={"op": "below", "value": 1}),
+            Condition(kind="threshold", indicator=CLOSE, params={"op": "above", "value": 12}),
+        ],
+    )
+    df = bars({"XA": [*ENTRY, (10.0, 11.0), (11.0, 12.5), (12.5, 12.5)]})
+    r = run(df, strategy([signal]))
+    assert decisions(r, "exit") == [(day(4), "XA", "exit", "exit signal")]
+    assert fills(r) == [BOUGHT, (day(5), "XA", "sell", 50, 12.5, 0.0, 1125.0)]
+    held = run(bars({"XA": [*ENTRY, (10.0, 11.0), (11.0, 11.5), (11.5, 11.5)]}), strategy([signal]))
+    assert decisions(held, "exit") == []
+
+
+def test_stop_and_take_profit_do_not_both_have_to_hit() -> None:
+    # Take profit at 15% (11.5) fires on day 4. The 8% stop never hits, and the sale
+    # still happens.
+    r = run(
+        bars({"XA": [*ENTRY, (10.0, 11.0), (11.0, 11.5), (12.0, 12.0)]}),
+        strategy([ExitRule(kind="stop_loss"), ExitRule(kind="take_profit")]),
+    )
+    assert decisions(r, "exit") == [
+        (day(4), "XA", "exit", "take_profit: close 11.5 >= 11.5 (15% above entry 10)"),
+    ]
+
+
 def test_stop_loss_fires_at_the_level_and_a_gap_down_sells_at_the_lower_open() -> None:
     # Level = 10 x (1 - 0.08) = 9.2. Day 2 close 9.5 > 9.2: hold. Day 3 close 9.2 <= 9.2:
     # exit (a close exactly at the level fires). Day 4 opens at 8.5, below the level:

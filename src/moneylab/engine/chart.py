@@ -100,24 +100,56 @@ def _compute_symbol(
     return out
 
 
+def _leg(decision: dict[str, Any], fill: dict[str, Any]) -> dict[str, Any]:
+    conditions = decision.get("conditions")
+    values = decision.get("values")
+    return {
+        "fill": {
+            "session": str(fill["session"]),
+            "side": str(fill["side"]),
+            "price": float(fill["price"]),
+        },
+        "signal": {
+            "session": str(decision["session"]),
+            "action": str(decision.get("action") or ""),
+            "reason": str(decision.get("reason") or ""),
+            "conditions": conditions if isinstance(conditions, list) else [],
+            "values": values if isinstance(values, dict) else {},
+        },
+    }
+
+
 def assemble_chart(
     resolved: dict[str, Any],
     data: MarketData,
     decision: dict[str, Any],
     fill: dict[str, Any],
+    paired: tuple[dict[str, Any], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Candles and indicator series for one fill, already sliced."""
+    """Candles and indicator series for one fill, or for a buy and its sell.
+
+    ``paired`` is ``(decision, fill)`` for the other leg of the same round trip.
+    The slice runs from the earlier signal to the later fill so both marks fit.
+    """
+    pairs = [(decision, fill)]
+    if paired is not None:
+        pairs.append(paired)
     symbol = str(fill["symbol"])
+    for _decision, other in pairs:
+        if str(other["symbol"]) != symbol:
+            raise ChartRejected(f"paired fill is {other['symbol']}, not {symbol}")
     labels = [session_label(ts) for ts in data.sessions]
-    signal_session = str(decision["session"])
-    fill_session = str(fill["session"])
-    if signal_session not in labels:
-        raise ChartRejected(f"signal session {signal_session} is not on the run's bar grid")
-    if fill_session not in labels:
-        raise ChartRejected(f"fill session {fill_session} is not on the run's bar grid")
-    signal_i = labels.index(signal_session)
-    fill_i = labels.index(fill_session)
-    start, end = chart_window(len(labels), signal_i, fill_i)
+    indexes: list[int] = []
+    for leg_decision, leg_fill in pairs:
+        signal_session = str(leg_decision["session"])
+        fill_session = str(leg_fill["session"])
+        if signal_session not in labels:
+            raise ChartRejected(f"signal session {signal_session} is not on the run's bar grid")
+        if fill_session not in labels:
+            raise ChartRejected(f"fill session {fill_session} is not on the run's bar grid")
+        indexes.append(labels.index(signal_session))
+        indexes.append(labels.index(fill_session))
+    start, end = chart_window(len(labels), min(indexes), max(indexes))
     window = slice(start, end + 1)
     ordered = _indicator_order(resolved)
     computed = _compute_symbol(data, ordered, symbol, list(resolved["universe"]))
@@ -134,24 +166,16 @@ def assemble_chart(
                 "values": [_finite(value) for value in computed[key][window]],
             }
         )
-    conditions = decision.get("conditions")
-    values = decision.get("values")
+    legs = [_leg(leg_decision, leg_fill) for leg_decision, leg_fill in pairs]
+    legs.sort(key=lambda leg: (leg["fill"]["session"], 0 if leg["fill"]["side"] == "buy" else 1))
+    primary = _leg(decision, fill)
     return {
         "symbol": symbol,
         "timeframe": str(resolved.get("timeframe") or "1d"),
         "sessions": labels[window],
         "candles": candles,
         "series": series,
-        "fill": {
-            "session": fill_session,
-            "side": str(fill["side"]),
-            "price": float(fill["price"]),
-        },
-        "signal": {
-            "session": signal_session,
-            "action": str(decision.get("action") or ""),
-            "reason": str(decision.get("reason") or ""),
-            "conditions": conditions if isinstance(conditions, list) else [],
-            "values": values if isinstance(values, dict) else {},
-        },
+        "fill": primary["fill"],
+        "signal": primary["signal"],
+        "legs": legs,
     }

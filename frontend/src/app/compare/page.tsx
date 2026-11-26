@@ -16,6 +16,8 @@ import {
   ownFills,
   pnlSummary,
   reasonCounts,
+  chartRequestForFill,
+  chartRequestForTrip,
   roundTrips,
   timeInMarket,
   type RoundTrip,
@@ -304,7 +306,7 @@ function TripTable({
 }: {
   trips: RoundTrip[];
   only: boolean[];
-  onOpen: (decisionId: number, title: string, el: HTMLElement) => void;
+  onOpen: (trip: RoundTrip, el: HTMLElement) => void;
 }) {
   if (!trips.length) return <p className="muted">No closed round trips.</p>;
   return (
@@ -326,11 +328,11 @@ function TripTable({
             <tr key={`${t.symbol}-${t.entrySession}-${i}`} className={only[i] ? "only-side" : undefined}>
               <td>{t.symbol}</td>
               <td>
-                {t.entryDecisionId != null ? (
+                {t.entryDecisionId != null || t.exitDecisionId != null ? (
                   <button
                     type="button"
                     className="linkish"
-                    onClick={(e) => onOpen(t.entryDecisionId as number, `${t.symbol} buy · ${t.entrySession}`, e.currentTarget)}
+                    onClick={(e) => onOpen(t, e.currentTarget)}
                   >
                     {t.entrySession} @ {money(t.entryPrice)}
                   </button>
@@ -341,11 +343,11 @@ function TripTable({
                 )}
               </td>
               <td>
-                {t.exitDecisionId != null ? (
+                {t.entryDecisionId != null || t.exitDecisionId != null ? (
                   <button
                     type="button"
                     className="linkish"
-                    onClick={(e) => onOpen(t.exitDecisionId as number, `${t.symbol} sell · ${t.exitSession}`, e.currentTarget)}
+                    onClick={(e) => onOpen(t, e.currentTarget)}
                   >
                     {t.exitSession} @ {money(t.exitPrice)}
                   </button>
@@ -402,11 +404,19 @@ function CompareView() {
     !!b && detailed,
   );
   const opener = useRef<HTMLElement | null>(null);
-  const [chartPick, setChartPick] = useState<{ runId: string; decisionId: number; title: string } | null>(null);
-  const openChart = useCallback((runId: string, decisionId: number, title: string, el: HTMLElement) => {
-    opener.current = el;
-    setChartPick({ runId, decisionId, title });
-  }, []);
+  const [chartPick, setChartPick] = useState<{
+    runId: string;
+    decisionId: number;
+    pairedDecisionId?: number;
+    title: string;
+  } | null>(null);
+  const openChart = useCallback(
+    (runId: string, decisionId: number, title: string, el: HTMLElement, pairedDecisionId?: number) => {
+      opener.current = el;
+      setChartPick({ runId, decisionId, pairedDecisionId, title });
+    },
+    [],
+  );
   const closeChart = useCallback(() => {
     setChartPick(null);
     opener.current?.focus();
@@ -618,14 +628,31 @@ function CompareView() {
               <div className="grid-2" data-testid="round-trips">
                 <section className="stack-block">
                   <h2>Round trips in A</h2>
-                  <TripTable trips={tripsA} only={onlyA} onOpen={(id, title, el) => openChart(c.a.id, id, title, el)} />
+                  <TripTable
+                    trips={tripsA}
+                    only={onlyA}
+                    onOpen={(trip, el) => {
+                      const req = chartRequestForTrip(trip);
+                      if (req) openChart(c.a.id, req.decisionId, req.title, el, req.pairedDecisionId);
+                    }}
+                  />
                 </section>
                 <section className="stack-block">
                   <h2>Round trips in B</h2>
-                  <TripTable trips={tripsB} only={onlyB} onOpen={(id, title, el) => openChart(c.b.id, id, title, el)} />
+                  <TripTable
+                    trips={tripsB}
+                    only={onlyB}
+                    onOpen={(trip, el) => {
+                      const req = chartRequestForTrip(trip);
+                      if (req) openChart(c.b.id, req.decisionId, req.title, el, req.pairedDecisionId);
+                    }}
+                  />
                 </section>
               </div>
-              <p className="caption">A shaded round trip is one the other run does not have.</p>
+              <p className="caption">
+                A shaded round trip is one the other run does not have. Click an entry or an exit to open that trade:
+                the chart marks the buy and the sell, and the signals that decided each.
+              </p>
 
               <div className="grid-2">
                 <section className="stack-block">
@@ -680,7 +707,10 @@ function CompareView() {
                     <FillsTable
                       fills={fillsA.data}
                       rowClass={(_fill, index) => (fillsOnlyA[index] ? "only-side" : undefined)}
-                      onOpen={(fill, el) => openChart(c.a.id, fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)}
+                      onOpen={(fill, el) => {
+                        const req = chartRequestForFill(fill, tripsA);
+                        if (req) openChart(c.a.id, req.decisionId, req.title, el, req.pairedDecisionId);
+                      }}
                     />
                   ) : (
                     <Loading />
@@ -693,14 +723,20 @@ function CompareView() {
                     <FillsTable
                       fills={fillsB.data}
                       rowClass={(_fill, index) => (fillsOnlyB[index] ? "only-side" : undefined)}
-                      onOpen={(fill, el) => openChart(c.b.id, fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)}
+                      onOpen={(fill, el) => {
+                        const req = chartRequestForFill(fill, tripsB);
+                        if (req) openChart(c.b.id, req.decisionId, req.title, el, req.pairedDecisionId);
+                      }}
                     />
                   ) : (
                     <Loading />
                   )}
                 </section>
               </div>
-              <p className="caption">A shaded trade is one the other run does not have. Click a buy or sell to open its chart.</p>
+              <p className="caption">
+                A shaded trade is one the other run does not have. Click a fill to open its chart. A fill that belongs
+                to one closed trade shows that trade&apos;s buy and sell.
+              </p>
 
               <section className="stack-block">
                 <div className="section-head">
@@ -805,6 +841,7 @@ function CompareView() {
                 <TradeChartDialog
                   runId={chartPick.runId}
                   decisionId={chartPick.decisionId}
+                  pairedDecisionId={chartPick.pairedDecisionId}
                   title={chartPick.title}
                   onClose={closeChart}
                 />

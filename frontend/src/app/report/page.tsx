@@ -34,6 +34,9 @@ import {
   marksFromFills,
   pnlSummary,
   barsPerYear,
+  chartRequestForFill,
+  chartRequestForTrip,
+  roundTrips,
   reasonCounts,
   rollingReturn,
   sweepEnd,
@@ -119,10 +122,14 @@ function ReportView() {
   const [job, setJob] = useState<Job>();
   const [rerunError, setRerunError] = useState<unknown>();
   const opener = useRef<HTMLElement | null>(null);
-  const [chartPick, setChartPick] = useState<{ decisionId: number; title: string } | null>(null);
-  const openChart = useCallback((decisionId: number, title: string, el: HTMLElement) => {
+  const [chartPick, setChartPick] = useState<{
+    decisionId: number;
+    pairedDecisionId?: number;
+    title: string;
+  } | null>(null);
+  const openChart = useCallback((decisionId: number, title: string, el: HTMLElement, pairedDecisionId?: number) => {
     opener.current = el;
-    setChartPick({ decisionId, title });
+    setChartPick({ decisionId, pairedDecisionId, title });
   }, []);
   const closeChart = useCallback(() => {
     setChartPick(null);
@@ -458,13 +465,14 @@ function ReportView() {
                       <tr key={`${t.symbol}-${t.entry_session}-${i}`}>
                         <td>{t.symbol}</td>
                         <td>
-                          {t.entry_decision_id != null ? (
+                          {t.entry_decision_id != null || t.exit_decision_id != null ? (
                             <button
                               type="button"
                               className="linkish"
-                              onClick={(e) =>
-                                openChart(t.entry_decision_id as number, `${t.symbol} buy · ${t.entry_session}`, e.currentTarget)
-                              }
+                              onClick={(e) => {
+                                const req = chartRequestForTrip(roundTrips([t])[0]);
+                                if (req) openChart(req.decisionId, req.title, e.currentTarget, req.pairedDecisionId);
+                              }}
                             >
                               {t.entry_session} @ {money(t.entry_price)}
                             </button>
@@ -475,13 +483,14 @@ function ReportView() {
                           )}
                         </td>
                         <td>
-                          {t.exit_decision_id != null ? (
+                          {t.entry_decision_id != null || t.exit_decision_id != null ? (
                             <button
                               type="button"
                               className="linkish"
-                              onClick={(e) =>
-                                openChart(t.exit_decision_id as number, `${t.symbol} sell · ${t.exit_session}`, e.currentTarget)
-                              }
+                              onClick={(e) => {
+                                const req = chartRequestForTrip(roundTrips([t])[0]);
+                                if (req) openChart(req.decisionId, req.title, e.currentTarget, req.pairedDecisionId);
+                              }}
                             >
                               {t.exit_session} @ {money(t.exit_price)}
                             </button>
@@ -555,9 +564,10 @@ function ReportView() {
             {fills.data ? (
               <FillsTable
                 fills={fills.data}
-                onOpen={(fill, el) =>
-                  openChart(fill.decision_id as number, `${fill.symbol} ${fill.side} · ${fill.session}`, el)
-                }
+                onOpen={(fill, el) => {
+                  const req = chartRequestForFill(fill, roundTrips(trips));
+                  if (req) openChart(req.decisionId, req.title, el, req.pairedDecisionId);
+                }}
               />
             ) : (
               <Loading />
@@ -628,6 +638,7 @@ function ReportView() {
             <TradeChartDialog
               runId={id}
               decisionId={chartPick.decisionId}
+              pairedDecisionId={chartPick.pairedDecisionId}
               title={chartPick.title}
               onClose={closeChart}
             />
