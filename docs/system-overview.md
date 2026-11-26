@@ -17,7 +17,9 @@ what it cannot do yet, and the options for what to do next.
 - **What we learned from the first real question.** Buying one of SPY's 20 biggest stocks
   when RSI drops below 30 made 25.3% over 2018 to 2024, while simply holding SPY made
   143.9%. The lab answered the question correctly; the strategy loses mostly because it
-  sits in cash 85% of the time, and the engine has no way to park idle cash in SPY.
+  sits in cash 85% of the time. Since engine/0.4.0 idle cash can be held in SPY, and the
+  rerun ([research/rsi30-idle-spy.md](research/rsi30-idle-spy.md)) finished at 161.1%, level
+  with SPY, with no edge that is distinguishable from luck (t = 1.06).
 - **Recommendation.** Finish gate 4 (in progress), then spend the next round on making the
   lab better at answering research questions (park idle cash in the benchmark, a research
   report page, point-in-time universes) rather than on more infrastructure.
@@ -117,6 +119,7 @@ What each piece is for, in plain words:
 | **Components** | Indicators and conditions. Each declares an id, version, parameters, defaults, limits and where it may be used. Adding MACD was one new file. | `src/moneylab/components/` |
 | **Engine** | Checks a strategy is valid, fills in defaults, then steps an account one trading day at a time. Batches run on several CPU cores. | `src/moneylab/engine/` |
 | **Reporting** | Metrics (return, drawdown, Sharpe, trades, exposure, costs) and the comparison that finds the first differing decision. | `src/moneylab/engine/reporting.py` |
+| **Analytics** | The research layer computed after each run from its ledgers and the snapshot's bars, then stored: trade quality (win rate, payoff, expectancy, profit factor, t-statistic), edge per trade versus the benchmark, CAGR, Sortino, Calmar, drawdown length, beta and alpha, results by year, exit type, symbol and market regime, MAE/MFE, turnover and cost drag, the signal funnel, streaks and monthly returns. `moneylab recompute-metrics` redoes it for saved runs. | `src/moneylab/engine/analytics.py` |
 | **Paper desk** | Takes a frozen strategy and processes new days as they are delivered, exactly once each, with replay. | `src/moneylab/paper/` |
 | **Data** | Imports CSV or Tiingo data, adjusts for splits and dividends, and stores it as a snapshot whose id is a fingerprint of its contents. | `src/moneylab/data/` |
 | **Storage** | SQLite for records, Parquet files for big tables. All local, no database server. | `var/` |
@@ -382,10 +385,12 @@ complete.
 
 These are the things most likely to surprise you.
 
-1. **Idle cash just sits there.** When no stock is signalling, the money is in cash earning
-   nothing. That is why the RSI < 30 research run was only 15% invested on average and
-   made 25.3% while SPY made 143.9%. The engine cannot "hold SPY until a signal fires".
-   This is the single biggest gap for real research.
+1. **Idle cash sits there unless you ask otherwise (engine/0.4.0).** By default, when no
+   stock is signalling the money is in cash earning nothing, which is why the first RSI < 30
+   run was only 15% invested and made 25.3% while SPY made 143.9%. The Builder's "Idle cash:
+   hold SPY" setting parks it in whole SPY shares (sold at the open just before a buy that
+   needs the cash; not counted as trades or positions). The default is unchanged so old runs
+   still reproduce.
 2. **Paper trading is manual and, right now, lives in the cloud.** Someone must fetch new
    sessions after each close. The gate 4 paper account was created in a cloud workspace
    that is temporary; to paper trade for weeks it should live on your Mac (or the
@@ -406,10 +411,13 @@ These are the things most likely to surprise you.
    Sizing: percent of equity, fixed dollars, volatility (ATR). Entries can be ranked by an
    indicator. Still missing: short selling and "any of" entry rules. The dashboard does
    not show the new options yet (they are available through the API).
-7. **Research statistics live in a script, not the dashboard.** The "edge per trade versus
-   SPY", t-statistic and by-year breakdown in the research note came from
-   `scripts/research_rsi_spy20.py`. The Compare page shows return, drawdown, Sharpe, trades,
-   exposure and costs, but not trade-level edge or significance.
+7. **Research statistics are in the dashboard (2026-11-26).** The report shows trade
+   quality, versus SPY (edge per trade, t-statistic, beta, alpha), risk, results by year, exit
+   type, symbol and market regime, monthly returns and a rolling one-year chart; Compare
+   shows the key rows with B - A. Still missing: out-of-sample / walk-forward checks,
+   parameter-neighbourhood views, and the same metrics on paper accounts. Runs saved before
+   this are filled in the first time they are opened (or with `moneylab recompute-metrics`),
+   provided their snapshot file is still present. Intraday runs use sessions = bars.
 8. **Background jobs are in memory.** A run that was queued when the server stopped is
    lost (finished runs are safe). Runs execute one at a time; batches use all cores.
 9. **Single user, local only, daily bars only.** By design for the MVP.
@@ -426,7 +434,10 @@ Full note: [research/rsi30-spy-top20.md](research/rsi30-spy-top20.md).
 | Hold SPY | 143.9% | 0.75 | -33.7% | 100% | |
 
 Each trade beat SPY over the same 10 days by 0.42 percentage points on average, but that is
-not statistically reliable (t = 1.24) and flips sign in 2020 and 2023. The takeaway is less
+not statistically reliable (t = 1.24) and flips sign in 2020 and 2023. Rerun with idle cash
+in SPY (engine/0.4.0), the base variant made 161.1% against 143.9% for SPY (14.7% a year
+against 13.6%), beta 1.03, alpha +0.7% a year, edge t = 1.06: level with SPY, no proven edge
+([note](research/rsi30-idle-spy.md)). The takeaway is less
 "RSI does not work" and more "a strategy that is 85% cash cannot be compared fairly with
 being 100% in the market". The lab did its job: it produced a clear, reproducible, honest
 answer.
@@ -438,8 +449,8 @@ Ordered by how much they help you answer real research questions per unit of eff
 | # | Option | What you get | Effort | Why now or later |
 | --- | --- | --- | --- | --- |
 | 1 | **Finish gate 4** (in progress tonight) | All six gates pass; the MVP is officially done. | Small | Already running. |
-| 2 | **Park idle cash in the benchmark** | A setting: "hold SPY with cash not in positions". Turns the research question into a fair fight: does switching into oversold stocks beat holding SPY? | Medium (engine + reporting + UI toggle; tests by hand-calculation like the others) | Directly fixes the biggest research gap. Must come with a new engine version so old runs still reproduce. |
-| 3 | **Research report on the Compare page** | Trade-level edge vs SPY, t-statistic, win rate, by-year and by-symbol tables, in the dashboard instead of a script. | Small to medium | Makes every future question faster to judge. |
+| 2 | **Park idle cash in the benchmark (done, engine/0.4.0)** | A setting: "hold SPY with cash not in positions". Turns the research question into a fair fight: does switching into oversold stocks beat holding SPY? | Medium (engine + reporting + UI toggle; tests by hand-calculation like the others) | Directly fixes the biggest research gap. Must come with a new engine version so old runs still reproduce. |
+| 3 | **Research report on the Compare page (done)** | Trade-level edge vs SPY, t-statistic, win rate, by-year and by-symbol tables, in the dashboard instead of a script. | Small to medium | Makes every future question faster to judge. |
 | 4 | **Paper trading on your Mac, on a schedule** | A daily after-close job that fetches and processes the new session, and a status you can glance at. | Small to medium | Needed if you want weeks of forward evidence; not needed for the gates. |
 | 5 | **Point-in-time universes** | Import dated index or ETF holdings so a backtest only trades what was actually in the index then. | Medium (data source is the hard part) | Removes hindsight bias from every "top N" study. |
 | 6 | **More building blocks** | Stop-loss and trailing stop exits, volatility-based sizing, "rank by indicator and take the best N", Bollinger or ATR. Each is one new component file thanks to gate 1. | Small each | Pick based on the next question you want to ask. |

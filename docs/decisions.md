@@ -242,3 +242,25 @@ No engine change. They count bars, so a daily bar and an hourly bar use the same
 * **No look-ahead**: `tests/test_no_lookahead.py` checks every registered indicator, at
   defaults and at short lookbacks: truncating after bar t, or rewriting every later bar,
   never changes a value at or before t. A new indicator is covered when it is registered.
+
+## Idle cash in the benchmark (engine/0.4.0)
+
+`portfolio.idle_cash` is `"cash"` (default, unchanged behaviour and ledgers) or
+`"benchmark"`. With the benchmark setting:
+
+* Cash not needed by a position is held in whole shares of the benchmark in a separate
+  `sweep_qty`. Those shares are not in `positions`, never use a position slot, and their
+  fills (note `sweep`, no decision id) are not trades; trade counts, round trips and
+  exposure exclude them. Costs on them are paid and counted in total costs.
+* At each session open: (1) strategy sells fill; (2) the cash needed by pending buys that
+  have a bar today (quantity x the open, or the range high if higher, x one plus cost,
+  rounded up to the cent, a cent more for each order after the first) is compared with
+  cash, and just enough whole benchmark shares are sold at the open to cover any
+  shortfall; (3) strategy buys fill; (4) all remaining cash buys whole benchmark shares at
+  the open. A session where the benchmark has no bar does no sweep.
+* At the close equity includes the sweep value; `positions_value` excludes it; the equity
+  ledger gains a `sweep_value` column only when the setting is on. The available cash for
+  new entries includes the sweep shares at the last benchmark close less cost.
+* `sweep_qty` is part of the account state (default 0 when loading older state), so paper
+  accounts work. `engine/0.3.0` is in `COMPATIBLE_ENGINE_VERSIONS`.
+* Run analytics (`engine/analytics.py`) are derived after the run and never feed decisions.

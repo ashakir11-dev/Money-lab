@@ -1,7 +1,10 @@
 # Backtest metrics: what we report, what is missing, what to build next
 
-Written 2026-11-26 against `main` at `bf17b0c`. Analysis only: no code was changed.
-This is a plan to approve before anything is built.
+Written 2026-11-26 against `main` at `bf17b0c`.
+
+**Status (2026-11-26): all 19 items below are built** (engine/0.4.0, backend and dashboard).
+See "What was built" at the end. Decisions taken: warn under 30 closed trades; idle cash in
+SPY buys whole shares.
 
 ## The short version
 
@@ -163,3 +166,43 @@ you what to change.
   runs it is each bar's change; the number is right, only the wording is daily. (UI text.)
 - The compare page leaves the "B − A" cell empty for Sharpe and average exposure.
   (UI.)
+
+## What was built (2026-11-26)
+
+Backend: `src/moneylab/engine/analytics.py` computes everything after a run from its
+ledgers and the snapshot's bars; `run_one` stores it in the run's metrics (`analysis`, plus
+flat headline fields) and the trade list in `trades.parquet` beside the ledgers.
+`uv run moneylab recompute-metrics` (or opening an old run in the dashboard) fills it in for
+saved runs whose snapshot file is still present. The API has typed `Analysis` models and
+`GET /api/runs/{id}/trades`; `RunSummary` carries win rate, profit factor, CAGR, edge, edge
+t and the low-sample flag. Tests: `tests/test_analytics.py` (hand-checked fixtures),
+`tests/test_idle_cash.py`, `tests/test_api_analysis.py`.
+
+| # | Item | Where |
+|---|---|---|
+| 1 | Idle cash in SPY (engine/0.4.0, `portfolio.idle_cash`) | Builder toggle; report "Versus SPY" intro and fact line; rerun in `docs/research/rsi30-idle-spy.md` |
+| 2 | Edge per trade vs SPY, beat rate | Report "Versus SPY", trade table, by-year; Compare |
+| 3 | t-statistics and the under-30-trades warning | Trade quality and Versus SPY badges, run list, Compare |
+| 4 | Win rate, average win/loss, payoff | Report "Trade quality" |
+| 5 | Expectancy, profit factor | Report "Trade quality", run list, Compare |
+| 6 | CAGR and annualised volatility | Report "Versus SPY" and "Risk", run list, Compare |
+| 7 | Results by year | Report detailed: "Results by year" |
+| 8 | Exit breakdown | Report detailed: "How trades ended" |
+| 9 | MAE and MFE per trade | Trade table (Worst/Best) and Trade quality averages |
+| 10 | Drawdown length, recovery, drops over 10% | Report "Risk"; Compare |
+| 11 | Sortino, Calmar, SPY's Sharpe/Sortino/Calmar | Report "Versus SPY" and "Risk"; Compare |
+| 12 | Results by symbol | Report detailed |
+| 13 | Holding period for winners and losers | Report "Trade quality" (and a correct Hold column) |
+| 14 | Turnover, cost drag, share of gross profit, return before costs | Report detailed: "Costs and turnover" |
+| 15 | Signal funnel | Report detailed: "Signal funnel" |
+| 16 | Beta, correlation, alpha | Report "Versus SPY"; Compare |
+| 17 | Regime breakdown (benchmark above/below 200-day average; volatility regimes not done) | Report detailed |
+| 18 | Losing streaks (trades and months) | Report detailed: "Streaks"; Compare |
+| 19 | Monthly grid, rolling one-year return vs SPY | Report detailed |
+
+Also fixed: the report's trade table used the sell fill's decision-to-fill wait as "Hold"
+(about 1); it now uses the engine's trade list with the true holding length. The Sharpe help
+text says "each bar's change", and Compare fills B - A for Sharpe and average exposure.
+
+Not built: out-of-sample / walk-forward checks, parameter-neighbourhood view, and the same
+metrics on paper accounts (listed above as "Later").
