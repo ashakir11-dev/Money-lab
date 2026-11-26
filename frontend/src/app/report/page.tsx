@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { EquityChart } from "@/components/EquityChart";
 import { Specimen } from "@/components/Specimen";
-import { StatBreakdown, type StatItem } from "@/components/StatBreakdown";
+import { StatBreakdown } from "@/components/StatBreakdown";
 import { TradeChartDialog } from "@/components/TradeChartDialog";
 import { DecisionsTable, FillsTable } from "@/components/tables";
 import { Badge, ErrorBox, JobStatus, Loading } from "@/components/ui";
@@ -20,7 +20,8 @@ import {
   timeInMarket,
 } from "@/lib/analysis";
 import { api, waitForJob, type DecisionRow, type Job, type RunMetrics, type RunSummary, type Watchlist } from "@/lib/api";
-import { int, money, pct, sharpe, versusSpy, versusSpyDollars, when } from "@/lib/format";
+import { int, money, pct, versusSpy, when } from "@/lib/format";
+import { metricStats } from "@/lib/reportMetrics";
 import { useAsync } from "@/lib/hooks";
 
 const PAGE = 50;
@@ -37,137 +38,6 @@ const ACTIONS = [
 function startCashOf(resolved: Record<string, unknown> | undefined): number {
   const pf = resolved?.portfolio as { starting_cash?: number } | undefined;
   return pf?.starting_cash ?? 100000;
-}
-
-function toneOf(n: number | null | undefined): "pos" | "neg" | undefined {
-  if (typeof n !== "number") return undefined;
-  return n >= 0 ? "pos" : "neg";
-}
-
-function metricStats({
-  benchName,
-  m,
-  b,
-  pnl,
-  inMkt,
-}: {
-  benchName: string;
-  m: RunMetrics;
-  b: NonNullable<RunMetrics["benchmark"]>;
-  pnl: { total: number; vsBenchmark: number | null; realized: number; unrealized: number };
-  inMkt: number | null;
-}): StatItem[] {
-  const gap =
-    typeof m.total_return === "number" && typeof b.total_return === "number"
-      ? m.total_return - b.total_return
-      : null;
-  return [
-    {
-      label: "Return",
-      value: pct(m.total_return),
-      tone: toneOf(m.total_return),
-      meaning:
-        "How much the account grew or shrank from the first day of the run to the last, compared with what it was worth at the start. 10% means the account ended one tenth larger than it began.",
-    },
-    ...(benchName === "SPY"
-      ? [
-          {
-            label: "SPY return",
-            value: pct(b.total_return),
-            tone: toneOf(b.total_return),
-            meaning:
-              "What buying SPY, the S&P 500 ETF, and holding it would have made over this same run, with the same starting cash and trading costs. This is the S&P result these comparisons use.",
-          },
-        ]
-      : []),
-    {
-      label: benchName === "SPY" ? "Versus the S&P" : `Versus ${benchName}`,
-      value: versusSpy(m.total_return, b.total_return, benchName),
-      tone: toneOf(gap),
-      meaning:
-        benchName === "SPY"
-          ? "Whether this run beat the S&P 500. Beat SPY means the account's percent return finished above buy-and-hold SPY. Trailed SPY means it finished below. The gap is in percentage points: 12% against SPY's 9% is Beat SPY by 3.00 pp."
-          : `Whether this run beat ${benchName}, the benchmark saved with this run. This run was not scored against SPY, so this line is not an S&P result.`,
-    },
-    {
-      label: "Max drawdown",
-      value: pct(m.max_drawdown),
-      meaning:
-        "The deepest fall from a high in the account to a later low, measured against that high. −20% means that, at the worst moment, the account was a fifth below an earlier peak. This is the worst dip along the way, not the result at the end. A number closer to zero is a shallower dip.",
-    },
-    {
-      label: `${benchName} drawdown`,
-      value: pct(b.max_drawdown),
-      meaning: `The same deepest-fall measure for ${benchName}, which stays invested the whole time. Set it next to this run's max drawdown to see which path fell harder from its own peak.`,
-    },
-    {
-      label: "Sharpe",
-      value: sharpe(m.sharpe),
-      meaning:
-        "A score for how much the account gained for the amount it jumped around from day to day. Higher means more gain for the amount of bouncing. It uses each day's percent change in account value, treats cash as earning nothing, and scales the score to a full year. It reads \"undefined\" when those daily changes never vary, because there is no bouncing to measure.",
-    },
-    {
-      label: "Profit and loss",
-      value: money(pnl.total),
-      tone: toneOf(pnl.total),
-      meaning: "The ending account value minus the cash the run started with. This is the return, written in dollars instead of a percent.",
-    },
-    {
-      label: benchName === "SPY" ? "Versus the S&P in dollars" : `Versus ${benchName} in dollars`,
-      value: versusSpyDollars(pnl.vsBenchmark, benchName),
-      tone: toneOf(pnl.vsBenchmark),
-      meaning:
-        benchName === "SPY"
-          ? "The same S&P comparison in dollars: this run's profit minus the profit from buying SPY and holding it with the same starting cash. Beat SPY means the account finished ahead of the S&P in dollars."
-          : `This run's profit minus the profit from buying ${benchName} and holding it. This run was not scored against SPY.`,
-    },
-    {
-      label: "Realized",
-      value: money(pnl.realized),
-      tone: toneOf(pnl.realized),
-      meaning:
-        "Dollars already locked in from shares that were bought and later sold, after the trading costs on those buys and sells. This number does not change once the sale is done.",
-    },
-    {
-      label: "Unrealized",
-      value: money(pnl.unrealized),
-      tone: toneOf(pnl.unrealized),
-      meaning:
-        "Dollars still at stake in shares that have not been sold. It is what those shares are worth now, minus what was paid for them, including the cost of buying them. It keeps moving until the shares are sold.",
-    },
-    {
-      label: "Costs",
-      value: money(m.costs),
-      meaning:
-        "Trading costs charged on the buys and sells in this run. They have already been taken out of profit and loss, the return, and the final account value.",
-    },
-    {
-      label: "Final equity",
-      value: money(m.final_equity),
-      meaning: "What the account was worth on the last day: leftover cash plus the value of any shares still held.",
-    },
-    {
-      label: "Round trips",
-      value: int(m.trades),
-      meaning: "How many times a position was bought and then fully sold. A position still open at the end is not included.",
-    },
-    {
-      label: "Average exposure",
-      value: pct(m.avg_exposure),
-      meaning:
-        "On a typical day, how much of the account was in stocks rather than cash. 100% means the account was fully invested. 0% means it sat entirely in cash.",
-    },
-    {
-      label: "Time in market",
-      value: pct(inMkt),
-      meaning: `The share of days the account held at least one stock. ${benchName} is invested every day, so a run that spends time in cash is in the market less often than ${benchName}.`,
-    },
-    {
-      label: "Open positions",
-      value: int(m.open_positions ?? 0),
-      meaning: "How many buys were still unmatched by a sell when the run ended.",
-    },
-  ];
 }
 
 function RunPicker({ runs, id }: { runs: RunSummary[]; id: string }) {

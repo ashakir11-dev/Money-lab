@@ -1284,6 +1284,33 @@ textarea {
 .pair th.side-b {
   color: var(--series-2);
 }
+.pair-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pair tr.changed td {
+  background: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+}
+tr.only-side td,
+li.only-side {
+  background: color-mix(in srgb, var(--accent-soft) 80%, transparent);
+}
+.compare-leads {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.compare-leads h2 {
+  margin-bottom: 4px;
+}
+.compare-leads .side-a {
+  color: var(--series-1);
+}
+.compare-leads .side-b {
+  color: var(--series-2);
+}
 .stack {
   display: flex;
   flex-direction: column;

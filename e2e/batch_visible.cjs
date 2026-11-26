@@ -26,7 +26,7 @@ async function main() {
     const tSaved = Date.now();
     const [a, b] = job.run_ids;
     await page.goto(`${base}/compare?a=${a}&b=${b}`);
-    await page.getByTestId("first-difference").waitFor({ timeout: 120000 });
+    await page.getByTestId("compare-metrics").waitFor({ timeout: 120000 });
     const t1 = Date.now();
     out.push({ batch: i + 1, runs: job.run_ids.length, saved_s: (tSaved - t0) / 1000, visible_s: (t1 - tSaved) / 1000, total_s: (t1 - t0) / 1000 });
   }
