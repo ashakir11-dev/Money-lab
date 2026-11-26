@@ -68,8 +68,8 @@ const PARAM_SHORT: Record<string, string> = {
   atr_multiple: "Stop (× ATR)",
   left: "Bars before",
   right: "Confirm bars",
-  min_move: "Min move (ATR)",
-  zone: "Zone (ATR)",
+  min_move: "Min move",
+  zone: "Zone width",
   lookback: "Memory",
 };
 
