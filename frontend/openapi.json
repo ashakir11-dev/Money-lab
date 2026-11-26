@@ -1,6 +1,104 @@
 {
   "components": {
     "schemas": {
+      "AnalysisOut": {
+        "properties": {
+          "benchmark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReturnStatsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "by_exit": {
+            "items": {
+              "$ref": "#/components/schemas/GroupRowOut"
+            },
+            "title": "By Exit",
+            "type": "array"
+          },
+          "by_regime": {
+            "items": {
+              "$ref": "#/components/schemas/RegimeRowOut"
+            },
+            "title": "By Regime",
+            "type": "array"
+          },
+          "by_symbol": {
+            "items": {
+              "$ref": "#/components/schemas/GroupRowOut"
+            },
+            "title": "By Symbol",
+            "type": "array"
+          },
+          "by_year": {
+            "items": {
+              "$ref": "#/components/schemas/YearRowOut"
+            },
+            "title": "By Year",
+            "type": "array"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/CostStatsOut"
+          },
+          "drawdown": {
+            "$ref": "#/components/schemas/DrawdownStatsOut"
+          },
+          "edge": {
+            "$ref": "#/components/schemas/EdgeStatsOut"
+          },
+          "funnel": {
+            "$ref": "#/components/schemas/FunnelOut"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketStatsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "monthly": {
+            "items": {
+              "$ref": "#/components/schemas/MonthRowOut"
+            },
+            "title": "Monthly",
+            "type": "array"
+          },
+          "returns": {
+            "$ref": "#/components/schemas/ReturnStatsOut"
+          },
+          "streaks": {
+            "$ref": "#/components/schemas/StreaksOut"
+          },
+          "trades": {
+            "$ref": "#/components/schemas/TradeStatsOut"
+          }
+        },
+        "required": [
+          "trades",
+          "edge",
+          "returns",
+          "drawdown",
+          "benchmark",
+          "market",
+          "costs",
+          "funnel",
+          "by_year",
+          "monthly",
+          "streaks",
+          "by_symbol",
+          "by_exit",
+          "by_regime"
+        ],
+        "title": "AnalysisOut",
+        "type": "object"
+      },
       "BatchSubmit": {
         "properties": {
           "configs": {
@@ -279,6 +377,86 @@
         "title": "Condition",
         "type": "object"
       },
+      "CostStatsOut": {
+        "properties": {
+          "cost_drag": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Drag"
+          },
+          "return_before_costs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Before Costs"
+          },
+          "share_of_gross_profit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Of Gross Profit"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "traded_notional": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traded Notional"
+          },
+          "turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover"
+          }
+        },
+        "required": [
+          "total",
+          "return_before_costs",
+          "cost_drag",
+          "share_of_gross_profit",
+          "turnover",
+          "traded_notional"
+        ],
+        "title": "CostStatsOut",
+        "type": "object"
+      },
       "CsvImport": {
         "properties": {
           "csv": {
@@ -372,6 +550,208 @@
           "cost_bps_per_side"
         ],
         "title": "Defaults",
+        "type": "object"
+      },
+      "DrawdownStatsOut": {
+        "properties": {
+          "current_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Drawdown"
+          },
+          "drawdowns_over_10pct": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drawdowns Over 10Pct"
+          },
+          "longest_underwater": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longest Underwater"
+          },
+          "longest_underwater_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longest Underwater Start"
+          },
+          "max_dd_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Dd Length"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "peak_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Session"
+          },
+          "recovery_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Session"
+          },
+          "time_underwater": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Underwater"
+          },
+          "trough_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trough Session"
+          }
+        },
+        "required": [
+          "max_drawdown",
+          "peak_session",
+          "trough_session",
+          "recovery_session",
+          "max_dd_length",
+          "longest_underwater",
+          "longest_underwater_start",
+          "current_drawdown",
+          "drawdowns_over_10pct",
+          "time_underwater"
+        ],
+        "title": "DrawdownStatsOut",
+        "type": "object"
+      },
+      "EdgeStatsOut": {
+        "properties": {
+          "beat_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Rate"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "low_sample": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Sample"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "t_stat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Stat"
+          }
+        },
+        "required": [
+          "count",
+          "mean",
+          "median",
+          "t_stat",
+          "beat_rate",
+          "low_sample"
+        ],
+        "title": "EdgeStatsOut",
         "type": "object"
       },
       "EntryFill": {
@@ -519,6 +899,18 @@
           "session": {
             "title": "Session",
             "type": "string"
+          },
+          "sweep_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "value of idle cash held in the benchmark (idle_cash setting)",
+            "title": "Sweep Value"
           }
         },
         "required": [
@@ -646,6 +1038,102 @@
         "title": "FillRow",
         "type": "object"
       },
+      "FunnelOut": {
+        "properties": {
+          "entered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entered"
+          },
+          "fill_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill Rate"
+          },
+          "filled": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filled"
+          },
+          "near_misses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Near Misses"
+          },
+          "not_filled": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Not Filled",
+            "type": "object"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signals"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Skipped",
+            "type": "object"
+          },
+          "taken_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken Rate"
+          }
+        },
+        "required": [
+          "signals",
+          "entered",
+          "filled",
+          "taken_rate",
+          "fill_rate",
+          "skipped",
+          "not_filled",
+          "near_misses"
+        ],
+        "title": "FunnelOut",
+        "type": "object"
+      },
       "GateOut": {
         "properties": {
           "depends_on": {
@@ -682,6 +1170,84 @@
         "title": "GateOut",
         "type": "object"
       },
+      "GroupRowOut": {
+        "properties": {
+          "avg_edge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Edge"
+          },
+          "avg_hold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hold"
+          },
+          "avg_ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Ret"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pnl"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          }
+        },
+        "required": [
+          "key",
+          "trades",
+          "win_rate",
+          "pnl",
+          "avg_ret",
+          "avg_edge",
+          "avg_hold"
+        ],
+        "title": "GroupRowOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -703,7 +1269,7 @@
             "type": "string"
           },
           "engine_version": {
-            "default": "engine/0.3.0",
+            "default": "engine/0.4.0",
             "title": "Engine Version",
             "type": "string"
           },
@@ -844,6 +1410,87 @@
           "error"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "MarketStatsOut": {
+        "properties": {
+          "alpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha"
+          },
+          "beta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta"
+          },
+          "correlation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation"
+          }
+        },
+        "required": [
+          "beta",
+          "correlation",
+          "alpha"
+        ],
+        "title": "MarketStatsOut",
+        "type": "object"
+      },
+      "MonthRowOut": {
+        "properties": {
+          "bench_ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench Ret"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ret"
+          }
+        },
+        "required": [
+          "month",
+          "ret",
+          "bench_ret"
+        ],
+        "title": "MonthRowOut",
         "type": "object"
       },
       "PaperAccountOut": {
@@ -1057,6 +1704,22 @@
             ],
             "title": "Cost Bps Per Side"
           },
+          "idle_cash": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cash",
+                  "benchmark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "what cash not needed by a position does: stay as cash (default) or be held in whole shares of the benchmark, sold at the open when a trade needs the cash",
+            "title": "Idle Cash"
+          },
           "max_positions": {
             "anyOf": [
               {
@@ -1122,8 +1785,212 @@
         "title": "RankBy",
         "type": "object"
       },
+      "RegimeRowOut": {
+        "properties": {
+          "avg_edge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Edge"
+          },
+          "avg_ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Ret"
+          },
+          "bench_ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench Ret"
+          },
+          "regime": {
+            "enum": [
+              "up",
+              "down",
+              "warmup"
+            ],
+            "title": "Regime",
+            "type": "string"
+          },
+          "ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ret"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "trades": {
+            "default": 0,
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          }
+        },
+        "required": [
+          "regime",
+          "sessions",
+          "ret",
+          "bench_ret",
+          "trades",
+          "win_rate",
+          "avg_ret",
+          "avg_edge"
+        ],
+        "title": "RegimeRowOut",
+        "type": "object"
+      },
+      "ReturnStatsOut": {
+        "properties": {
+          "cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cagr"
+          },
+          "calmar": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calmar"
+          },
+          "longest_underwater": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longest Underwater"
+          },
+          "max_dd_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Dd Length"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "sortino": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sortino"
+          },
+          "volatility": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility"
+          }
+        },
+        "required": [
+          "cagr",
+          "volatility",
+          "sharpe",
+          "sortino",
+          "calmar",
+          "max_drawdown",
+          "longest_underwater",
+          "max_dd_length"
+        ],
+        "title": "ReturnStatsOut",
+        "type": "object"
+      },
       "RunDetail": {
         "properties": {
+          "analysis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "research analysis; null when it cannot be computed"
+          },
           "benchmark_return": {
             "anyOf": [
               {
@@ -1135,6 +2002,17 @@
             ],
             "title": "Benchmark Return"
           },
+          "cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cagr"
+          },
           "config_hash": {
             "title": "Config Hash",
             "type": "string"
@@ -1142,6 +2020,30 @@
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "edge_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "average edge per trade vs the benchmark",
+            "title": "Edge Mean"
+          },
+          "edge_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "t-statistic of that edge",
+            "title": "Edge T"
           },
           "engine_version": {
             "title": "Engine Version",
@@ -1161,6 +2063,18 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "low_sample": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fewer than 30 closed trades",
+            "title": "Low Sample"
           },
           "max_drawdown": {
             "anyOf": [
@@ -1203,6 +2117,17 @@
               }
             ],
             "title": "Parent Id"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
           },
           "resolved": {
             "additionalProperties": true,
@@ -1270,6 +2195,17 @@
               }
             ],
             "title": "Trades"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
           }
         },
         "required": [
@@ -1350,13 +2286,60 @@
             ],
             "title": "Benchmark Return"
           },
+          "cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cagr"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
           },
+          "edge_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "average edge per trade vs the benchmark",
+            "title": "Edge Mean"
+          },
+          "edge_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "t-statistic of that edge",
+            "title": "Edge T"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "low_sample": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fewer than 30 closed trades",
+            "title": "Low Sample"
           },
           "max_drawdown": {
             "anyOf": [
@@ -1394,6 +2377,17 @@
               }
             ],
             "title": "Parent Id"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
           },
           "sharpe": {
             "anyOf": [
@@ -1456,6 +2450,17 @@
               }
             ],
             "title": "Trades"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
           }
         },
         "required": [
@@ -1723,6 +2728,62 @@
         "title": "StrategyConfig",
         "type": "object"
       },
+      "StreaksOut": {
+        "properties": {
+          "losing_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Losing Months"
+          },
+          "max_consecutive_losing_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Consecutive Losing Months"
+          },
+          "max_consecutive_losing_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Consecutive Losing Trades"
+          },
+          "months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months"
+          }
+        },
+        "required": [
+          "max_consecutive_losing_trades",
+          "max_consecutive_losing_months",
+          "losing_months",
+          "months"
+        ],
+        "title": "StreaksOut",
+        "type": "object"
+      },
       "TiingoImport": {
         "description": "Daily bars from Tiingo. A watchlist's current members are included too; ``symbols``\nare added on top (use that for the benchmark, usually SPY). Tiingo has no intraday bars.",
         "properties": {
@@ -1822,6 +2883,512 @@
           "signal"
         ],
         "title": "TradeChartOut",
+        "type": "object"
+      },
+      "TradeRow": {
+        "description": "One closed round trip. Returns are fractions; hold is in sessions (bars).",
+        "properties": {
+          "bench_ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench Ret"
+          },
+          "costs": {
+            "title": "Costs",
+            "type": "number"
+          },
+          "edge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge"
+          },
+          "entry_decision_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Decision Id"
+          },
+          "entry_price": {
+            "title": "Entry Price",
+            "type": "number"
+          },
+          "entry_session": {
+            "title": "Entry Session",
+            "type": "string"
+          },
+          "exit_decision_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Decision Id"
+          },
+          "exit_kind": {
+            "title": "Exit Kind",
+            "type": "string"
+          },
+          "exit_price": {
+            "title": "Exit Price",
+            "type": "number"
+          },
+          "exit_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Reason"
+          },
+          "exit_session": {
+            "title": "Exit Session",
+            "type": "string"
+          },
+          "hold_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Sessions"
+          },
+          "mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mae"
+          },
+          "mfe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfe"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "qty": {
+            "title": "Qty",
+            "type": "number"
+          },
+          "regime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regime"
+          },
+          "ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ret"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "entry_session",
+          "exit_session",
+          "entry_decision_id",
+          "exit_decision_id",
+          "qty",
+          "entry_price",
+          "exit_price",
+          "costs",
+          "pnl",
+          "ret",
+          "hold_sessions",
+          "exit_kind",
+          "exit_reason",
+          "bench_ret",
+          "edge",
+          "mae",
+          "mfe",
+          "regime"
+        ],
+        "title": "TradeRow",
+        "type": "object"
+      },
+      "TradeStatsOut": {
+        "properties": {
+          "avg_hold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hold"
+          },
+          "avg_hold_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hold Loss"
+          },
+          "avg_hold_win": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hold Win"
+          },
+          "avg_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Loss"
+          },
+          "avg_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Loss Pct"
+          },
+          "avg_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Mae"
+          },
+          "avg_mae_winners": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Mae Winners"
+          },
+          "avg_mfe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Mfe"
+          },
+          "avg_mfe_losers": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Mfe Losers"
+          },
+          "avg_win": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Win"
+          },
+          "avg_win_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Win Pct"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "expectancy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy"
+          },
+          "expectancy_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy Pct"
+          },
+          "gross_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Loss"
+          },
+          "gross_profit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Profit"
+          },
+          "largest_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largest Loss"
+          },
+          "largest_win": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largest Win"
+          },
+          "losses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Losses"
+          },
+          "low_sample": {
+            "default": true,
+            "title": "Low Sample",
+            "type": "boolean"
+          },
+          "max_consecutive_losses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Consecutive Losses"
+          },
+          "max_consecutive_wins": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Consecutive Wins"
+          },
+          "median_hold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Hold"
+          },
+          "payoff_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payoff Ratio"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "t_stat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Stat"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "wins": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wins"
+          }
+        },
+        "required": [
+          "count",
+          "low_sample",
+          "wins",
+          "losses",
+          "win_rate",
+          "avg_win",
+          "avg_loss",
+          "avg_win_pct",
+          "avg_loss_pct",
+          "payoff_ratio",
+          "expectancy",
+          "expectancy_pct",
+          "profit_factor",
+          "gross_profit",
+          "gross_loss",
+          "largest_win",
+          "largest_loss",
+          "t_stat",
+          "avg_hold",
+          "median_hold",
+          "avg_hold_win",
+          "avg_hold_loss",
+          "max_consecutive_losses",
+          "max_consecutive_wins",
+          "avg_mae",
+          "avg_mfe",
+          "avg_mae_winners",
+          "avg_mfe_losers"
+        ],
+        "title": "TradeStatsOut",
         "type": "object"
       },
       "ValidationError": {
@@ -1926,6 +3493,85 @@
           "created_at"
         ],
         "title": "WatchlistOut",
+        "type": "object"
+      },
+      "YearRowOut": {
+        "properties": {
+          "avg_edge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Edge"
+          },
+          "bench_ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench Ret"
+          },
+          "pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pnl"
+          },
+          "ret": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ret"
+          },
+          "trades": {
+            "default": 0,
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "year": {
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        "required": [
+          "year",
+          "ret",
+          "bench_ret",
+          "trades",
+          "win_rate",
+          "pnl",
+          "avg_edge"
+        ],
+        "title": "YearRowOut",
         "type": "object"
       }
     }
@@ -2857,6 +4503,53 @@
           }
         },
         "summary": "Fills",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/trades": {
+      "get": {
+        "description": "Closed round trips with return, edge versus the benchmark, MAE/MFE, how each\nclosed and the true holding length. Empty when the analysis cannot be computed.",
+        "operationId": "trades_api_runs__run_id__trades_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TradeRow"
+                  },
+                  "title": "Response Trades Api Runs  Run Id  Trades Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trades",
         "tags": [
           "runs"
         ]

@@ -3,7 +3,25 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
+import {
+  ByYearTable,
+  ExitTable,
+  FunnelSection,
+  LowSample,
+  MonthlyGrid,
+  RegimeTable,
+  StatGroup,
+  SymbolTable,
+  costStats,
+  riskStats,
+  streakStats,
+  tradeQualityStats,
+  versusStats,
+  EXIT_LABEL,
+  signed,
+} from "@/components/Analysis";
 import { EquityChart } from "@/components/EquityChart";
+import { RunsTable } from "@/components/RunsTable";
 import { Specimen } from "@/components/Specimen";
 import { StatBreakdown, type StatItem } from "@/components/StatBreakdown";
 import { TradeChartDialog } from "@/components/TradeChartDialog";
@@ -15,12 +33,14 @@ import {
   fillBreakdown,
   marksFromFills,
   pnlSummary,
+  barsPerYear,
   reasonCounts,
-  roundTrips,
+  rollingReturn,
+  sweepEnd,
   timeInMarket,
 } from "@/lib/analysis";
 import { api, waitForJob, type DecisionRow, type Job, type RunMetrics, type RunSummary, type Watchlist } from "@/lib/api";
-import { int, money, pct, sharpe, versusSpy, versusSpyDollars, when } from "@/lib/format";
+import { int, money, num, pct, sharpe, versusSpy, versusSpyDollars, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 
 const PAGE = 50;
@@ -104,7 +124,7 @@ function metricStats({
       label: "Sharpe",
       value: sharpe(m.sharpe),
       meaning:
-        "A score for how much the account gained for the amount it jumped around from day to day. Higher means more gain for the amount of bouncing. It uses each day's percent change in account value, treats cash as earning nothing, and scales the score to a full year. It reads \"undefined\" when those daily changes never vary, because there is no bouncing to measure.",
+        "A score for how much the account gained for the amount it jumped around from bar to bar. Higher means more gain for the amount of bouncing. It uses each bar's percent change in account value (a bar is one day on daily runs, one hour on hourly runs, and so on), treats cash as earning nothing, and scales the score to a full year. It reads \"undefined\" when those changes never vary, because there is no bouncing to measure.",
     },
     {
       label: "Profit and loss",
@@ -196,6 +216,7 @@ function ReportView() {
   const fills = useAsync(() => api.fills(id), [id], !!id);
   const skips = useAsync(() => api.decisions(id, { action: ["skip"], limit: 1000 }), [id], !!id);
   const near = useAsync(() => api.decisions(id, { action: ["no_signal"], limit: 500 }), [id], !!id);
+  const tradeList = useAsync(() => api.trades(id), [id], !!id);
   const parent = useAsync(() => api.run(run.data?.parent_id ?? ""), [run.data?.parent_id], !!run.data?.parent_id);
   const parentEq = useAsync(
     () => api.equity(run.data?.parent_id ?? ""),
@@ -237,7 +258,14 @@ function ReportView() {
       <div className="bench">
         <h1>Reports</h1>
         {list.data.length ? (
-          <RunPicker runs={list.data} id="" />
+          <>
+            <RunPicker runs={list.data} id="" />
+            <RunsTable runs={list.data} />
+            <p className="caption">
+              Runs saved before these columns existed fill in when you open them once, or all at once with{" "}
+              <code>uv run moneylab recompute-metrics</code>.
+            </p>
+          </>
         ) : (
           <p className="muted">
             No runs yet. Build one in the <Link href="/builder">Builder</Link>.
@@ -268,7 +296,13 @@ function ReportView() {
   const fillRows = fills.data ?? [];
   const br = fillBreakdown(fillRows);
   const pnl = pnlSummary(fillRows, eq, m, startCashOf(r.resolved as Record<string, unknown>));
-  const trips = roundTrips(fillRows);
+  const trips = tradeList.data ?? [];
+  const an = r.analysis ?? null;
+  const swept = sweepEnd(eq);
+  const tf = String((r.resolved as { timeframe?: string }).timeframe ?? "1d");
+  const roll = barsPerYear(tf);
+  const rollOurs = rollingReturn(eq.map((e) => e.equity), roll);
+  const rollBench = rollingReturn(eq.map((e) => e.benchmark_equity), roll);
   const inMkt = timeInMarket(eq);
   const dates = eq.map((e) => e.session);
   const dd = drawdownSeries(eq.map((e) => e.equity));
@@ -386,6 +420,13 @@ function ReportView() {
               {benchName === "SPY" ? " Beating it means this run finished ahead of the S&P." : ""}
             </>
           ) : null}
+          {swept != null ? (
+            <>
+              {" "}
+              · Idle cash held in {benchName} at the end: {money(swept)} (kept out of &ldquo;Average exposure&rdquo; and
+              of the trade counts)
+            </>
+          ) : null}
           {wl?.created_at ? (
             <>
               {" "}
@@ -396,8 +437,71 @@ function ReportView() {
         </p>
       </section>
 
+      {an ? (
+        <>
+          <StatGroup
+            title="Trade quality"
+            testId="trade-quality"
+            badge={<LowSample trades={an.trades.count} />}
+            intro={`${int(an.trades.count)} closed ${an.trades.count === 1 ? "trade" : "trades"}. Results from fewer than 30 trades are shown but should not be trusted.`}
+            stats={tradeQualityStats(an)}
+          />
+          <StatGroup
+            title={`Versus ${benchName}`}
+            testId="versus-spy"
+            badge={<LowSample trades={an.edge.count} />}
+            intro={
+              (resolved.portfolio as { idle_cash?: string } | undefined)?.idle_cash === "benchmark"
+                ? `Idle cash was held in ${benchName}, so this compares the strategy's stock picks with simply staying in ${benchName}.`
+                : `Cash not in a position sat uninvested, so being in cash is part of any gap to ${benchName}. The "Hold ${benchName}" idle cash setting in the Builder removes that effect.`
+            }
+            stats={versusStats(an, benchName)}
+          />
+          <StatGroup title="Risk" testId="risk" stats={riskStats(an)} />
+        </>
+      ) : !run.loading ? (
+        <p className="muted" data-testid="no-analysis">
+          The detailed analysis is not available for this run (its price data is no longer on this machine).
+        </p>
+      ) : null}
+
       {detailed ? (
         <>
+          {an ? (
+            <>
+              <ByYearTable a={an} benchName={benchName} />
+              <MonthlyGrid a={an} />
+              <section className="stack-block" data-testid="rolling-return">
+                <h2>Rolling one-year return vs {benchName === "SPY" ? "the S&P (SPY)" : benchName}</h2>
+                <p className="muted small">
+                  Each point is the return over the previous year. Where the strategy line is above the dashed line it was
+                  ahead of {benchName} over that year.
+                </p>
+                {eq.length > roll ? (
+                  <EquityChart
+                    label="Rolling one-year return"
+                    dates={dates}
+                    series={[
+                      { name: r.name, values: rollOurs, color: "var(--series-1)" },
+                      { name: benchName, values: rollBench, color: "var(--series-bench)", dashed: true },
+                    ]}
+                    formatTick={(v) => pct(v)}
+                    formatValue={(v) => pct(v)}
+                  />
+                ) : (
+                  <p className="muted">Needs more than a year of data.</p>
+                )}
+              </section>
+              <ExitTable a={an} />
+              <SymbolTable a={an} />
+              <RegimeTable a={an} benchName={benchName} />
+              <div className="grid-2">
+                <StatGroup title="Costs and turnover" testId="costs" stats={costStats(an)} />
+                <StatGroup title="Streaks" testId="streaks" stats={streakStats(an)} />
+              </div>
+              <FunnelSection a={an} />
+            </>
+          ) : null}
           <div className="grid-2">
             <section className="stack-block">
               <h2>Entries</h2>
@@ -445,9 +549,15 @@ function ReportView() {
           </div>
 
           <section className="stack-block">
-            <h2>P&L by round trip</h2>
+            <h2>Closed trades</h2>
+            <p className="muted small">
+              Return is after costs. Vs {benchName} is the trade&apos;s return minus {benchName}&apos;s over the same days.
+              Worst and best are the lowest and highest price reached while the trade was open, against the buy price.
+              Hold counts sessions from the buy fill to the sell fill.
+            </p>
+            <ErrorBox error={tradeList.error} />
             {trips.length ? (
-              <div className="table-wrap">
+              <div className="table-wrap" data-testid="trade-table">
                 <table>
                   <thead>
                     <tr>
@@ -456,65 +566,69 @@ function ReportView() {
                       <th>Exit</th>
                       <th className="num">Qty</th>
                       <th className="num">P&L</th>
+                      <th className="num">Return</th>
+                      <th className="num">Vs {benchName}</th>
+                      <th className="num">Worst</th>
+                      <th className="num">Best</th>
+                      <th>Ended by</th>
                       <th className="num">Hold</th>
                       <th className="num">Costs</th>
                     </tr>
                   </thead>
                   <tbody>
                     {trips.map((t, i) => (
-                      <tr key={`${t.symbol}-${t.entrySession}-${i}`}>
+                      <tr key={`${t.symbol}-${t.entry_session}-${i}`}>
                         <td>{t.symbol}</td>
                         <td>
-                          {t.entryDecisionId != null ? (
+                          {t.entry_decision_id != null ? (
                             <button
                               type="button"
                               className="linkish"
                               onClick={(e) =>
-                                openChart(
-                                  t.entryDecisionId as number,
-                                  `${t.symbol} buy · ${t.entrySession}`,
-                                  e.currentTarget,
-                                )
+                                openChart(t.entry_decision_id as number, `${t.symbol} buy · ${t.entry_session}`, e.currentTarget)
                               }
                             >
-                              {t.entrySession} @ {money(t.entryPrice)}
+                              {t.entry_session} @ {money(t.entry_price)}
                             </button>
                           ) : (
                             <>
-                              {t.entrySession} @ {money(t.entryPrice)}
+                              {t.entry_session} @ {money(t.entry_price)}
                             </>
                           )}
                         </td>
                         <td>
-                          {t.exitDecisionId != null ? (
+                          {t.exit_decision_id != null ? (
                             <button
                               type="button"
                               className="linkish"
                               onClick={(e) =>
-                                openChart(
-                                  t.exitDecisionId as number,
-                                  `${t.symbol} sell · ${t.exitSession}`,
-                                  e.currentTarget,
-                                )
+                                openChart(t.exit_decision_id as number, `${t.symbol} sell · ${t.exit_session}`, e.currentTarget)
                               }
                             >
-                              {t.exitSession} @ {money(t.exitPrice)}
+                              {t.exit_session} @ {money(t.exit_price)}
                             </button>
                           ) : (
                             <>
-                              {t.exitSession} @ {money(t.exitPrice)}
+                              {t.exit_session} @ {money(t.exit_price)}
                             </>
                           )}
                         </td>
                         <td className="num">{int(t.qty)}</td>
                         <td className={`num ${t.pnl >= 0 ? "pos" : "neg"}`}>{money(t.pnl)}</td>
-                        <td className="num">{t.holdSessions != null ? `${int(t.holdSessions)} sess` : "–"}</td>
+                        <td className={`num ${(t.ret ?? 0) >= 0 ? "pos" : "neg"}`}>{pct(t.ret, true)}</td>
+                        <td className={`num ${(t.edge ?? 0) >= 0 ? "pos" : "neg"}`}>{pct(t.edge, true)}</td>
+                        <td className="num">{pct(t.mae)}</td>
+                        <td className="num">{pct(t.mfe)}</td>
+                        <td>{EXIT_LABEL[t.exit_kind] ?? t.exit_kind}</td>
+                        <td className="num">{t.hold_sessions != null ? `${int(t.hold_sessions)} sess` : "–"}</td>
                         <td className="num">{money(t.costs)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            ) : tradeList.loading ? (
+              <Loading />
             ) : (
               <p className="muted">No closed round trips.</p>
             )}

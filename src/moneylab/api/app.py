@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from moneylab import ENGINE_VERSION
 from moneylab.api.jobs import Job, JobRunner
@@ -183,7 +183,14 @@ class JobOut(BaseModel):
 
 # The research analysis of a run (engine/analytics.py). Every field may be null: a run
 # with no trades has no win rate, and a run with no benchmark has no beta.
-class TradeStatsOut(BaseModel):
+class Always(BaseModel):
+    """Output models whose fields are always present in the JSON (null when unknown), so
+    the generated TypeScript types make them required."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class TradeStatsOut(Always):
     count: int = 0
     low_sample: bool = True
     wins: int | None = None
@@ -214,7 +221,7 @@ class TradeStatsOut(BaseModel):
     avg_mfe_losers: float | None = None
 
 
-class EdgeStatsOut(BaseModel):
+class EdgeStatsOut(Always):
     count: int = 0
     mean: float | None = None
     median: float | None = None
@@ -223,7 +230,7 @@ class EdgeStatsOut(BaseModel):
     low_sample: bool | None = None
 
 
-class ReturnStatsOut(BaseModel):
+class ReturnStatsOut(Always):
     cagr: float | None = None
     volatility: float | None = None
     sharpe: float | None = None
@@ -234,7 +241,7 @@ class ReturnStatsOut(BaseModel):
     max_dd_length: int | None = None
 
 
-class DrawdownStatsOut(BaseModel):
+class DrawdownStatsOut(Always):
     max_drawdown: float | None = None
     peak_session: str | None = None
     trough_session: str | None = None
@@ -247,13 +254,13 @@ class DrawdownStatsOut(BaseModel):
     time_underwater: float | None = None
 
 
-class MarketStatsOut(BaseModel):
+class MarketStatsOut(Always):
     beta: float | None = None
     correlation: float | None = None
     alpha: float | None = None
 
 
-class CostStatsOut(BaseModel):
+class CostStatsOut(Always):
     total: float | None = None
     return_before_costs: float | None = None
     cost_drag: float | None = None
@@ -262,7 +269,7 @@ class CostStatsOut(BaseModel):
     traded_notional: float | None = None
 
 
-class FunnelOut(BaseModel):
+class FunnelOut(Always):
     signals: int | None = None
     entered: int | None = None
     filled: int | None = None
@@ -273,7 +280,7 @@ class FunnelOut(BaseModel):
     near_misses: int | None = None
 
 
-class YearRowOut(BaseModel):
+class YearRowOut(Always):
     year: str
     ret: float | None = None
     bench_ret: float | None = None
@@ -283,20 +290,20 @@ class YearRowOut(BaseModel):
     avg_edge: float | None = None
 
 
-class MonthRowOut(BaseModel):
+class MonthRowOut(Always):
     month: str
     ret: float | None = None
     bench_ret: float | None = None
 
 
-class StreaksOut(BaseModel):
+class StreaksOut(Always):
     max_consecutive_losing_trades: int | None = None
     max_consecutive_losing_months: int | None = None
     losing_months: int | None = None
     months: int | None = None
 
 
-class GroupRowOut(BaseModel):
+class GroupRowOut(Always):
     key: str
     trades: int
     win_rate: float | None = None
@@ -306,7 +313,7 @@ class GroupRowOut(BaseModel):
     avg_hold: float | None = None
 
 
-class RegimeRowOut(BaseModel):
+class RegimeRowOut(Always):
     regime: Literal["up", "down", "warmup"]
     sessions: int
     ret: float | None = None
@@ -317,7 +324,7 @@ class RegimeRowOut(BaseModel):
     avg_edge: float | None = None
 
 
-class AnalysisOut(BaseModel):
+class AnalysisOut(Always):
     trades: TradeStatsOut = Field(default_factory=TradeStatsOut)
     edge: EdgeStatsOut = Field(default_factory=EdgeStatsOut)
     returns: ReturnStatsOut = Field(default_factory=ReturnStatsOut)
@@ -334,7 +341,7 @@ class AnalysisOut(BaseModel):
     by_regime: list[RegimeRowOut] = Field(default_factory=list)
 
 
-class TradeRow(BaseModel):
+class TradeRow(Always):
     """One closed round trip. Returns are fractions; hold is in sessions (bars)."""
 
     symbol: str
@@ -403,6 +410,9 @@ class EquityRow(BaseModel):
     equity: float
     positions: int
     benchmark_equity: float | None = None
+    sweep_value: float | None = Field(
+        default=None, description="value of idle cash held in the benchmark (idle_cash setting)"
+    )
 
 
 class FillRow(BaseModel):
@@ -918,7 +928,11 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         page = jsonable(records(d.iloc[offset : offset + limit]))
         # Each decision that led to a fill carries it (joined on decision_id).
         f = led.fills
-        by_decision = {int(r["decision_id"]): r for r in records(f)} if "decision_id" in f else {}
+        by_decision = (
+            {int(r["decision_id"]): r for r in records(f) if r["decision_id"] is not None}
+            if "decision_id" in f
+            else {}
+        )
         for row in page:
             fill = by_decision.get(row.get("decision_id"))
             row["fill"] = (

@@ -1823,3 +1823,18 @@ button.linkish {
   min-width: min(100%, 280px);
   max-width: 520px;
 }
+
+/* Monthly returns grid */
+table.month-grid th,
+table.month-grid td {
+  padding: 5px 6px;
+  font-size: 0.8rem;
+  text-align: right;
+}
+table.month-grid td:first-child,
+table.month-grid th:first-child {
+  text-align: left;
+}
+table.month-grid td.num {
+  min-width: 3.4em;
+}

@@ -180,6 +180,14 @@ export default function HomePage() {
                       {versusSpy(r.total_return, r.benchmark_return)}
                     </span>
                   ) : null}
+                  {r.win_rate != null || r.cagr != null ? (
+                    <span className="muted small num">
+                      {r.win_rate != null ? `win ${pct(r.win_rate)}` : ""}
+                      {r.win_rate != null && r.profit_factor != null ? ` · PF ${r.profit_factor.toFixed(2)}` : ""}
+                      {r.cagr != null ? ` · ${pct(r.cagr, true)}/yr` : ""}
+                      {r.low_sample ? " · few trades" : ""}
+                    </span>
+                  ) : null}
                 </Link>
               ))}
               {(runs.data ?? []).length > strip.length ? (

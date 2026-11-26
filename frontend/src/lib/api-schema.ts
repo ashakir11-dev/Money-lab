@@ -388,6 +388,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trades
+         * @description Closed round trips with return, edge versus the benchmark, MAE/MFE, how each
+         *     closed and the true holding length. Empty when the analysis cannot be computed.
+         */
+        get: operations["trades_api_runs__run_id__trades_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/snapshots": {
         parameters: {
             query?: never;
@@ -504,6 +525,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalysisOut */
+        AnalysisOut: {
+            benchmark: components["schemas"]["ReturnStatsOut"] | null;
+            /** By Exit */
+            by_exit: components["schemas"]["GroupRowOut"][];
+            /** By Regime */
+            by_regime: components["schemas"]["RegimeRowOut"][];
+            /** By Symbol */
+            by_symbol: components["schemas"]["GroupRowOut"][];
+            /** By Year */
+            by_year: components["schemas"]["YearRowOut"][];
+            costs: components["schemas"]["CostStatsOut"];
+            drawdown: components["schemas"]["DrawdownStatsOut"];
+            edge: components["schemas"]["EdgeStatsOut"];
+            funnel: components["schemas"]["FunnelOut"];
+            market: components["schemas"]["MarketStatsOut"] | null;
+            /** Monthly */
+            monthly: components["schemas"]["MonthRowOut"][];
+            returns: components["schemas"]["ReturnStatsOut"];
+            streaks: components["schemas"]["StreaksOut"];
+            trades: components["schemas"]["TradeStatsOut"];
+        };
         /** BatchSubmit */
         BatchSubmit: {
             /** Configs */
@@ -608,6 +651,21 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CostStatsOut */
+        CostStatsOut: {
+            /** Cost Drag */
+            cost_drag: number | null;
+            /** Return Before Costs */
+            return_before_costs: number | null;
+            /** Share Of Gross Profit */
+            share_of_gross_profit: number | null;
+            /** Total */
+            total: number | null;
+            /** Traded Notional */
+            traded_notional: number | null;
+            /** Turnover */
+            turnover: number | null;
+        };
         /** CsvImport */
         CsvImport: {
             /**
@@ -659,6 +717,47 @@ export interface components {
             starting_cash: number;
             /** Target Allocation */
             target_allocation: number;
+        };
+        /** DrawdownStatsOut */
+        DrawdownStatsOut: {
+            /** Current Drawdown */
+            current_drawdown: number | null;
+            /** Drawdowns Over 10Pct */
+            drawdowns_over_10pct: number | null;
+            /** Longest Underwater */
+            longest_underwater: number | null;
+            /** Longest Underwater Start */
+            longest_underwater_start: string | null;
+            /** Max Dd Length */
+            max_dd_length: number | null;
+            /** Max Drawdown */
+            max_drawdown: number | null;
+            /** Peak Session */
+            peak_session: string | null;
+            /** Recovery Session */
+            recovery_session: string | null;
+            /** Time Underwater */
+            time_underwater: number | null;
+            /** Trough Session */
+            trough_session: string | null;
+        };
+        /** EdgeStatsOut */
+        EdgeStatsOut: {
+            /** Beat Rate */
+            beat_rate: number | null;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Low Sample */
+            low_sample: boolean | null;
+            /** Mean */
+            mean: number | null;
+            /** Median */
+            median: number | null;
+            /** T Stat */
+            t_stat: number | null;
         };
         /**
          * EntryFill
@@ -724,6 +823,11 @@ export interface components {
             positions_value: number;
             /** Session */
             session: string;
+            /**
+             * Sweep Value
+             * @description value of idle cash held in the benchmark (idle_cash setting)
+             */
+            sweep_value?: number | null;
         };
         /** ExitRule */
         ExitRule: {
@@ -768,6 +872,29 @@ export interface components {
             /** Symbol */
             symbol: string;
         };
+        /** FunnelOut */
+        FunnelOut: {
+            /** Entered */
+            entered: number | null;
+            /** Fill Rate */
+            fill_rate: number | null;
+            /** Filled */
+            filled: number | null;
+            /** Near Misses */
+            near_misses: number | null;
+            /** Not Filled */
+            not_filled: {
+                [key: string]: number;
+            };
+            /** Signals */
+            signals: number | null;
+            /** Skipped */
+            skipped: {
+                [key: string]: number;
+            };
+            /** Taken Rate */
+            taken_rate: number | null;
+        };
         /** GateOut */
         GateOut: {
             /** Depends On */
@@ -780,6 +907,23 @@ export interface components {
             passing: boolean;
             /** Title */
             title: string;
+        };
+        /** GroupRowOut */
+        GroupRowOut: {
+            /** Avg Edge */
+            avg_edge: number | null;
+            /** Avg Hold */
+            avg_hold: number | null;
+            /** Avg Ret */
+            avg_ret: number | null;
+            /** Key */
+            key: string;
+            /** Pnl */
+            pnl: number | null;
+            /** Trades */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -795,7 +939,7 @@ export interface components {
             api_version: string;
             /**
              * Engine Version
-             * @default engine/0.3.0
+             * @default engine/0.4.0
              */
             engine_version: string;
             /**
@@ -844,6 +988,24 @@ export interface components {
             status: "queued" | "running" | "complete" | "failed";
             /** Submitted At */
             submitted_at: string;
+        };
+        /** MarketStatsOut */
+        MarketStatsOut: {
+            /** Alpha */
+            alpha: number | null;
+            /** Beta */
+            beta: number | null;
+            /** Correlation */
+            correlation: number | null;
+        };
+        /** MonthRowOut */
+        MonthRowOut: {
+            /** Bench Ret */
+            bench_ret: number | null;
+            /** Month */
+            month: string;
+            /** Ret */
+            ret: number | null;
         };
         /** PaperAccountOut */
         PaperAccountOut: {
@@ -933,6 +1095,11 @@ export interface components {
         PortfolioSettings: {
             /** Cost Bps Per Side */
             cost_bps_per_side?: number | null;
+            /**
+             * Idle Cash
+             * @description what cash not needed by a position does: stay as cash (default) or be held in whole shares of the benchmark, sold at the open when a trade needs the cash
+             */
+            idle_cash?: ("cash" | "benchmark") | null;
             /** Max Positions */
             max_positions?: number | null;
             /** Starting Cash */
@@ -954,20 +1121,83 @@ export interface components {
              */
             order: "ascending" | "descending";
         };
+        /** RegimeRowOut */
+        RegimeRowOut: {
+            /** Avg Edge */
+            avg_edge: number | null;
+            /** Avg Ret */
+            avg_ret: number | null;
+            /** Bench Ret */
+            bench_ret: number | null;
+            /**
+             * Regime
+             * @enum {string}
+             */
+            regime: "up" | "down" | "warmup";
+            /** Ret */
+            ret: number | null;
+            /** Sessions */
+            sessions: number;
+            /**
+             * Trades
+             * @default 0
+             */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
+        };
+        /** ReturnStatsOut */
+        ReturnStatsOut: {
+            /** Cagr */
+            cagr: number | null;
+            /** Calmar */
+            calmar: number | null;
+            /** Longest Underwater */
+            longest_underwater: number | null;
+            /** Max Dd Length */
+            max_dd_length: number | null;
+            /** Max Drawdown */
+            max_drawdown: number | null;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Sortino */
+            sortino: number | null;
+            /** Volatility */
+            volatility: number | null;
+        };
         /** RunDetail */
         RunDetail: {
+            /** @description research analysis; null when it cannot be computed */
+            analysis?: components["schemas"]["AnalysisOut"] | null;
             /** Benchmark Return */
             benchmark_return: number | null;
+            /** Cagr */
+            cagr?: number | null;
             /** Config Hash */
             config_hash: string;
             /** Created At */
             created_at: string;
+            /**
+             * Edge Mean
+             * @description average edge per trade vs the benchmark
+             */
+            edge_mean?: number | null;
+            /**
+             * Edge T
+             * @description t-statistic of that edge
+             */
+            edge_t?: number | null;
             /** Engine Version */
             engine_version: string;
             /** Finished At */
             finished_at: string | null;
             /** Id */
             id: string;
+            /**
+             * Low Sample
+             * @description fewer than 30 closed trades
+             */
+            low_sample?: boolean | null;
             /** Max Drawdown */
             max_drawdown: number | null;
             /** Metrics */
@@ -980,6 +1210,8 @@ export interface components {
             open_positions: number | null;
             /** Parent Id */
             parent_id: string | null;
+            /** Profit Factor */
+            profit_factor?: number | null;
             /** Resolved */
             resolved: {
                 [key: string]: unknown;
@@ -1005,6 +1237,8 @@ export interface components {
             total_return: number | null;
             /** Trades */
             trades: number | null;
+            /** Win Rate */
+            win_rate?: number | null;
         };
         /** RunSubmit */
         RunSubmit: {
@@ -1020,10 +1254,27 @@ export interface components {
         RunSummary: {
             /** Benchmark Return */
             benchmark_return: number | null;
+            /** Cagr */
+            cagr?: number | null;
             /** Created At */
             created_at: string;
+            /**
+             * Edge Mean
+             * @description average edge per trade vs the benchmark
+             */
+            edge_mean?: number | null;
+            /**
+             * Edge T
+             * @description t-statistic of that edge
+             */
+            edge_t?: number | null;
             /** Id */
             id: string;
+            /**
+             * Low Sample
+             * @description fewer than 30 closed trades
+             */
+            low_sample?: boolean | null;
             /** Max Drawdown */
             max_drawdown: number | null;
             /** Name */
@@ -1032,6 +1283,8 @@ export interface components {
             open_positions: number | null;
             /** Parent Id */
             parent_id: string | null;
+            /** Profit Factor */
+            profit_factor?: number | null;
             /** Sharpe */
             sharpe: number | null;
             /** Snapshot Id */
@@ -1053,6 +1306,8 @@ export interface components {
             total_return: number | null;
             /** Trades */
             trades: number | null;
+            /** Win Rate */
+            win_rate?: number | null;
         };
         /** SettingDiff */
         SettingDiff: {
@@ -1152,6 +1407,17 @@ export interface components {
             /** Universe */
             universe: string[];
         };
+        /** StreaksOut */
+        StreaksOut: {
+            /** Losing Months */
+            losing_months: number | null;
+            /** Max Consecutive Losing Months */
+            max_consecutive_losing_months: number | null;
+            /** Max Consecutive Losing Trades */
+            max_consecutive_losing_trades: number | null;
+            /** Months */
+            months: number | null;
+        };
         /**
          * TiingoImport
          * @description Daily bars from Tiingo. A watchlist's current members are included too; ``symbols``
@@ -1193,6 +1459,115 @@ export interface components {
             /** Timeframe */
             timeframe: string;
         };
+        /**
+         * TradeRow
+         * @description One closed round trip. Returns are fractions; hold is in sessions (bars).
+         */
+        TradeRow: {
+            /** Bench Ret */
+            bench_ret: number | null;
+            /** Costs */
+            costs: number;
+            /** Edge */
+            edge: number | null;
+            /** Entry Decision Id */
+            entry_decision_id: number | null;
+            /** Entry Price */
+            entry_price: number;
+            /** Entry Session */
+            entry_session: string;
+            /** Exit Decision Id */
+            exit_decision_id: number | null;
+            /** Exit Kind */
+            exit_kind: string;
+            /** Exit Price */
+            exit_price: number;
+            /** Exit Reason */
+            exit_reason: string | null;
+            /** Exit Session */
+            exit_session: string;
+            /** Hold Sessions */
+            hold_sessions: number | null;
+            /** Mae */
+            mae: number | null;
+            /** Mfe */
+            mfe: number | null;
+            /** Pnl */
+            pnl: number;
+            /** Qty */
+            qty: number;
+            /** Regime */
+            regime: string | null;
+            /** Ret */
+            ret: number | null;
+            /** Symbol */
+            symbol: string;
+        };
+        /** TradeStatsOut */
+        TradeStatsOut: {
+            /** Avg Hold */
+            avg_hold: number | null;
+            /** Avg Hold Loss */
+            avg_hold_loss: number | null;
+            /** Avg Hold Win */
+            avg_hold_win: number | null;
+            /** Avg Loss */
+            avg_loss: number | null;
+            /** Avg Loss Pct */
+            avg_loss_pct: number | null;
+            /** Avg Mae */
+            avg_mae: number | null;
+            /** Avg Mae Winners */
+            avg_mae_winners: number | null;
+            /** Avg Mfe */
+            avg_mfe: number | null;
+            /** Avg Mfe Losers */
+            avg_mfe_losers: number | null;
+            /** Avg Win */
+            avg_win: number | null;
+            /** Avg Win Pct */
+            avg_win_pct: number | null;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Expectancy */
+            expectancy: number | null;
+            /** Expectancy Pct */
+            expectancy_pct: number | null;
+            /** Gross Loss */
+            gross_loss: number | null;
+            /** Gross Profit */
+            gross_profit: number | null;
+            /** Largest Loss */
+            largest_loss: number | null;
+            /** Largest Win */
+            largest_win: number | null;
+            /** Losses */
+            losses: number | null;
+            /**
+             * Low Sample
+             * @default true
+             */
+            low_sample: boolean;
+            /** Max Consecutive Losses */
+            max_consecutive_losses: number | null;
+            /** Max Consecutive Wins */
+            max_consecutive_wins: number | null;
+            /** Median Hold */
+            median_hold: number | null;
+            /** Payoff Ratio */
+            payoff_ratio: number | null;
+            /** Profit Factor */
+            profit_factor: number | null;
+            /** T Stat */
+            t_stat: number | null;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Wins */
+            wins: number | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -1230,6 +1605,26 @@ export interface components {
             name: string;
             /** Version */
             version: number;
+        };
+        /** YearRowOut */
+        YearRowOut: {
+            /** Avg Edge */
+            avg_edge: number | null;
+            /** Bench Ret */
+            bench_ret: number | null;
+            /** Pnl */
+            pnl: number | null;
+            /** Ret */
+            ret: number | null;
+            /**
+             * Trades
+             * @default 0
+             */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Year */
+            year: string;
         };
     };
     responses: never;
@@ -1857,6 +2252,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FillRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trades_api_runs__run_id__trades_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradeRow"][];
                 };
             };
             /** @description Validation Error */

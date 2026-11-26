@@ -1,19 +1,5 @@
 import type { DecisionRow, EquityRow, FillRow, RunMetrics } from "./api";
 
-export type RoundTrip = {
-  symbol: string;
-  entrySession: string;
-  exitSession: string;
-  entryDecisionId: number | null;
-  exitDecisionId: number | null;
-  qty: number;
-  entryPrice: number;
-  exitPrice: number;
-  costs: number;
-  pnl: number;
-  holdSessions: number | null;
-};
-
 export type Pnl = {
   realized: number;
   unrealized: number;
@@ -41,9 +27,15 @@ type Lot = {
   decisionId: number | null;
 };
 
-function lotsFromFills(fills: FillRow[]): { remaining: Map<string, Lot[]>; trips: RoundTrip[] } {
+/** Fills that are strategy trades: idle cash parked in the benchmark ("sweep") is not one. */
+export function ownFills(fills: FillRow[]): FillRow[] {
+  return fills.filter((f) => f.note !== "sweep");
+}
+
+function lotsFromFills(allFills: FillRow[]): { remaining: Map<string, Lot[]>; trips: { pnl: number }[] } {
+  const fills = ownFills(allFills);
   const remaining = new Map<string, Lot[]>();
-  const trips: RoundTrip[] = [];
+  const trips: { pnl: number }[] = [];
   for (const f of fills) {
     const sym = String(f.symbol);
     const book = remaining.get(sym) ?? [];
@@ -66,19 +58,7 @@ function lotsFromFills(fills: FillRow[]): { remaining: Map<string, Lot[]>; trips
       const take = Math.min(lot.qty, left);
       const buyCost = lot.qty ? (lot.cost / lot.qty) * take : 0;
       const sellCost = sellCostPer * take;
-      trips.push({
-        symbol: sym,
-        entrySession: lot.session,
-        exitSession: f.session,
-        entryDecisionId: lot.decisionId,
-        exitDecisionId: typeof f.decision_id === "number" ? f.decision_id : null,
-        qty: take,
-        entryPrice: lot.price,
-        exitPrice: f.price,
-        costs: buyCost + sellCost,
-        pnl: take * (f.price - lot.price) - buyCost - sellCost,
-        holdSessions: typeof f.sessions_waited === "number" ? f.sessions_waited : null,
-      });
+      trips.push({ pnl: take * (f.price - lot.price) - buyCost - sellCost });
       lot.qty -= take;
       lot.cost -= buyCost;
       left -= take;
@@ -89,11 +69,8 @@ function lotsFromFills(fills: FillRow[]): { remaining: Map<string, Lot[]>; trips
   return { remaining, trips };
 }
 
-export function roundTrips(fills: FillRow[]): RoundTrip[] {
-  return lotsFromFills(fills).trips;
-}
-
-export function fillBreakdown(fills: FillRow[]): FillBreakdown {
+export function fillBreakdown(allFills: FillRow[]): FillBreakdown {
+  const fills = ownFills(allFills);
   const buys = fills.filter((f) => f.side === "buy");
   const sells = fills.filter((f) => f.side === "sell");
   const { remaining } = lotsFromFills(fills);
@@ -104,7 +81,7 @@ export function fillBreakdown(fills: FillRow[]): FillBreakdown {
     sells: sells.length,
     symbols,
     open: held.length,
-    costs: fills.reduce((s, f) => s + (f.cost || 0), 0),
+    costs: allFills.reduce((s, f) => s + (f.cost || 0), 0),
     held,
     notionalBuys: buys.reduce((s, f) => s + (f.gross ?? f.qty * f.price), 0),
     notionalSells: sells.reduce((s, f) => s + (f.gross ?? f.qty * f.price), 0),
@@ -166,4 +143,24 @@ export function drawdownSeries(values: (number | null | undefined)[]): (number |
 
 export function exposureSeries(equity: EquityRow[]): (number | null)[] {
   return equity.map((e) => (e.equity ? e.positions_value / e.equity : null));
+}
+
+/** Value of idle cash held in the benchmark at the end of the run, or null when the setting is off. */
+export function sweepEnd(equity: EquityRow[]): number | null {
+  const last = equity[equity.length - 1];
+  return typeof last?.sweep_value === "number" ? last.sweep_value : null;
+}
+
+/** Rolling return over `window` sessions: value[i] / value[i - window] - 1, null before that. */
+export function rollingReturn(values: (number | null | undefined)[], window: number): (number | null)[] {
+  return values.map((v, i) => {
+    const prev = i >= window ? values[i - window] : null;
+    return typeof v === "number" && typeof prev === "number" && prev > 0 ? v / prev - 1 : null;
+  });
+}
+
+/** Sessions in one year of bars for a timeframe label (252 daily sessions). */
+export function barsPerYear(timeframe: string | undefined): number {
+  const perSession: Record<string, number> = { "1d": 1, "1h": 7, "30min": 13, "15min": 26, "5min": 78, "1min": 390 };
+  return 252 * (perSession[timeframe ?? "1d"] ?? 1);
 }

@@ -7,9 +7,10 @@ import { FirstDifferenceReadout } from "@/components/FirstDiff";
 import { Specimen } from "@/components/Specimen";
 import { FillsTable } from "@/components/tables";
 import { Badge, ErrorBox, Loading } from "@/components/ui";
+import { LowSample, signed } from "@/components/Analysis";
 import { fillBreakdown, pnlSummary } from "@/lib/analysis";
 import { api, type EquityRow, type FirstDifference, type RunMetrics, type RunSummary } from "@/lib/api";
-import { int, money, pct, plain, pp, sharpe, versusSpy, versusSpyDollars } from "@/lib/format";
+import { int, money, num, pct, plain, pp, sharpe, versusSpy, versusSpyDollars } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 
 function defaultPair(runs: RunSummary[]): [string, string] | null {
@@ -62,6 +63,10 @@ function showSetting(path: string, v: unknown): string {
     return `${(v * 100).toFixed(2)}%`;
   }
   return show(v);
+}
+
+function signedOrBlank(v: number | null): string {
+  return typeof v === "number" ? signed(v) : "";
 }
 
 function startCash(resolved: Record<string, unknown> | undefined): number {
@@ -195,6 +200,38 @@ function CompareView() {
 
   const delta = (x: number | null | undefined, y: number | null | undefined) =>
     typeof x === "number" && typeof y === "number" ? y - x : null;
+  const bn = symbolA === symbolB ? symbolA : "the benchmark";
+  const aa = c?.a.analysis ?? null;
+  const ab = c?.b.analysis ?? null;
+  // One row of the statistics table: the value for each run and B − A.
+  const statRow = (
+    label: string,
+    va: number | null | undefined,
+    vb: number | null | undefined,
+    kind: "pct" | "ratio" | "int" | "years",
+    help?: string,
+  ) => {
+    const fmt = (v: number | null | undefined) =>
+      kind === "pct" ? pct(v) : kind === "int" ? int(v) : kind === "years" ? (typeof v === "number" ? `${int(v)} sessions` : "–") : num(v);
+    const d =
+      kind === "pct"
+        ? pp(vb, va)
+        : kind === "ratio"
+          ? typeof va === "number" && typeof vb === "number"
+            ? signed(vb - va)
+            : ""
+          : typeof va === "number" && typeof vb === "number"
+            ? `${vb - va > 0 ? "+" : ""}${int(vb - va)}`
+            : "";
+    return (
+      <tr key={label} title={help}>
+        <td>{label}</td>
+        <td className="num">{fmt(va)}</td>
+        <td className="num">{fmt(vb)}</td>
+        <td className="num">{d}</td>
+      </tr>
+    );
+  };
 
   return (
     <div className="bench">
@@ -376,8 +413,29 @@ function CompareView() {
                     <td>Sharpe</td>
                     <td className="num">{sharpe(ma.sharpe)}</td>
                     <td className="num">{sharpe(mb.sharpe)}</td>
-                    <td className="num"></td>
+                    <td className="num">{signedOrBlank(delta(ma.sharpe, mb.sharpe))}</td>
                   </tr>
+                  {aa && ab ? (
+                    <>
+                      {statRow("CAGR (per year)", aa.returns.cagr, ab.returns.cagr, "pct")}
+                      {statRow("Win rate", aa.trades.win_rate, ab.trades.win_rate, "pct")}
+                      {statRow("Profit factor", aa.trades.profit_factor, ab.trades.profit_factor, "ratio")}
+                      {statRow(`Edge per trade vs ${bn}`, aa.edge.mean, ab.edge.mean, "pct")}
+                      {statRow("Edge t-statistic", aa.edge.t_stat, ab.edge.t_stat, "ratio")}
+                      {statRow("Sortino", aa.returns.sortino, ab.returns.sortino, "ratio")}
+                      {statRow("Calmar", aa.returns.calmar, ab.returns.calmar, "ratio")}
+                      <tr>
+                        <td>Closed trades</td>
+                        <td className="num">
+                          {int(aa.trades.count)} <LowSample trades={aa.trades.count} />
+                        </td>
+                        <td className="num">
+                          {int(ab.trades.count)} <LowSample trades={ab.trades.count} />
+                        </td>
+                        <td className="num">{`${ab.trades.count - aa.trades.count > 0 ? "+" : ""}${int(ab.trades.count - aa.trades.count)}`}</td>
+                      </tr>
+                    </>
+                  ) : null}
                   <tr>
                     <td>P&L</td>
                     <td className={`num ${pnlA.total >= 0 ? "pos" : "neg"}`}>{money(pnlA.total)}</td>
@@ -420,8 +478,21 @@ function CompareView() {
                         <td>Avg exposure</td>
                         <td className="num">{pct(ma.avg_exposure)}</td>
                         <td className="num">{pct(mb.avg_exposure)}</td>
-                        <td className="num"></td>
+                        <td className="num">{pp(mb.avg_exposure, ma.avg_exposure)}</td>
                       </tr>
+                      {aa && ab ? (
+                        <>
+                          {statRow(`Trades that beat ${bn}`, aa.edge.beat_rate, ab.edge.beat_rate, "pct")}
+                          {statRow("Volatility (per year)", aa.returns.volatility, ab.returns.volatility, "pct")}
+                          {statRow(`Beta to ${bn}`, aa.market?.beta, ab.market?.beta, "ratio")}
+                          {statRow("Alpha (per year)", aa.market?.alpha, ab.market?.alpha, "pct")}
+                          {statRow("Longest time underwater", aa.drawdown.longest_underwater, ab.drawdown.longest_underwater, "years")}
+                          {statRow("Drops over 10%", aa.drawdown.drawdowns_over_10pct, ab.drawdown.drawdowns_over_10pct, "int")}
+                          {statRow("Turnover per year", aa.costs.turnover, ab.costs.turnover, "ratio")}
+                          {statRow("Costs share of trade profit", aa.costs.share_of_gross_profit, ab.costs.share_of_gross_profit, "pct")}
+                          {statRow("Most losing trades in a row", aa.streaks.max_consecutive_losing_trades, ab.streaks.max_consecutive_losing_trades, "int")}
+                        </>
+                      ) : null}
                       <tr>
                         <td>Round trips</td>
                         <td className="num">{int(ma.trades)}</td>
@@ -458,7 +529,8 @@ function CompareView() {
             <p className="caption">
               SPY is buy-and-hold of the S&P 500 ETF on each run&apos;s own dates, starting cash, and trading costs. Beat
               SPY means that run finished ahead of the S&P. The B − A column on vs SPY is how much more B beat the S&P
-              than A did.
+              than A did. Percent rows show B − A in percentage points; ratio rows show the plain difference. Edge, win
+              rate and profit factor come from closed trades, so runs with fewer than 30 trades are flagged.
             </p>
           </section>
 

@@ -242,6 +242,57 @@ test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule r
   assert.deepEqual(errors, []);
 });
 
+test("report page: trade quality, versus SPY, risk, and the detailed tables render", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/report?id=${original}`);
+  for (const id of ["trade-quality", "versus-spy", "risk"]) await page.getByTestId(id).waitFor();
+  const quality = await page.getByTestId("trade-quality").innerText();
+  assert.match(quality, /win rate/i);
+  assert.match(quality, /profit factor/i);
+  assert.match(quality, /expectancy per trade/i);
+  // The demo run has far fewer than 30 trades, so the warning shows.
+  await page.getByTestId("low-sample").first().waitFor();
+  assert.match(await page.getByTestId("versus-spy").innerText(), /edge per trade vs SPY/i);
+  assert.match(await page.getByTestId("risk").innerText(), /longest time underwater/i);
+  // Detailed mode adds the big tables, a real hold length and the benchmark edge per trade.
+  await page.getByRole("button", { name: "Detailed" }).click();
+  for (const id of ["by-year", "monthly-grid", "by-exit", "by-symbol", "by-regime", "costs", "streaks", "funnel", "rolling-return", "trade-table"]) {
+    await page.getByTestId(id).waitFor({ timeout: 15000 });
+  }
+  const table = await page.getByTestId("trade-table").innerText();
+  assert.match(table, /vs SPY/i);
+  assert.match(table, /Held the full time/);
+  // The holding-period exit is 10 sessions; the old column showed the order wait (1).
+  assert.match(table, /\b10 sess\b/);
+  assert.deepEqual(errors, []);
+});
+
+test("builder: idle cash held in SPY reaches the run, the report and a duplicate", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/builder?from=${original}`);
+  await page.getByTestId("run-backtest").waitFor();
+  assert.equal(await page.getByTestId("idle-cash-cash").getAttribute("class"), "on");
+  await page.getByTestId("idle-cash-benchmark").click();
+  assert.equal(await page.getByTestId("idle-cash-benchmark").getAttribute("class"), "on");
+  await page.waitForFunction(
+    () => /held in SPY/.test(document.querySelector('[data-testid="builder-summary"]')?.textContent ?? ""),
+    null,
+    { timeout: 10000 },
+  );
+  await page.getByTestId("run-backtest").click();
+  await page.getByTestId("open-new-run").click({ timeout: 60000 });
+  await page.getByTestId("run-facts").waitFor();
+  await page.waitForFunction(
+    () => /Idle cash held in SPY at the end/.test(document.querySelector('[data-testid="run-facts"]')?.textContent ?? ""),
+    null,
+    { timeout: 15000 },
+  );
+  await page.getByRole("link", { name: /duplicate and edit/i }).click();
+  await page.getByTestId("idle-cash-benchmark").waitFor();
+  assert.equal(await page.getByTestId("idle-cash-benchmark").getAttribute("class"), "on");
+  assert.deepEqual(errors, []);
+});
+
 test("builder: support/resistance breakout with an ADX trend filter runs and opens its report", async () => {
   const { page, errors } = await newPage();
   await page.goto(`${server.base}/builder?from=${original}`);

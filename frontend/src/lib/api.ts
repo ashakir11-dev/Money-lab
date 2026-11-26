@@ -26,6 +26,9 @@ export type Job = S["JobOut"];
 export type RunSummary = S["RunSummary"];
 export type RunDetail = S["RunDetail"];
 export type EquityRow = S["EquityRow"];
+export type Analysis = S["AnalysisOut"];
+export type TradeRow = S["TradeRow"];
+export type GroupRow = S["GroupRowOut"];
 export type FillRow = S["FillRow"];
 export type TradeChart = S["TradeChartOut"];
 export type DecisionPage = S["DecisionPage"];
@@ -139,6 +142,7 @@ export const api = {
   job: (id: string) => request<Job>(`/api/jobs/${encodeURIComponent(id)}`),
   run: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   equity: (id: string) => request<EquityRow[]>(`/api/runs/${encodeURIComponent(id)}/equity`),
+  trades: (id: string) => request<TradeRow[]>(`/api/runs/${encodeURIComponent(id)}/trades`),
   fills: (id: string) => request<FillRow[]>(`/api/runs/${encodeURIComponent(id)}/fills`),
   chart: (id: string, decisionId: number) =>
     request<TradeChart>(`/api/runs/${encodeURIComponent(id)}/chart${qs({ decision_id: decisionId })}`),

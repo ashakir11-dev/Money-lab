@@ -50,6 +50,8 @@ type Draft = {
   targetPct: string;
   maxPositions: string;
   costBps: string;
+  /** What cash not needed by a position does: stay as cash, or be held in the benchmark. */
+  idleCash: "cash" | "benchmark";
 };
 
 const EMPTY: Draft = {
@@ -79,6 +81,7 @@ const EMPTY: Draft = {
   targetPct: "",
   maxPositions: "",
   costBps: "",
+  idleCash: "cash",
 };
 
 const toNumber = (p: Param | undefined, v: Value): unknown => {
@@ -165,6 +168,7 @@ function toConfig(d: Draft, comps: Map<string, Component>): StrategyConfig {
       target_allocation: target === null ? null : target / 100,
       max_positions: num(d.maxPositions),
       cost_bps_per_side: num(d.costBps),
+      idle_cash: d.idleCash,
     },
   };
 }
@@ -186,7 +190,7 @@ type Resolved = {
   sizing?: { id?: string; params?: Record<string, Value> };
   rank_by?: { indicator: ResolvedRef; order?: "ascending" | "descending" } | null;
   watchlist?: { name?: string };
-  portfolio?: { starting_cash?: number; target_allocation?: number; max_positions?: number; cost_bps_per_side?: number };
+  portfolio?: { starting_cash?: number; target_allocation?: number; max_positions?: number; cost_bps_per_side?: number; idle_cash?: "cash" | "benchmark" };
 };
 
 function fromResolved(r: Resolved): Draft {
@@ -227,6 +231,7 @@ function fromResolved(r: Resolved): Draft {
     targetPct: p.target_allocation != null ? String(+(p.target_allocation * 100).toFixed(6)) : "",
     maxPositions: p.max_positions != null ? String(p.max_positions) : "",
     costBps: p.cost_bps_per_side != null ? String(p.cost_bps_per_side) : "",
+    idleCash: p.idle_cash === "benchmark" ? "benchmark" : "cash",
   };
 }
 
@@ -809,7 +814,7 @@ function Builder() {
           </div>
         </SectionWrap>
 
-        <SectionWrap tone="capital" title="Capital" count={2}>
+        <SectionWrap tone="capital" title="Capital" count={3}>
           <div className="block-row">
             <ViewBlock
               icon="cash"
@@ -839,6 +844,31 @@ function Builder() {
                 <input id="bps" type="number" value={draft.costBps} placeholder={dflt ? String(dflt.cost_bps_per_side) : ""} onChange={(e) => set("costBps", e.target.value)} />
               </div>
             </ViewBlock>
+          </div>
+          <p className="muted small" id="idle-cash-label">
+            Idle cash: what the cash that is not in a position does
+          </p>
+          <div className="block-row" role="group" aria-labelledby="idle-cash-label" data-testid="idle-cash">
+            {(
+              [
+                ["cash", "Keep as cash", "Cash not in a position sits uninvested. This is how every run before engine 0.4 worked."],
+                [
+                  "benchmark",
+                  `Hold ${draft.benchmark.trim().toUpperCase() || "SPY"}`,
+                  "Cash not in a position buys whole shares of the benchmark at each open, and those shares are sold at the open just before a trade needs the cash. This makes the comparison with the benchmark fair for strategies that are often in cash.",
+                ],
+              ] as const
+            ).map(([id, label, help]) => (
+              <ChoiceBlock
+                key={id}
+                icon="cash"
+                testId={`idle-cash-${id}`}
+                selected={draft.idleCash === id}
+                label={label}
+                help={help}
+                onClick={() => set("idleCash", id)}
+              />
+            ))}
           </div>
         </SectionWrap>
 

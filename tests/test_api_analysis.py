@@ -96,6 +96,10 @@ def test_idle_cash_in_benchmark_through_the_api(lab_client: tuple[Lab, TestClien
     assert d["analysis"]["trades"]["count"] == d["trades"]
     eq = c.get(f"/api/runs/{rid}/equity").json()
     assert eq[0]["equity"] > 0 and "sweep_value" in lab.store.ledgers(rid).equity
+    # Every ledger endpoint copes with fills that have no decision (the sweeps).
+    page = c.get(f"/api/runs/{rid}/decisions", params={"action": "all", "limit": 1000})
+    assert page.status_code == 200, page.text
+    assert c.get(f"/api/runs/{rid}/trades").status_code == 200
     # Duplicating keeps the setting and reproduces the ledger exactly.
     dup = _wait(c, c.post(f"/api/runs/{rid}/duplicate").json())["run_ids"][0]
     assert c.get(f"/api/runs/{dup}/fills").json() == fills
