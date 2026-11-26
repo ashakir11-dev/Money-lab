@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { EquityChart } from "@/components/EquityChart";
 import { Specimen } from "@/components/Specimen";
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { PairedStats } from "@/components/StatBreakdown";
 import { TradeChartDialog } from "@/components/TradeChartDialog";
 import { DecisionsTable, FillsTable } from "@/components/tables";
@@ -60,45 +61,6 @@ function defaultPair(runs: RunSummary[]): [string, string] | null {
   const newest = runs[0];
   if (newest.parent_id && runs.some((r) => r.id === newest.parent_id)) return [newest.parent_id, newest.id];
   return [runs[1].id, newest.id];
-}
-
-function show(v: unknown): string {
-  if (v === undefined) return "(not set)";
-  if (v === null) return "none";
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
-
-function humanSetting(path: string): string {
-  const named: Record<string, string> = {
-    universe: "Universe",
-    benchmark: "Benchmark",
-    name: "Run name",
-    start: "First session",
-    end: "Last session",
-  };
-  if (named[path]) return named[path];
-  const indexed = path.match(/^(entry|exits|exit)\[(\d+)\](?:\.(.+))?$/);
-  if (indexed) {
-    const kind = indexed[1] === "entry" ? "Entry" : "Exit";
-    const n = Number(indexed[2]) + 1;
-    const rest = (indexed[3] ?? "")
-      .replace(/^params\./, "")
-      .replace(/[._]/g, " ")
-      .replace(/\s*id$/, "")
-      .trim();
-    const word =
-      rest === "value" ? "threshold" : rest === "op" ? "comparison" : rest === "pct" ? "percent" : rest || "setting";
-    return `${kind} ${n} ${word}`;
-  }
-  return path.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function showSetting(path: string, v: unknown): string {
-  if (typeof v === "number" && /pct|fraction/i.test(path) && Math.abs(v) <= 1) {
-    return `${(v * 100).toFixed(2)}%`;
-  }
-  return show(v);
 }
 
 function startCash(resolved: Record<string, unknown> | undefined): number {
@@ -500,22 +462,7 @@ function CompareView() {
             </p>
           ) : null}
 
-          {c.config_diff.length ? (
-            <div className="chip-strip" data-testid="config-diff">
-              {c.config_diff.map((d) => (
-                <span key={d.setting} className="chip">
-                  <strong>{humanSetting(d.setting)}</strong>
-                  <span>{showSetting(d.setting, d.a)}</span>
-                  <span aria-hidden="true">→</span>
-                  <span>{showSetting(d.setting, d.b)}</span>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="muted" data-testid="config-diff">
-              Settings are identical.
-            </p>
-          )}
+          <SettingsPanel a={c.a.resolved} b={c.b.resolved} />
 
           <div className="compare-leads" data-testid="compare-leads">
             <RunLead label="A" run={c.a} />

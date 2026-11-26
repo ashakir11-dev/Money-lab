@@ -1303,6 +1303,20 @@ textarea {
   gap: 8px;
   margin: 0 0 12px;
 }
+.settings-panel {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.settings-panel section {
+  margin-top: 14px;
+}
+.settings-panel h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
 .chip {
   display: inline-flex;
   gap: 8px;
