@@ -6,6 +6,7 @@ Start it with ``uv run moneylab serve``. ``create_app(lab)`` builds an app aroun
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import math
@@ -107,6 +108,7 @@ class SnapshotOut(BaseModel):
     source_label: str
     label: str
     name: str = Field(description="typed label, or source, timeframe, universe and dates")
+    timeframe: str = Field(default="1d", description="bar size: 1min, 5min, 15min, 30min, 1h or 1d")
     adjustment: str
     created_at: str
     symbols: list[str]
@@ -127,6 +129,25 @@ class WatchlistOut(BaseModel):
     label: str
     members: list[str]
     created_at: str
+
+
+class TiingoImport(BaseModel):
+    """Daily bars from Tiingo. A watchlist's current members are included too; ``symbols``
+    are added on top (use that for the benchmark, usually SPY). Tiingo has no intraday bars."""
+
+    symbols: list[str] = Field(default_factory=list)
+    watchlist: str | None = None
+    start: date
+    end: date
+    label: str = ""
+
+    @model_validator(mode="after")
+    def _has_a_feed(self) -> TiingoImport:
+        named = bool(self.watchlist and self.watchlist.strip())
+        typed = any(s.strip() for s in self.symbols)
+        if not named and not typed:
+            raise ValueError("name at least one symbol or a watchlist")
+        return self
 
 
 class EquiblesImport(BaseModel):
@@ -339,6 +360,7 @@ def _snapshot_out(meta: dict[str, Any]) -> SnapshotOut:
         source_label=ds.badge,
         label=meta.get("label", ""),
         name=snapshot_name(meta),
+        timeframe=str(meta.get("timeframe") or "1d"),
         adjustment=meta.get("adjustment", ""),
         created_at=meta.get("created_at", ""),
         symbols=meta.get("symbols", []),
@@ -483,7 +505,12 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         from moneylab.engine.config import resolve
 
         try:
-            resolved = resolve(body.config, lab.settings)
+            config = body.config
+            if body.snapshot_id:
+                # An unknown snapshot is reported when the run is submitted.
+                with contextlib.suppress(KeyError, OSError):
+                    config = lab.with_snapshot_timeframe(config, body.snapshot_id)
+            resolved = resolve(config, lab.settings)
         except (ValueError, ValidationError) as exc:
             raise _bad_request(exc) from exc
         return {"resolved": jsonable(resolved), "summary": strategy_summary(resolved)}
@@ -492,6 +519,25 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     @app.get("/api/snapshots", response_model=list[SnapshotOut], tags=["data"])
     def snapshots() -> list[SnapshotOut]:
         return [_snapshot_out(m) for m in list_snapshots(lab.settings.snapshot_dir)]
+
+    @app.post("/api/snapshots/tiingo", response_model=SnapshotOut, tags=["data"])
+    def import_tiingo(body: TiingoImport) -> SnapshotOut:
+        """Fetch daily bars, splits and dividends from Tiingo. The key stays on the server."""
+        try:
+            snap = lab.import_provider(
+                body.symbols,
+                body.start,
+                body.end,
+                label=body.label,
+                watchlist=body.watchlist,
+                timeframe="1d",
+                source="tiingo",
+            )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except Exception as exc:  # provider errors are shown to the person
+            raise HTTPException(400, f"{type(exc).__name__}: {exc}") from exc
+        return _snapshot_out(snap.meta)
 
     @app.post("/api/snapshots/equibles", response_model=SnapshotOut, tags=["data"])
     def import_equibles(body: EquiblesImport) -> SnapshotOut:
@@ -751,7 +797,8 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
             out = lab.paper_advance(paper_id)
         except Exception as exc:  # provider errors are shown to the person
             raise HTTPException(400, f"{type(exc).__name__}: {exc}") from exc
-        return out["ingested"]
+        ingested: list[dict[str, Any]] = out["ingested"]
+        return ingested
 
     @app.post("/api/paper/{paper_id}/replay", response_model=dict[str, Any], tags=["paper"])
     def paper_replay(paper_id: str) -> dict[str, Any]:

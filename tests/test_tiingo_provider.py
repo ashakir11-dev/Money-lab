@@ -171,7 +171,7 @@ def test_settings_read_the_unprefixed_environment_secret(
     assert Settings(_env_file=None).tiingo_api_key is None
     monkeypatch.delenv("TIINGO_API_KEY")
     assert Settings(_env_file=None).tiingo_api_key is None
-    assert isinstance(lab.provider(), TiingoProvider)
+    assert isinstance(lab.provider("tiingo"), TiingoProvider)
     with pytest.raises(ValueError, match="unknown provider"):
         lab.provider("nope")
 
@@ -238,7 +238,17 @@ def test_cli_fetch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MONEYLAB_HOME", str(tmp_path / "home"))
     # Empty env wins over a developer `.env` so the missing-key path stays testable.
     monkeypatch.setenv("TIINGO_API_KEY", "")
-    args = ["fetch", "AAA", "SPY", "--start", "2023-01-03", "--end", "2023-06-30"]
+    args = [
+        "fetch",
+        "AAA",
+        "SPY",
+        "--start",
+        "2023-01-03",
+        "--end",
+        "2023-06-30",
+        "--source",
+        "tiingo",
+    ]
     res = CliRunner().invoke(app, args)
     assert res.exit_code == 1 and "TIINGO_API_KEY is not set" in res.output
 

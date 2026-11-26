@@ -37,6 +37,18 @@ const IND_SHORT: Record<string, string> = {
   highest_high: "Highest high",
   lowest_low: "Lowest low",
   avg_volume: "Avg volume",
+  adx: "ADX / DI",
+  linreg_trend: "Regression trend",
+  market_structure: "Market structure",
+  straightness: "Straightness",
+  swing_high: "Swing high",
+  swing_low: "Swing low",
+  support: "Support",
+  resistance: "Resistance",
+  support_distance: "Dist. to support",
+  resistance_distance: "Dist. to resistance",
+  support_tests: "Support tests",
+  resistance_tests: "Resistance tests",
 };
 
 const PARAM_SHORT: Record<string, string> = {
@@ -55,6 +67,11 @@ const PARAM_SHORT: Record<string, string> = {
   risk_fraction: "Risk",
   atr_length: "ATR lookback",
   atr_multiple: "Stop (× ATR)",
+  left: "Bars before",
+  right: "Confirm bars",
+  min_move: "Min move",
+  zone: "Zone width",
+  lookback: "Memory",
 };
 
 /** Params the engine takes as fractions (0.08) are shown and typed as percents (8). */
@@ -79,6 +96,25 @@ function asNum(v: Value): number | null {
 }
 
 /** Practical slider window. Schema min/max stay on the typed field. */
+/** Threshold slider ranges for indicators with a known scale. Key: id, or id:output. */
+const VALUE_WINDOWS: Record<string, { min: number; max: number; step: number }> = {
+  rsi: { min: 0, max: 100, step: 1 },
+  breadth: { min: 0, max: 1, step: 0.01 },
+  bollinger_pctb: { min: 0, max: 1, step: 0.01 },
+  roc: { min: -0.5, max: 0.5, step: 0.01 },
+  adx: { min: 0, max: 100, step: 1 },
+  straightness: { min: -1, max: 1, step: 0.05 },
+  "straightness:unsigned": { min: 0, max: 1, step: 0.05 },
+  "linreg_trend:slope_pct_year": { min: -100, max: 100, step: 1 },
+  "linreg_trend:tstat": { min: -5, max: 5, step: 0.1 },
+  "linreg_trend:r2": { min: 0, max: 1, step: 0.01 },
+  market_structure: { min: -1, max: 1, step: 1 },
+  support_distance: { min: -5, max: 5, step: 0.1 },
+  resistance_distance: { min: -5, max: 5, step: 0.1 },
+  support_tests: { min: 1, max: 10, step: 1 },
+  resistance_tests: { min: 1, max: 10, step: 1 },
+};
+
 function sliderWindow(p: Param, indicator: string): { min: number; max: number; step: number } {
   const step = p.type === "int" ? 1 : 0.01;
   const lo = typeof p.min === "number" ? p.min : null;
@@ -87,10 +123,9 @@ function sliderWindow(p: Param, indicator: string): { min: number; max: number; 
     return { min: lo, max: hi, step };
   }
   if (p.name === "value") {
-    if (indicator === "rsi") return { min: 0, max: 100, step: 1 };
-    if (indicator === "breadth" || indicator === "bollinger_pctb") return { min: 0, max: 1, step: 0.01 };
-    if (indicator === "roc") return { min: -0.5, max: 0.5, step: 0.01 };
-    return { min: 0, max: 100, step };
+    // `indicator` may carry the output, e.g. "linreg_trend:tstat".
+    const id = indicator.split(":")[0];
+    return VALUE_WINDOWS[indicator] ?? VALUE_WINDOWS[id] ?? { min: 0, max: 100, step };
   }
   return { min: lo ?? 1, max: hi != null && hi < 1e6 ? hi : 200, step };
 }
@@ -526,7 +561,7 @@ export function ConditionEditor({
                 value={cond.params[p.name] ?? ""}
                 testid={testid}
                 inputId={`${prefix}-${index}-${testid}`}
-                indicator={cond.indicator}
+                indicator={cond.indParams.output ? `${cond.indicator}:${cond.indParams.output}` : cond.indicator}
                 onChange={(v) => onChange({ ...cond, params: { ...cond.params, [p.name]: v } })}
               />
             );

@@ -69,7 +69,8 @@ def snapshot_name(meta: dict[str, Any]) -> str:
     label = str(meta.get("label") or "").strip()
     if label:
         return label
-    provenance = meta.get("provenance") if isinstance(meta.get("provenance"), dict) else {}
+    raw_prov = meta.get("provenance")
+    provenance: dict[str, Any] = raw_prov if isinstance(raw_prov, dict) else {}
     source = str(meta.get("source") or "unknown")
     timeframe = str(meta.get("timeframe") or provenance.get("timeframe") or "1d")
     return f"{source} · {timeframe} · {_universe(meta, provenance)} · {_span(meta, provenance)}"

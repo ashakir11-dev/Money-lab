@@ -2,6 +2,8 @@
 
 from datetime import date, datetime
 
+import pandas as pd
+
 from moneylab.data.bars import (
     label_in_range,
     on_grid,
@@ -9,7 +11,6 @@ from moneylab.data.bars import (
     resample_daily,
     session_label,
 )
-import pandas as pd
 
 
 def test_hourly_regular_session_is_seven_bars_including_the_half_hour() -> None:

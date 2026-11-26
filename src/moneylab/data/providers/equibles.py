@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Iterable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -91,7 +91,9 @@ class EquiblesProvider:
         self.cache_hits = 0
 
     def __repr__(self) -> str:
-        return f"EquiblesProvider(base_url={self.base_url!r}, key={'set' if self._key else 'unset'})"
+        return (
+            f"EquiblesProvider(base_url={self.base_url!r}, key={'set' if self._key else 'unset'})"
+        )
 
     def fetch_history(
         self,
@@ -110,7 +112,11 @@ class EquiblesProvider:
         if timeframe not in EQUIBLES_INTERVAL_NAME:
             raise ValueError(f"unknown timeframe {timeframe!r}")
         interval = EQUIBLES_INTERVAL_NAME[timeframe]
-        minutes = 60 if timeframe == "1d" else {"1min": 1, "5min": 5, "15min": 15, "30min": 30, "1h": 60}[timeframe]
+        minutes = (
+            60
+            if timeframe == "1d"
+            else {"1min": 1, "5min": 5, "15min": 15, "30min": 30, "1h": 60}[timeframe]
+        )
         fetched_at = self._now().isoformat()
         req0, hit0 = self.http_requests, self.cache_hits
         bars: list[pd.DataFrame] = []
@@ -147,7 +153,7 @@ class EquiblesProvider:
                 "http_requests": self.http_requests - req0,
                 "cache_hits": self.cache_hits - hit0,
                 "actions_from": "splits numerator/denominator",
-                "actions": int(len(actions)),
+                "actions": len(actions),
             },
         )
 
@@ -180,7 +186,9 @@ class EquiblesProvider:
         path = None
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            path = self.cache_dir / f"{symbol}_{interval}_{start.isoformat()}_{end.isoformat()}.json"
+            path = (
+                self.cache_dir / f"{symbol}_{interval}_{start.isoformat()}_{end.isoformat()}.json"
+            )
         if path is not None and path.exists() and not refresh and cacheable:
             self.cache_hits += 1
             log.info("equibles cache hit %s %s %s..%s", symbol, interval, start, end)
@@ -398,6 +406,7 @@ def _csv_page(resp: httpx.Response) -> dict[str, Any]:
                     "final": str(row.get("final", "true")).lower() != "false",
                 }
             )
+
     def header_list(name: str) -> list[str]:
         raw = resp.headers.get(name, "")
         return [p for p in raw.split(",") if p] if raw else []

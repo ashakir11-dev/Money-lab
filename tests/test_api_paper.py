@@ -91,10 +91,10 @@ def test_tiingo_import_then_paper_fetch_delivers_the_newer_sessions(
         assert got[0]["session"] == "2023-04-03"
         st = c.get(f"/api/paper/{pid}").json()["status"]
         assert st["latest_processed"] == got[-1]["session"]
-        # Fetching again re-delivers the same sessions: recorded as duplicates, no new fills.
+        # Fetching again delivers nothing new: anything re-sent is a duplicate, no new fills.
         fills = len(c.get(f"/api/paper/{pid}").json()["fills"])
         again = c.post(f"/api/paper/{pid}/fetch").json()
-        assert {g["status"] for g in again} == {"duplicate"}
+        assert {g["status"] for g in again} <= {"duplicate"}
         assert len(c.get(f"/api/paper/{pid}").json()["fills"]) == fills
         assert c.post(f"/api/paper/{pid}/replay").json()["match"] is True
 

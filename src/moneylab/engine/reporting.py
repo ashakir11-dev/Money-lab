@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from moneylab.data.bars import bars_per_year
 from moneylab.engine.simulator import DECISION_ACTIONS
 
 SHARPE_ASSUMPTIONS = (
@@ -21,7 +22,19 @@ SHARPE_ASSUMPTIONS = (
 )
 
 
-def metrics(equity: pd.DataFrame, fills: pd.DataFrame, column: str = "equity") -> dict[str, Any]:
+def sharpe_assumptions(timeframe: str = "1d") -> str:
+    if timeframe == "1d":
+        return SHARPE_ASSUMPTIONS
+    return (
+        f"{timeframe} bar-to-bar equity returns, sample standard deviation, risk-free rate 0, "
+        f"annualised by sqrt({bars_per_year(timeframe)}) ({timeframe} bars per year); "
+        "undefined when returns never vary"
+    )
+
+
+def metrics(
+    equity: pd.DataFrame, fills: pd.DataFrame, column: str = "equity", timeframe: str = "1d"
+) -> dict[str, Any]:
     e = equity[column].to_numpy(dtype=float)
     rets = np.diff(e) / e[:-1] if e.size > 1 else np.array([])
     peak = np.maximum.accumulate(e) if e.size else e
@@ -29,12 +42,12 @@ def metrics(equity: pd.DataFrame, fills: pd.DataFrame, column: str = "equity") -
     sd = float(rets.std(ddof=1)) if rets.size > 1 else 0.0
     # Undefined (None) when there are fewer than two daily returns or they never vary;
     # the dashboard shows it as "undefined" rather than a misleading 0.
-    sharpe = float(rets.mean() / sd * math.sqrt(252)) if sd > 0 else None
+    sharpe = float(rets.mean() / sd * math.sqrt(bars_per_year(timeframe))) if sd > 0 else None
     out: dict[str, Any] = {
         "total_return": float(e[-1] / e[0] - 1) if e.size else 0.0,
         "max_drawdown": dd,
         "sharpe": sharpe,
-        "sharpe_assumptions": SHARPE_ASSUMPTIONS,
+        "sharpe_assumptions": sharpe_assumptions(timeframe),
     }
     if column == "equity":
         # A trade is a completed round trip (a sell that closes a position); positions

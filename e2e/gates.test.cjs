@@ -59,6 +59,8 @@ test("gate 3: duplicate, change the RSI threshold, run, and reach the first diff
   await page.goto(`${server.base}/report?id=${original}`);
   await click(page.getByRole("button", { name: /duplicate and edit/i }).or(page.getByRole("link", { name: /duplicate and edit/i })).first());
   await page.getByTestId("run-backtest").waitFor();
+  // Saved rules show as cards; one click opens the card to edit it.
+  await click(page.getByTestId("condition-1"));
   const value = page.getByTestId("condition-1").getByTestId("threshold-value");
   await value.waitFor();
   assert.equal(Number(await value.inputValue()), 30);
@@ -238,6 +240,42 @@ test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule r
   await restored.click();
   assert.equal(await restored.getByTestId("other-select").inputValue(), "sma");
   assert.deepEqual(errors, []);
+});
+
+test("builder: support/resistance breakout with an ADX trend filter runs and opens its report", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/builder?from=${original}`);
+  assert.equal(await page.getByTestId("builder-timeframe").inputValue(), "1d");
+  const first = page.getByTestId("condition-0");
+  await first.click(); // saved rules are cards; a click opens one for editing
+  await first.getByTestId("kind-select").selectOption("price_cross");
+  await first.getByTestId("indicator-select").selectOption("resistance");
+  await first.getByTestId("param-min_move").fill("1.5");
+  const second = page.getByTestId("condition-1");
+  await second.click();
+  await second.getByTestId("kind-select").selectOption("threshold");
+  await second.getByTestId("indicator-select").selectOption("adx");
+  await second.getByTestId("threshold-value").fill("25");
+  await second.getByTestId("threshold-op").selectOption("above");
+  await page.waitForFunction(() =>
+    /ADX\(14\) above 25/.test(document.querySelector('[data-testid="builder-summary"]')?.textContent ?? ""),
+  );
+  assert.match(
+    await page.getByTestId("builder-summary").innerText(),
+    /close crosses above resistance \(1\.5 ATR turns\) and ADX\(14\) above 25/,
+  );
+  await page.getByTestId("run-backtest").click();
+  const open = page.getByTestId("open-new-run");
+  await open.waitFor({ timeout: 60000 });
+  await open.click();
+  await page.getByTestId("run-summary").waitFor();
+  assert.match(await page.getByTestId("run-summary").innerText(), /resistance/);
+  assert.equal(await page.getByTestId("run-timeframe").innerText(), "1d bars");
+  const id = new URL(page.url()).searchParams.get("id");
+  const run = await api(server.base, "GET", `/api/runs/${id}`);
+  assert.deepEqual(run.resolved.entry.map((c) => c.indicator.id), ["resistance", "adx"]);
+  assert.equal(run.resolved.timeframe, "1d");
+  assert.deepEqual(errors.filter((e) => !/status of 422/.test(e)), []);
 });
 
 test("paper trading page: start, deliver sessions (one twice), see the account, replay", async () => {

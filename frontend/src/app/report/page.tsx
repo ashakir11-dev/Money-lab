@@ -345,7 +345,8 @@ function ReportView() {
 
       {list.data ? <RunPicker runs={list.data} id={id} /> : null}
       <p className="caption">
-        <Badge kind={r.source_kind}>{r.source_label}</Badge> · {r.snapshot_name} · <code>{r.id}</code> · {r.engine_version} · {when(r.created_at)}
+        <Badge kind={r.source_kind}>{r.source_label}</Badge> · {r.snapshot_name} ·{" "}
+        <span data-testid="run-timeframe">{String((r.resolved as { timeframe?: string }).timeframe ?? "1d")} bars</span> · <code>{r.id}</code> · {r.engine_version} · {when(r.created_at)}
         {r.parent_id ? (
           <>
             {" "}

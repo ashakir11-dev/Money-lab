@@ -245,7 +245,9 @@ def test_signal_off_the_grid_is_rejected(tmp_path: Path) -> None:
     buy = fills[fills["side"] == "buy"].iloc[0]
     resolved, data, decision = _pieces(lab, run_id, buy)
     decision["session"] = "1999-01-01"
-    with pytest.raises(ChartRejected, match="signal session 1999-01-01 is not on the run's bar grid"):
+    with pytest.raises(
+        ChartRejected, match="signal session 1999-01-01 is not on the run's bar grid"
+    ):
         assemble_chart(resolved, data, decision, buy.to_dict())
 ```
 
@@ -475,7 +477,9 @@ def test_chart_route_returns_the_buy(tmp_path: Path) -> None:
     fills = lab.store.ledgers(run_id).fills
     buy = fills[fills["side"] == "buy"].iloc[0]
     with _client(lab, tmp_path) as client:
-        response = client.get(f"/api/runs/{run_id}/chart", params={"decision_id": int(buy["decision_id"])})
+        response = client.get(
+            f"/api/runs/{run_id}/chart", params={"decision_id": int(buy["decision_id"])}
+        )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["symbol"] == buy["symbol"]
@@ -513,9 +517,7 @@ def test_chart_route_decision_without_a_fill(tmp_path: Path) -> None:
     open_ids = [int(v) for v in led.decisions["decision_id"] if int(v) not in filled]
     assert open_ids, "the demo run should record a decision that does not fill"
     with _client(lab, tmp_path) as client:
-        response = client.get(
-            f"/api/runs/{run_id}/chart", params={"decision_id": open_ids[0]}
-        )
+        response = client.get(f"/api/runs/{run_id}/chart", params={"decision_id": open_ids[0]})
     assert response.status_code == 404
     assert response.json()["detail"] == f"decision {open_ids[0]} not found"
 

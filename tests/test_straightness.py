@@ -28,10 +28,10 @@ def closes(values: list[float]) -> pd.DataFrame:
 def test_declaration() -> None:
     decl = get_component("straightness")
     assert decl in list_components("indicator")
-    assert decl.version == "1.0.0"
+    assert decl.version == "1.1.0"
     assert decl.inputs == ("close",)
     assert decl.price_scale is False
-    assert decl.resolve_params({}) == {"length": 20}
+    assert decl.resolve_params({}) == {"length": 20, "output": "signed"}
     assert decl.description
 
 
@@ -91,3 +91,13 @@ def test_length_bounds() -> None:
     )
     with pytest.raises(ValueError, match=re.escape("length must be >= 2")):
         resolve(cfg, Settings(_env_file=None))
+
+
+def test_unsigned_is_the_efficiency_ratio() -> None:
+    # Closes 10, 11, 10, 11, 12 with length 4: net 2, path 4 -> 0.5 either way.
+    # A fall 12, 11, 12, 11, 10: signed -0.5, unsigned 0.5.
+    up = closes([10.0, 11, 10, 11, 12])
+    down = closes([12.0, 11, 12, 11, 10])
+    assert compute(up, length=4, output="unsigned")[4] == 0.5
+    assert compute(down, length=4)[4] == -0.5
+    assert compute(down, length=4, output="unsigned")[4] == 0.5
