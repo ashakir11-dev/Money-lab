@@ -71,6 +71,7 @@ test("gate 3: duplicate, change the RSI threshold, run, and compare the two repo
 
   await page.getByTestId("compare-metrics").waitFor({ timeout: 60000 });
   await page.getByTestId("config-diff").waitFor();
+  await click(page.getByTestId("config-diff").locator("summary"));
   const diff = await page.getByTestId("config-diff").innerText();
   assert.match(diff, /30/);
   assert.match(diff, /35/);
@@ -97,6 +98,7 @@ test("gate 3 walkthrough: drop DDD and change the threshold; compare shows the s
   await page.getByTestId("run-backtest").click();
   await page.getByTestId("compare-with-original").click();
   await page.getByTestId("compare-metrics").waitFor({ timeout: 60000 });
+  await page.getByTestId("config-diff").locator("summary").click();
   const diff = await page.getByTestId("config-diff").innerText();
   assert.match(diff, /DDD/);
   assert.match(diff, /35/);

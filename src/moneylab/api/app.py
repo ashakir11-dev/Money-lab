@@ -951,7 +951,8 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         for family in lab.strategy_families():
             for version in family["versions"]:
                 if version["id"] == strategy_id:
-                    return jsonable(version)
+                    detail: dict[str, Any] = jsonable(version)
+                    return detail
         raise HTTPException(404, f"strategy {strategy_id} not found")
 
     @app.post("/api/strategies", response_model=StrategyVersionOut, tags=["strategies"])
@@ -971,7 +972,8 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         for family in lab.strategy_families():
             for version in family["versions"]:
                 if version["id"] == saved:
-                    return jsonable(version)
+                    detail: dict[str, Any] = jsonable(version)
+                    return detail
         raise HTTPException(500, "saved strategy was not readable")
 
     # Runs ----------------------------------------------------------------------------
