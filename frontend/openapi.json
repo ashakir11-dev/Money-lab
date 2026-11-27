@@ -5015,6 +5015,50 @@
         ]
       }
     },
+    "/api/runs/{run_id}/export": {
+      "get": {
+        "description": "Download a finished report: the summary as JSON and closed trades as CSV.",
+        "operationId": "export_run_api_runs__run_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Zip of summary.json (report summary) and trades.csv."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{run_id}/fills": {
       "get": {
         "operationId": "fills_api_runs__run_id__fills_get",
