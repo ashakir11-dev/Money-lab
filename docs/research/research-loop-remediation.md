@@ -1,6 +1,6 @@
 # Research loop remediation
 
-Phase 1 adds a research contract beside the existing family loop. It does not rerun NVDA, and it does not change the historical kill. Phase 2 adds candidate evidence, forward labels, a report drill-down, and the proposer contract. `support_recovery_v2_card()` registers Support Recovery V2 and does not run it. That run remains in `moneylab.decision.integrity.DEFERRED`. 2025 is not a partition on the card and the observer refuses that year before it computes a label.
+Phase 1 adds a research contract beside the existing family loop. It does not rerun NVDA, and it does not change the historical kill. Phase 2 adds candidate evidence, forward labels, a report drill-down, and the proposer contract. `support_recovery_v2_card()` registers Support Recovery V2. `execute_registered_card` still refuses it. `observe_candidates(..., development_only=True)` can score it only when every bar sits inside a development partition. 2025 and 2026 are refused before a label is computed.
 
 `example_research_card()` is a bounded support-bounce card on the 5 bps path. `validate_card` accepts it. Nothing in that helper fetches prices or scores a window.
 
@@ -76,4 +76,4 @@ Buckets are exploratory. A count below five is not a supported bucket, and a sup
 
 ## What this phase does not do
 
-It does not claim the NVDA book is profitable or statistically supported. It does not re-simulate the Equibles snapshot. It does not run Support Recovery V2, score 2025, or let a model override a kill. Sector and VIX stay missing unless those closes were already on the bars. There is no as-of sector map and no VIX feed.
+It does not claim the NVDA book is profitable or statistically supported. It does not re-simulate the Equibles snapshot. It does not execute Support Recovery V2 through `execute_registered_card`, score 2025 or 2026, or let a model override a kill. A development-only observation is a separate call. Sector and VIX stay missing unless those closes were already on the bars. There is no as-of sector map and no VIX feed.

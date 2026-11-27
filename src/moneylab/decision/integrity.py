@@ -9,8 +9,9 @@ path that charges them. A zero-cost replay must say ``legacy_zero_cost``. The se
 default stays 0, and an omitted cost model still charges nothing.
 
 Candidate evidence, outcomes, and the proposer contract live in ``decision.evidence``
-and ``decision.proposals``. The Support Recovery V2 card is registered here and is
-not run. That run stays in ``DEFERRED``.
+and ``decision.proposals``. The Support Recovery V2 card is registered here.
+``execute_registered_card`` still refuses it. A development-only observation is
+separate and still refuses 2025 and 2026.
 """
 
 from __future__ import annotations
