@@ -91,8 +91,8 @@ def budget() -> StyleBudget:
     )
 
 
-def test_default_cost_stays_five_basis_points() -> None:
-    assert Settings().cost_bps_per_side == 5.0
+def test_default_cost_is_zero() -> None:
+    assert Settings().cost_bps_per_side == 0.0
 
 
 def test_fallback_writes_a_breakout_thesis_the_lab_can_run() -> None:
@@ -113,7 +113,7 @@ def test_fallback_writes_a_breakout_thesis_the_lab_can_run() -> None:
     )
     assert result.accepted
     assert result.resolved_recipe is not None
-    assert result.resolved_recipe["portfolio"]["cost_bps_per_side"] == 5.0
+    assert result.resolved_recipe["portfolio"]["cost_bps_per_side"] == 0.0
     axes = changed_axes(result.resolved_recipe, result.resolved_control)
     assert axes == ["entry"]
 
@@ -352,7 +352,7 @@ def test_walk_forward_fits_on_the_train_window_and_restarts_flat() -> None:
         [5, 10], key=lambda value: (first["train_scores"][str(value)], -float(value))
     )
     assert first["test_start_equity"] == pytest.approx(100_000)
-    assert result.meta["cost_bps_per_side"] == 5.0
+    assert result.meta["cost_bps_per_side"] == 0.0
     sessions_scored = {str(session)[:10] for session in result.equity["session"]}
     assert first["train_start"] not in sessions_scored
     assert first["test_start"] in sessions_scored
@@ -380,14 +380,14 @@ def test_paper_score_compares_fills_with_the_frozen_model() -> None:
     same = score_account(resolved, data, model.fills)
     assert same["match"] is True
     assert same["recipe_edited"] is False
-    assert same["cost_bps_per_side"] == 5.0
-    assert resolved["portfolio"]["cost_bps_per_side"] == 5.0
+    assert same["cost_bps_per_side"] == 0.0
+    assert resolved["portfolio"]["cost_bps_per_side"] == 0.0
     bumped = model.fills.copy()
     bumped.loc[bumped.index[0], "price"] = float(bumped.loc[bumped.index[0], "price"]) + 1
     diverged = score_account(resolved, data, bumped)
     assert diverged["match"] is False
     assert diverged["price_diffs"]
-    assert resolved["portfolio"]["cost_bps_per_side"] == 5.0
+    assert resolved["portfolio"]["cost_bps_per_side"] == 0.0
 
 
 def _market(sessions: pd.DatetimeIndex) -> MarketData:
