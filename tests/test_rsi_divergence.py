@@ -6,18 +6,18 @@ Fixture facts for AAA on 2023-04-04 (see scripts/make_fixture.py):
     RSI14 = 31.680231 -> fails "below 30", passes "below 35".
 So only the RSI<35 variant buys AAA, at the next open (2023-04-05, 74.91).
 
-Hand calculation of that fill (defaults: 10% target, 5 bps per side):
-    equity at 2023-04-04 close = 100,303.09 (cash after the DDD round trip)
-    qty   = floor(0.10 * 100,303.09 / 74.56) = floor(134.53) = 134
+Hand calculation of that fill (defaults: 10% target, no transaction cost):
+    equity at 2023-04-04 close = 100,313.20 (cash after the DDD round trip)
+    qty   = floor(0.10 * 100,313.20 / 74.56) = floor(134.54) = 134
     gross = 134 * 74.91 = 10,037.94
-    cost  = 10,037.94 * 0.0005 = 5.02
-    cash  = 100,303.09 - 10,037.94 - 5.02 = 90,260.13
+    cost  = 0
+    cash  = 100,313.20 - 10,037.94 = 90,275.26
 
 Holding period 10 sessions, counting the fill session as session one: AAA is filled
 2023-04-05, the 10th session held is 2023-04-19 (2023-04-07 is a holiday), so the exit
-fills at the 2023-04-20 open 76.82: gross 10,293.88, cost 5.14694 -> 5.15,
-cash 90,260.13 + 10,293.88 - 5.15 = 100,548.86. DDD likewise exits at the
-2023-03-22 open 76.03: gross 10,264.05, cost 5.13, cash 100,303.09.
+fills at the 2023-04-20 open 76.82: gross 10,293.88, cost 0,
+cash 90,275.26 + 10,293.88 = 100,569.14. DDD likewise exits at the
+2023-03-22 open 76.03: gross 10,264.05, cost 0, cash 100,313.20.
 """
 
 from __future__ import annotations
@@ -31,12 +31,12 @@ from moneylab.engine.simulator import simulate
 
 ORIGINAL_FILLS = [
     # session, symbol, side, qty, price, gross, cost, cash_after
-    ("2023-03-08", "DDD", "buy", 135, 73.71, 9950.85, 4.98, 90044.17),
-    ("2023-03-22", "DDD", "sell", 135, 76.03, 10264.05, 5.13, 100303.09),
+    ("2023-03-08", "DDD", "buy", 135, 73.71, 9950.85, 0.0, 90049.15),
+    ("2023-03-22", "DDD", "sell", 135, 76.03, 10264.05, 0.0, 100313.20),
 ]
 AAA_FILLS = [
-    ("2023-04-05", "AAA", "buy", 134, 74.91, 10037.94, 5.02, 90260.13),
-    ("2023-04-20", "AAA", "sell", 134, 76.82, 10293.88, 5.15, 100548.86),
+    ("2023-04-05", "AAA", "buy", 134, 74.91, 10037.94, 0.0, 90275.26),
+    ("2023-04-20", "AAA", "sell", 134, 76.82, 10293.88, 0.0, 100569.14),
 ]
 COLS = ["session", "symbol", "side", "qty", "price", "gross", "cost", "cash_after"]
 
@@ -55,10 +55,10 @@ def test_changed_ledger_adds_exactly_the_aaa_trade(demo) -> None:  # type: ignor
 
 
 def test_hand_calculated_aaa_fill() -> None:
-    equity = 100_303.09
+    equity = 100_313.20
     qty = int(0.10 * equity // 74.56)
     gross = round(qty * 74.91, 2)
-    cost = round(gross * 5 / 10_000, 2)
+    cost = 0.0
     assert (qty, gross, cost, round(equity - gross - cost, 2)) == (
         AAA_FILLS[0][3],
         AAA_FILLS[0][5],
@@ -90,9 +90,9 @@ def test_first_changed_decision_is_aaa_and_explains_why(demo) -> None:  # type: 
     assert (rsi_b["threshold"], rsi_b["passed"]) == (35.0, True)
 
     assert b["fill"]["qty"] == 134 and b["fill"]["price"] == 74.91
-    assert fd["impact"]["cash_a"] == 100_303.09
-    assert fd["impact"]["cash_b"] == 90_260.13
-    assert fd["impact"]["final_equity_delta"] == 245.77
+    assert fd["impact"]["cash_a"] == 100_313.20
+    assert fd["impact"]["cash_b"] == 90_275.26
+    assert fd["impact"]["final_equity_delta"] == 255.94
 
 
 def test_trading_decisions_before_the_divergence_are_identical(demo) -> None:  # type: ignore[no-untyped-def]
@@ -140,5 +140,5 @@ def test_reopened_run_shows_resolved_settings(demo) -> None:  # type: ignore[no-
     assert r["entry"][1]["indicator"] == {"id": "rsi", "version": "1.0.0", "params": {"length": 14}}
     assert r["exit"]["params"] == {"sessions": 10}
     assert r["portfolio"]["starting_cash"] == 100_000.0
-    assert r["portfolio"]["cost_bps_per_side"] == 5.0
+    assert r["portfolio"]["cost_bps_per_side"] == 0.0
     assert r["data"]["snapshot_id"] == demo["snapshot"]

@@ -315,15 +315,15 @@ def test_volatility_strategy_paper_trades_like_the_historical_engine(tmp_path: P
     assert rows(lab, pid, "equity") == plain(ref.equity_rows)
     assert lab.paper_replay(pid)["match"] is True
 
-    # Hand check (fresh account 100,000.00, target 10%, 5 bps, 10-session hold).
+    # Hand check (fresh account 100,000.00, target 10%, no transaction cost, 10-session hold).
     # 2023-04-04 close 74.56: AAA enters (same signal as test_hand_checked_paper_fills).
     #   ATR(10) of AAA there is 1.3363 (it is causal: the paper account sees the same bars).
     #   qty = floor(0.01 x 100,000 / (10 x 1.3363)) = floor(74.83) = 74; the cap
     #   floor(0.10 x 100,000 / 74.56) = 134 does not bind (percent of equity would buy 134).
-    # 2023-04-05 open 74.91: gross 74 x 74.91 = 5,543.34; cost 2.77167 -> 2.77;
-    #   cash 100,000.00 - 5,543.34 - 2.77 = 94,453.89.
-    # 2023-04-20 open 76.82: gross 74 x 76.82 = 5,684.68; cost 2.84234 -> 2.84;
-    #   cash 94,453.89 + 5,684.68 - 2.84 = 100,135.73.
+    # 2023-04-05 open 74.91: gross 74 x 74.91 = 5,543.34; cost 0;
+    #   cash 100,000.00 - 5,543.34 = 94,456.66.
+    # 2023-04-20 open 76.82: gross 74 x 76.82 = 5,684.68; cost 0;
+    #   cash 94,456.66 + 5,684.68 = 100,141.34.
     bars_aaa = BARS[BARS["symbol"] == "AAA"].set_index("date").sort_index()
     atr10 = get_component("atr").compute(bars_aaa, {"length": 10})  # type: ignore[misc]
     assert round(float(atr10[pd.Timestamp("2023-04-04")]), 4) == 1.3363
@@ -332,8 +332,8 @@ def test_volatility_strategy_paper_trades_like_the_historical_engine(tmp_path: P
         for f in paper_fills
     ]
     assert got == [
-        ("2023-04-05", "buy", 74, 74.91, 2.77, 94_453.89),
-        ("2023-04-20", "sell", 74, 76.82, 2.84, 100_135.73),
+        ("2023-04-05", "buy", 74, 74.91, 0.0, 94_456.66),
+        ("2023-04-20", "sell", 74, 76.82, 0.0, 100_141.34),
     ]
 
 

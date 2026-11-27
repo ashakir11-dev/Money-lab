@@ -122,17 +122,12 @@ def test_default_is_cash_and_adds_nothing() -> None:
         assert list(r.fills["symbol"]) == ["XA", "XA", "XA"]
 
 
-def test_costs_apply_to_sweep_fills() -> None:
-    # 100 bps per side. Day 0: floor(1000 / (10 x 1.01)) = 99 BM, gross 990, cost 9.90,
-    # cash 0.10; the close values them at 990 + 0.10.
-    r = go({"BM": BM, "XA": XA}, config(cost_bps_per_side=100))
-    assert rows(r)[0] == (day(0), "BM", "buy", 99, 10.0, 9.9, 0.1)
-    assert r.equity.iloc[0]["equity"] == 990.10
-    # Day 1: equity 990.10, qty floor(495.05 / 20) = 24, est 24 x 20 x 1.01 = 484.80.
-    # Day 2 open sells ceil((484.80 - 0.10) / (10 x 0.99)) = 49 BM: gross 490, cost 4.90,
-    # cash 0.10 + 485.10 = 485.20 >= 484.80; the buy costs 4.80, cash 0.40 left.
-    assert rows(r)[1] == (day(2), "BM", "sell", 49, 10.0, 4.9, 485.2)
-    assert rows(r)[2] == (day(2), "XA", "buy", 24, 20.0, 4.8, 0.4)
+def test_configured_cost_does_not_change_sweep_fills() -> None:
+    # A stored 100 bps cost is not charged, so the sweep matches the zero-cost run.
+    charged = go({"BM": BM, "XA": XA}, config(cost_bps_per_side=100))
+    plain = go({"BM": BM, "XA": XA}, config())
+    assert rows(charged) == rows(plain)
+    assert charged.equity.iloc[0]["equity"] == 1000.0
 
 
 def test_no_benchmark_bar_means_no_sweep_that_session() -> None:

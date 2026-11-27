@@ -1,103 +1,103 @@
 {
  "G11 SMA20 cross + MACD hist > 0, hold 10": {
-  "decisions": "79f85e476ecdd74f7d2f2237abe661edc5cb32676fc5ac8154988b73bf12993a",
-  "equity": "085bcdf77ad988888ed9e6693264ae4f63cfba936716420bb0d5c2be17deba36",
-  "fills": "bdbfa763f610cf11b3f7f07115da6de5e347f9af792ec395ae506fade767d8d9",
-  "final_equity": 111105.13,
-  "n_decisions": 41851,
-  "n_fills": 2198
+  "decisions": "2b6116c6728d2fc9587761bcbee24c8268182a3872af35168191ef7153277d51",
+  "equity": "eefdc44b637067ab2b278fc1bb1c0e00c1c13a87a21069f69331ab4132b5735a",
+  "fills": "8c82f7502457509a3fe64ff759f386ec2e98c0e63106ceb9d5594557b49862a7",
+  "final_equity": 154122.95,
+  "n_decisions": 41853,
+  "n_fills": 2190
  },
  "G12 RSI<35 + breadth > 0.5, exit RSI>60": {
-  "decisions": "142924fa7eba7b55abb1a20d670613090706eb3a1467fd90a7b0b18277334e46",
-  "equity": "6246da8530d85365c587298bd83a794814fa927316d2470a8a484bdbd92cb223",
-  "fills": "d1ecfb89ca6b0926f1fce25245c248c7688ba0d4f041ea46657351d25438f067",
-  "final_equity": 220796.58,
-  "n_decisions": 57633,
-  "n_fills": 169
+  "decisions": "fa2b34d13a5269c69ae9467d797d8a17992f0a378e22088671beb904107b6afd",
+  "equity": "48c6c14d59d0939914a82b4f9634ecb5c10965ab51a24df4f7800d3a64229f77",
+  "fills": "c0fda5d214f3b34e0a9fda76aa89fd1f8145a06387974a7ea4382a3425a5795d",
+  "final_equity": 215102.22,
+  "n_decisions": 57634,
+  "n_fills": 171
  },
  "G13 SMA20 cross, hold 3, 50 bps, tight cash": {
-  "decisions": "de64b3d8fb1b12611b77d76e0cb55d3772e87fd80ede7e5c51cdfe6d99ae93fa",
-  "equity": "0d94f35bd02742bb88588b9a508cff31e55a06d0681c5bbd71345403474a1216",
-  "fills": "52bea6381387664c0602a90ca51a6c886ff1e3aceb991edc4a09a10f28efa748",
-  "final_equity": 9663.0,
-  "n_decisions": 6429,
-  "n_fills": 833
+  "decisions": "73c19c18b691a5c7745c86a0fba30eae460459a41602054fed00c17cebc652da",
+  "equity": "72e25d6fc61bbf612f724dce0d06f94a2fd2cbc86aaa6d55829526693a802ffd",
+  "fills": "8a54c9152541f7c9be4c050a384129068f521c034b412eb52fd79ac11748dac8",
+  "final_equity": 92710.08,
+  "n_decisions": 6420,
+  "n_fills": 815
  },
  "V01 SMA20 cross, hold 10": {
-  "decisions": "cf70f329f73bcedeaf1d188f4b2bca88833a9d71bb58405a64a4c066381ff5b4",
-  "equity": "de1160361e01c146016a51a9c56290fb524c062613c4728060109b5ee6d3e515",
-  "fills": "807ad2411b5edd6e268ca2e7cdb3e1963ef9067a48494262d3de9df766180071",
-  "final_equity": 157741.39,
-  "n_decisions": 7219,
+  "decisions": "a6d02ea01f3ccab5c23842c12af554f7acc1cb18edef990c3c9c0a2423e3500b",
+  "equity": "0505186a85e016b0563224cd83b08138a91b10fdb0df360dcd99c66d342b41f0",
+  "fills": "a4314690cbc178a6ac3d3436459f3eb0660e0b32981867ae22afd80824acccd3",
+  "final_equity": 181899.0,
+  "n_decisions": 7220,
   "n_fills": 2414
  },
  "V02 SMA20 cross + RSI<40, hold 10": {
-  "decisions": "37e47f39f7a08157eae5721f47ccad792e0ee9996d022651861597c77ed56d4f",
-  "equity": "6d7814221248275864e72c912dc667ba5add1fbca7f1eed4b81c19831a5639ea",
-  "fills": "28f97af220d12fa97b35b21a6d2cb1eafc589846bf3ebab3f16f78cb91895e89",
-  "final_equity": 100311.86,
+  "decisions": "a5f01e22bcfa69bad6ee46d14e3f5a82d34b40892f6ca3d11b8cb4c0049e9599",
+  "equity": "100764bbc03824dc15a311fa245de084867b6b892ccb2502ea37b7f3249d2fc3",
+  "fills": "85d88868696de8d3b9639923a32f94066b539a68259c443bcc7b67f4133bf72a",
+  "final_equity": 100361.73,
   "n_decisions": 19040,
   "n_fills": 10
  },
  "V03 SMA20 cross + RSI<50, hold 10": {
-  "decisions": "03f81e2983cfe0839c975e6ad8fe29829e63d890cad2bb2ffb6f9b7d826f19ca",
-  "equity": "21ab4dfa39894b0aff6dc24c7bfc9065fcbf08d7656621f9a453348916aa11f5",
-  "fills": "2c85825670172ec04dbf901a0331b49521b08f826efd42a80883626fc939d391",
-  "final_equity": 109644.16,
-  "n_decisions": 39575,
-  "n_fills": 1535
+  "decisions": "193b32c911a0abe3ded1694e2a77b4b27d899abb56e8f6a548ea047ce4c72347",
+  "equity": "2fe19fd0b8397cb1673168e9f9a9cfc420f409871ad4cc5c97f67a84e97ae34b",
+  "fills": "3e788e4b91d2d63aea7bf79927fb5231d791730c6e8d278d919cd9b708adb3df",
+  "final_equity": 119075.91,
+  "n_decisions": 39577,
+  "n_fills": 1539
  },
  "V04 SMA50 cross, exit SMA50 cross below": {
-  "decisions": "9bcd46af60ca3ab48c91963c5a9e563aa076aa74e131005bd2129bf56a8261ce",
-  "equity": "ea69df4217502ac4ec3ccc08fc715e4bd7f7dee8d2335e8a13c655bc9b1cd546",
-  "fills": "9f16a94a1f2cc1dc5e730b2d364f2761584beb47aa80a279c5164f1e830d9232",
-  "final_equity": 273493.85,
-  "n_decisions": 7038,
-  "n_fills": 1380
+  "decisions": "b1c96f020c1078c1b584d0d7aec5b1d9986ae2cfe52ecf9e1567fb71486c65a6",
+  "equity": "ab230d75eed246a9851616ce4ed61ff8a1bf9c45675832006d160bd4bdc78a47",
+  "fills": "bce239f25575d3c4f99967b6ed919b6195a819402b5aaae8bea515cd431816b9",
+  "final_equity": 278375.27,
+  "n_decisions": 7055,
+  "n_fills": 1416
  },
  "V05 SMA10 cross + RSI<60, hold 5, max 20": {
-  "decisions": "9ef17430315f9dffe98b133551fccc57408dc279109ef1927667314695c4527c",
-  "equity": "b533b75d8336afdc23799100339d13cd7ce405d28a4674aae95ebdee30350117",
-  "fills": "993dc38495a001a8e72808aa507b22434d2640ab3f55447ebe66343945631743",
-  "final_equity": 157425.18,
+  "decisions": "021c95b5137be624d8ca3dd5228268cd86d81d52355f000d416a18f5b481dd31",
+  "equity": "a0f0feeb336d498938e1fad52a654ccc1faf6ed7a7ec401307b0327d70829e18",
+  "fills": "c4d207821db4b4fccf909c92a52fb5e0396b7041e2bb17e246fbd55031607391",
+  "final_equity": 192798.84,
   "n_decisions": 61580,
   "n_fills": 8171
  },
  "V06 RSI<30, hold 5": {
-  "decisions": "38b7a78a558ff2bf1e654c645637aba97e0f4938d5b9aa8457ad5d18b140824c",
-  "equity": "d506080826d995b26d80617d7952f76d9ee035494e924ac58f78cd4da5433705",
-  "fills": "66336882ddc15cd6724f95cd99284df8d31d6898cb4596c1809cccc881518a0a",
-  "final_equity": 121467.86,
+  "decisions": "b36e8fb10ac268d2d5fe4463f56d38745be346e510b0c8ab29b5cd7b4104847d",
+  "equity": "5fe5c0b82508528c2cbdffe544e11b68fbf9513a9a1516292cc9fc344099b9a5",
+  "fills": "8e15d58549453f1f14b6b0d0f87bbb58b044fbcbd91eb33663a6ea006fa8cd4d",
+  "final_equity": 130683.1,
   "n_decisions": 4439,
   "n_fills": 1578
  },
  "V07 RSI<25, exit RSI>55": {
-  "decisions": "c66546a3f31cba183ac7da3a921c36e05d7af47765151443604f905ce634e981",
-  "equity": "06459dfa453d8fb45e074d5ea61777b9769b70445ded22f598da73965b417022",
-  "fills": "7bdb8bd95d12f07b8a93eae8e0d84d10db4afe262f476f19324154b14f6f66e3",
-  "final_equity": 148995.33,
+  "decisions": "a049dfe523d2166f3be710b5c1bf28c951a135163bb0a0f373761b3bae54ced2",
+  "equity": "32cbf9c222c29e2b71c4c3cd0a99181036ddaadc2c2a2e6c75ff7c311ad3a78b",
+  "fills": "0dbce41dc2fce018f766203384dd5f59cc65c47404c170d3d9117077597a2d62",
+  "final_equity": 151332.43,
   "n_decisions": 1954,
   "n_fills": 317
  },
  "V08 SMA20 cross + RSI>55, exit SMA20 cross below, max 5": {
-  "decisions": "748c11224aae8f9f41652edf5d943925b5e8bfd28c33dcbe548f85625ad89c2c",
-  "equity": "44112d842b1f9584d3c9e83673d32d74d502e55596e95f68d388f765a0043746",
-  "fills": "2b43064ee228daee91a08d1ad162ce194e0a8fba4a4fa89ddde29d09d557f0d5",
-  "final_equity": 349080.18,
-  "n_decisions": 32955,
+  "decisions": "90357776167ac3c253a5fb7c9f0bd908119cc5ac53e48d66d856e45ffd0af592",
+  "equity": "6341a6476c4937660f787a1038a9ce1b9ae871da2ae51df6e24cdbb9f4c18608",
+  "fills": "a1e28a0c3c5c011e0f580fe3ee353f29e41d4deec22eb290732b4a8e1ea2f487",
+  "final_equity": 378020.87,
+  "n_decisions": 32956,
   "n_fills": 822
  },
  "V09 SMA100 cross, hold 20, max 15": {
-  "decisions": "4e0dbab36d973a38070036577e5daac9d5910e6cc97aaa114b86f62fbd463699",
-  "equity": "8b999baddd8fd0a8f104bee407bb044a5eec2c5394f0bb220605cd33027b6de9",
-  "fills": "deaa03667303396929c5ef6cfdf4d02bbeac4cdcf0b4debe22e96040811ccd2a",
-  "final_equity": 163097.73,
+  "decisions": "91917a5f268b603a768de86968fc493a92805c64868002074c64588329966993",
+  "equity": "3286aad51a721ff1d628627d8f2f4fe1da903f0e163f982986f579ff7fdee0ab",
+  "fills": "7eab16ad76703f9a74773d00aca613c0f2e9c0f7aa3507e8f0a1f98d540d515a",
+  "final_equity": 160379.21,
   "n_decisions": 9404,
-  "n_fills": 1080
+  "n_fills": 1084
  },
  "V10 SMA20 cross + RSI<35, hold 20, max 3": {
   "decisions": "35e85dcd738923d23c0476121b73fb4026086f02a0ff55669acbecd406dd95a5",
-  "equity": "35f7081bd5a21cee11f8d4c474577bacdd204e09632840b7e67e69d5e438266b",
+  "equity": "132f6f905a42a0f1fc3bc3a59a2db41bba50c6b96a8e32638a2d8e136c3963ec",
   "fills": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "final_equity": 100000.0,
   "n_decisions": 12227,

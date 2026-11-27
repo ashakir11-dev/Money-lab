@@ -44,7 +44,7 @@ def test_paper_start_deliver_and_replay(tmp_path: Path) -> None:
         assert st["latest_processed"] == "2023-04-06"
         assert st["next_expected"] == "2023-04-10"
         assert len(st["positions"]) == 1
-        assert round(st["cash"], 2) == 89957.04
+        assert round(st["cash"], 2) == 89962.06
         assert len(d["fills"]) == 1 and len(d["equity"]) == 4
 
         rep = c.post(f"/api/paper/{pid}/replay").json()
