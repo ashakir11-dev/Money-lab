@@ -114,6 +114,44 @@ def _compile(conds: list[dict[str, Any]]) -> list[_Cond]:
     ]
 
 
+def _threshold_result(value: float, previous: float, op: str, level: float) -> bool | None:
+    """One numeric threshold. Warmup NaNs do not pass. Crosses fire on the transition only."""
+    if op in {"crosses_above", "crosses_below"}:
+        if math.isnan(value) or math.isnan(previous):
+            return None
+        if op == "crosses_above":
+            return bool(previous <= level and value > level)
+        return bool(previous >= level and value < level)
+    if math.isnan(value):
+        return None
+    if op == "below":
+        return bool(value < level)
+    if op == "above":
+        return bool(value > level)
+    if op == "at_or_below":
+        return bool(value <= level)
+    if op == "at_or_above":
+        return bool(value >= level)
+    return None
+
+
+def _finite_levels(values: dict[str, float | None]) -> dict[str, float]:
+    """Entry snapshot. Missing warmup values stay missing; they are not stored as zero."""
+    out: dict[str, float] = {}
+    for key, value in values.items():
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        number = float(value)
+        if math.isnan(number):
+            continue
+        out[key] = number
+    return out
+
+
+def _session_day(label: str) -> str:
+    return label[:10]
+
+
 def _evaluate(
     conds: list[dict[str, Any]],
     ind: dict[str, np.ndarray],
@@ -188,12 +226,10 @@ def _evaluate_compiled(
         else:
             r["threshold"] = p["value"]
             r["op"] = p["op"]
-            if math.isnan(v):
-                r["passed"] = None
-            elif p["op"] == "below":
-                r["passed"] = bool(v < p["value"])
-            else:
-                r["passed"] = bool(v > p["value"])
+            previous = float(arr[i - 1]) if i > 0 else math.nan
+            if p["op"] in {"crosses_above", "crosses_below"}:
+                values[f"prev {key}"] = _f(previous)
+            r["passed"] = _threshold_result(float(v), previous, str(p["op"]), float(p["value"]))
         if r["passed"] is None:
             evaluable = False
         results.append(r)
@@ -252,8 +288,27 @@ def _entry_candidates(conds: list[_Cond], view: MarketView, symbols: list[str]) 
                 else:
                     passed = v > w if p["op"] == "above" else v < w
             else:
+                op = str(p["op"])
+                level = p["value"]
                 none = np.isnan(v)
-                passed = v < p["value"] if p["op"] == "below" else v > p["value"]
+                if op in {"crosses_above", "crosses_below"}:
+                    prev = np.concatenate([np.full((len(symbols), 1), np.nan), v[:, :-1]], axis=1)
+                    none = none | np.isnan(prev)
+                    if op == "crosses_above":
+                        passed = (prev <= level) & (v > level)
+                    else:
+                        passed = (prev >= level) & (v < level)
+                elif op == "below":
+                    passed = v < level
+                elif op == "above":
+                    passed = v > level
+                elif op == "at_or_below":
+                    passed = v <= level
+                elif op == "at_or_above":
+                    passed = v >= level
+                else:
+                    passed = np.zeros(v.shape, dtype=bool)
+                    none = np.ones(v.shape, dtype=bool)
             passed &= ~none
             any_none |= none
             any_pass |= passed
@@ -280,6 +335,8 @@ class _Position:
     entry_price: float
     # Highest close from the fill session on (NaN until the first close is seen).
     peak_close: float = math.nan
+    # Finite indicator values from the entry decision. None unless freeze_entry_levels.
+    frozen_levels: dict[str, float] | None = None
 
 
 @dataclass
@@ -294,6 +351,7 @@ class _Order:
     limit_px: float = math.nan
     range_lo: float = math.nan
     range_hi: float = math.nan
+    frozen_levels: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -398,10 +456,18 @@ class Account:
     def __init__(self, resolved: dict[str, Any]) -> None:
         self.resolved = resolved
         port = resolved["portfolio"]
-        # Transaction costs are not applied. The portfolio still records
-        # cost_bps_per_side (default 0) so a saved run keeps the setting, but
-        # fills, cash, affordability, marks, and the benchmark are not reduced by it.
-        self.cost_rate = 0.0
+        # The historical engine records cost_bps_per_side and does not charge it, including
+        # when the saved number is not zero. research_bps is the opt-in that charges it.
+        # Old runs omit cost_model, so their cost rate stays zero.
+        if port.get("cost_model") == "research_bps":
+            self.cost_rate = float(port.get("cost_bps_per_side") or 0.0) / 10_000.0
+        else:
+            self.cost_rate = 0.0
+        self.cooldown_bars = int(port.get("cooldown_bars") or 0)
+        self.freeze_entry_levels = bool(port.get("freeze_entry_levels") or False)
+        trade_start = str((resolved.get("execution") or {}).get("trade_start") or "")
+        self.trade_start = trade_start[:10] if trade_start else ""
+        self.last_exit_fill: dict[str, int] = {}
         self.target = float(port["target_allocation"])
         self.max_pos = int(port["max_positions"])
         self.entry_conds = resolved["entry"]
@@ -465,6 +531,7 @@ class Account:
             "equity_rows": self.equity_rows,
             "last_index": self.last_index,
             "sweep_qty": self.sweep_qty,
+            "last_exit_fill": dict(self.last_exit_fill),
         }
 
     @classmethod
@@ -479,6 +546,7 @@ class Account:
         a.equity_rows = list(state["equity_rows"])
         a.last_index = int(state["last_index"])
         a.sweep_qty = int(state.get("sweep_qty", 0))
+        a.last_exit_fill = {s: int(v) for s, v in state.get("last_exit_fill", {}).items()}
         return a
 
     # Processing ----------------------------------------------------------------
@@ -501,6 +569,11 @@ class Account:
             raise ValueError(
                 f"sessions must be processed in order: expected {self.last_index + 1}, got {i}"
             )
+        if self.trade_start and _session_day(session_label(view.sessions[i])) < self.trade_start:
+            # Warmup sessions stay in the arrays so indicators are valid on the first
+            # tradable session. They do not fill, signal, or mark equity.
+            self.last_index = i
+            return
         self._fill_at_open(view, i)
         equity = self._mark_at_close(view, i)
         exiting = self._decide_exits(view, i)
@@ -557,6 +630,7 @@ class Account:
                     gross = pos.qty * open_px
                     cost = _cents(gross * cost_rate)
                     self.cash = _cents(self.cash + gross - cost)
+                    self.last_exit_fill[sym] = i
                     self.fills.append(
                         _fill(
                             day,
@@ -604,10 +678,13 @@ class Account:
                 gross = qty * px
                 cost = _cents(gross * cost_rate)
                 self.cash = _cents(self.cash - gross - cost)
-                self.positions[sym] = _Position(qty, i, px)
-                self.fills.append(
-                    _fill(day, sym, "buy", qty, px, cost, self.cash, o, i - o.decision_idx, note)
+                self.positions[sym] = _Position(qty, i, px, frozen_levels=o.frozen_levels)
+                filled = _fill(
+                    day, sym, "buy", qty, px, cost, self.cash, o, i - o.decision_idx, note
                 )
+                if o.frozen_levels:
+                    filled["frozen_levels"] = dict(o.frozen_levels)
+                self.fills.append(filled)
         self._sweep_buy(view, i, day)
 
     # Idle cash in the benchmark ----------------------------------------------------
@@ -793,6 +870,10 @@ class Account:
             if sym in self.positions or sym in self.pending:
                 self._record(day, sym, SKIP, "already_held", conditions=res, values=vals)
                 continue
+            since_exit = i - self.last_exit_fill[sym] if sym in self.last_exit_fill else None
+            if self.cooldown_bars and since_exit is not None and since_exit < self.cooldown_bars:
+                self._record(day, sym, SKIP, "cooldown", conditions=res, values=vals)
+                continue
             open_slots = (
                 self.max_pos
                 - (len(self.positions) - exiting)
@@ -855,6 +936,7 @@ class Account:
             elif kind == "next_range":
                 lo = close_px * (1.0 - float(fill.get("below_pct") or 0.0))
                 hi = close_px * (1.0 + float(fill.get("above_pct") or 0.0))
+            frozen = _finite_levels(vals) if self.freeze_entry_levels else None
             self.pending[sym] = _Order(
                 sym,
                 "buy",
@@ -866,6 +948,7 @@ class Account:
                 limit_px=limit,
                 range_lo=lo,
                 range_hi=hi,
+                frozen_levels=frozen,
             )
             committed += est
 
@@ -883,9 +966,17 @@ class Account:
         meta: dict[str, Any] = {"open_positions": {s: p.qty for s, p in self.positions.items()}}
         bench = self.resolved["benchmark"]
         if data is not None and bench in data.frames and len(eq):
+            frame = data.frames[bench]
+            sessions = data.sessions
+            if self.trade_start:
+                labels = [session_label(s) for s in sessions]
+                first = str(eq["session"].iloc[0])
+                start_at = next(i for i, label in enumerate(labels) if label == first)
+                frame = frame.iloc[start_at : start_at + len(eq)]
+                sessions = sessions[start_at : start_at + len(eq)]
             values, invested = _benchmark(
-                data.frames[bench],
-                data.sessions,
+                frame,
+                sessions,
                 len(eq),
                 float(self.resolved["portfolio"]["starting_cash"]),
                 self.cost_rate,
@@ -905,10 +996,11 @@ def _benchmark(
 ) -> tuple[np.ndarray, dict[str, Any] | None]:
     """Buy-and-hold the benchmark under the strategy's own conventions.
 
-    Whole shares are bought at the open of the first session with a bar. Transaction
-    costs are not charged; the rest stays as cash. It is valued at each close (last known
-    close when a bar is missing). Prices come from the same snapshot, so splits and
-    dividends are treated exactly as for the strategy's holdings.
+    Whole shares are bought at the open of the first session with a bar. The cost rate
+    is the account's rate, which is zero unless the research cost model is selected.
+    The rest stays as cash. It is valued at each close (last known close when a bar is
+    missing). Prices come from the same snapshot, so splits and dividends are treated
+    exactly as for the strategy's holdings.
     """
     opens = frame["open"].to_numpy(dtype=float)[:n]
     closes = frame["close"].ffill().to_numpy(dtype=float)[:n]
