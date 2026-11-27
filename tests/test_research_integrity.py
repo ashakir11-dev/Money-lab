@@ -175,12 +175,8 @@ def test_t02_capabilities_crossing_inclusive_cooldown_and_frozen_snapshot() -> N
         bare,
         family="momentum",
         claims=("numeric_cross", "cooldown"),
-        treatment=bare.treatment.model_copy(
-            update={"entry": [_threshold(_sma(), "above", 40.0)]}
-        ),
-        control=bare.control.model_copy(
-            update={"entry": [_threshold(_sma(), "above", 50.0)]}
-        ),
+        treatment=bare.treatment.model_copy(update={"entry": [_threshold(_sma(), "above", 40.0)]}),
+        control=bare.control.model_copy(update={"entry": [_threshold(_sma(), "above", 50.0)]}),
     )
     # The example book is a bounded bounce. Momentum with a strict threshold does not
     # express a cross or a cooldown, so both claims are rejected.
@@ -240,9 +236,7 @@ def test_t02_capabilities_crossing_inclusive_cooldown_and_frozen_snapshot() -> N
     assert decisions(run(bars({"XA": short}), rsi_cross), "enter") == []
 
     inclusive_bars = [(9.0, 9.0), (10.0, 10.0), (11.0, 11.0)]
-    at_level = _book().model_copy(
-        update={"entry": [_threshold(_sma(), "at_or_above", 10.0)]}
-    )
+    at_level = _book().model_copy(update={"entry": [_threshold(_sma(), "at_or_above", 10.0)]})
     strict = _book().model_copy(update={"entry": [_threshold(_sma(), "above", 10.0)]})
     assert decisions(run(bars({"XA": inclusive_bars}), at_level), "enter")[0][0] == day(1)
     assert decisions(run(bars({"XA": inclusive_bars}), strict), "enter")[0][0] == day(2)
@@ -377,9 +371,7 @@ def test_t04_research_costs_fills_gaps_calendar_splits_and_warmup() -> None:
     )
     traded = decisions(run(bars({"XA": history}), warmup), "enter")
     assert traded == [(day(3), "XA", "enter", "all entry conditions passed")]
-    one_bar = _book().model_copy(
-        update={"entry": [_threshold(_sma(3), "crosses_above", 4.0)]}
-    )
+    one_bar = _book().model_copy(update={"entry": [_threshold(_sma(3), "crosses_above", 4.0)]})
     assert decisions(run(bars({"XA": [history[-1]]}), one_bar), "enter") == []
 
 
@@ -517,14 +509,17 @@ def test_t06_decision_states_and_immutable_legacy_kill() -> None:
     assert branch.gate.frozen_hash == ""
 
     ready = ResearchBranch(card)
-    assert ready.judge(
-        scope="child",
-        point_pp=1.5,
-        interval_low_pp=0.4,
-        interval_high_pp=2.0,
-        events=80,
-        folds=4,
-    ).state == "KEEP"
+    assert (
+        ready.judge(
+            scope="child",
+            point_pp=1.5,
+            interval_low_pp=0.4,
+            interval_high_pp=2.0,
+            events=80,
+            folds=4,
+        ).state
+        == "KEEP"
+    )
     assert ready.freeze_manifest().state == "FREEZE"
     digest = ready.gate.frozen_hash
     mutated = resolve(card.treatment, _settings())
@@ -583,9 +578,7 @@ def test_t07_holdout_gate_contamination_and_proposer_redaction() -> None:
     assert proposer["reason"] == "proposer_holdout_blocked"
     assert loaded == ["loaded"]
 
-    recovery = ResearchBranch(
-        replace(card, partitions=recovery_swing_partitions(), timeframe="1h")
-    )
+    recovery = ResearchBranch(replace(card, partitions=recovery_swing_partitions(), timeframe="1h"))
     # The recovery card's recipes are daily in the example, so this copy is not executed.
     # The partition flag itself is what the gate reads.
     recovery.gate.frozen_hash = "frozen-for-the-flag"
@@ -618,9 +611,7 @@ def test_t09_proposer_status_timeframe_seed_evidence_and_terminal() -> None:
     assert mismatch.ok is False
     assert "timeframe_mismatch" in mismatch.reasons
 
-    roc_only = card.treatment.model_copy(
-        update={"entry": [card.treatment.entry[0]]}
-    )
+    roc_only = card.treatment.model_copy(update={"entry": [card.treatment.entry[0]]})
     seed = validate_card(replace(card, treatment=roc_only, control=roc_only))
     assert seed.ok is False
     assert "unbounded_support" in seed.reasons

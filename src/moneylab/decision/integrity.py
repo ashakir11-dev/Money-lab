@@ -237,9 +237,7 @@ def bind_cost(config: StrategyConfig, label: str) -> StrategyConfig:
         model = "research_bps"
     else:
         raise ValueError(f"unknown cost label {label!r}")
-    portfolio = config.portfolio.model_copy(
-        update={"cost_bps_per_side": bps, "cost_model": model}
-    )
+    portfolio = config.portfolio.model_copy(update={"cost_bps_per_side": bps, "cost_model": model})
     return config.model_copy(update={"portfolio": portfolio})
 
 

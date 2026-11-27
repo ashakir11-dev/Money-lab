@@ -89,8 +89,10 @@ def exposure_matched(
         weight = weight.reshape(-1, 1)
     if asset.ndim == 1:
         asset = asset.reshape(-1, 1)
-    cash = np.zeros(bench.shape[0], dtype=float) if cash_returns is None else np.asarray(
-        cash_returns, dtype=float
+    cash = (
+        np.zeros(bench.shape[0], dtype=float)
+        if cash_returns is None
+        else np.asarray(cash_returns, dtype=float)
     )
     held = weight.sum(axis=1)
     same = (weight * asset).sum(axis=1) + (1.0 - held) * cash
