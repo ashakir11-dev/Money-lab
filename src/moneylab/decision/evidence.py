@@ -15,8 +15,10 @@ the return is missing, not a shorter window. Feature rows do not carry those lab
 Sector and VIX stay missing unless the bars already include ``sector_close`` or
 ``vix_close``. Nothing is invented or carried forward across a gap. 2025 is refused
 before any label is computed, because that year was already viewed. A holdout or
-contaminated partition is refused the same way. Bars are aligned on the card's
-timeframe, so an hourly card is not scored on a daily calendar.
+contaminated partition is refused the same way, except the unread 2027 window, which
+``score_unread_holdout`` scores only after a frozen manifest of that same card. Bars
+are aligned on the card's timeframe, so an hourly card is not scored on a daily
+calendar.
 
 Support Recovery V2 stays refused unless the caller sets ``development_only``.
 That path still rejects 2025, 2026, and any bar outside a development partition.
@@ -29,6 +31,7 @@ import hashlib
 import io
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -44,6 +47,7 @@ from moneylab.components.registry import get_component, indicator_key, list_comp
 from moneylab.data.bars import session_label
 from moneylab.data.snapshot import MarketData
 from moneylab.decision.integrity import (
+    HoldoutGate,
     Partition,
     ResearchCard,
     moving_block_interval,
@@ -78,7 +82,6 @@ UNRESOLVED_GAPS = (
     "Same-session events share a block. That is not a cluster-robust estimator.",
     "The equity ledger has no per-asset weights. Same-stock matching needs caller weights.",
     "Support Recovery V2 is not frozen. Its 2026 holdout slot is unchanged.",
-    "The unread holdout is 2027. It is refused here and is not run.",
     "2025 was viewed and is refused.",
 )
 _UNITS = {
@@ -181,6 +184,40 @@ def execute_registered_card(card: ResearchCard) -> None:
     raise RegisteredRunRefused("This phase does not execute a research card.")
 
 
+def score_unread_holdout(
+    card: ResearchCard,
+    loader: Callable[[], pd.DataFrame],
+    gate: HoldoutGate,
+) -> EvidenceBundle:
+    """Score the unread 2027 holdout after ``gate`` has frozen this card.
+
+    The loader is not called unless the frozen manifest is this card and the card's
+    holdout is the unread 2027 window. 2025 is never an authorized window. Support
+    Recovery V2 is refused before any load.
+    """
+    if _is_support_recovery_v2(card):
+        raise RegisteredRunRefused(
+            "Support Recovery V2 is registered and is not run. No window is loaded."
+        )
+    if not _is_unread_card(card):
+        raise HoldoutBlocked("unread holdout")
+    holdout = _card_holdout(card)
+    if holdout is not None and holdout.contaminated:
+        raise HoldoutBlocked("contaminated")
+    if not gate.frozen_hash:
+        gate.request("holdout", "score")
+        raise HoldoutBlocked("not_frozen")
+    if not _manifest_authorizes(card, gate):
+        raise HoldoutBlocked("not_frozen")
+    opened = gate.request("holdout", "score", loader=loader)
+    if not opened["allowed"]:
+        raise HoldoutBlocked(str(opened["reason"]))
+    bars = opened["value"]
+    if not isinstance(bars, pd.DataFrame):
+        raise HoldoutBlocked("unread holdout")
+    return observe_candidates(bars, card, holdout_gate=gate)
+
+
 def observe_candidates(
     bars: pd.DataFrame,
     card: ResearchCard,
@@ -189,17 +226,24 @@ def observe_candidates(
     minimum_count: int = 5,
     seed: int = 0,
     development_only: bool = False,
+    holdout_gate: HoldoutGate | None = None,
 ) -> EvidenceBundle:
     """Build candidates from the control, then label them. Holdout dates raise first.
 
     ``development_only`` is the only way to observe Support Recovery V2. It still
     refuses 2025, a holdout partition, and any bar outside a development partition.
+    ``holdout_gate`` opens the unread 2027 window only when it holds this card's
+    frozen manifest. Any other holdout, and 2025, still raise.
     """
     if _is_support_recovery_v2(card) and not development_only:
         raise RegisteredRunRefused(
             "Support Recovery V2 is registered and is not run. No window is loaded."
         )
-    _refuse_blocked_dates(bars, card.partitions)
+    _refuse_blocked_dates(
+        bars,
+        card.partitions,
+        permit_unread=_manifest_authorizes(card, holdout_gate),
+    )
     if development_only:
         _refuse_outside_development(bars, card.partitions)
     if bars.empty:
@@ -616,18 +660,64 @@ def _is_support_recovery_v2(card: ResearchCard) -> bool:
     )
 
 
-def _refuse_blocked_dates(bars: pd.DataFrame, partitions: tuple[Partition, ...]) -> None:
+def _unread_window() -> Partition:
+    return next(part for part in unread_holdout_partitions() if part.role == "holdout")
+
+
+def _card_holdout(card: ResearchCard) -> Partition | None:
+    for part in card.partitions:
+        if part.name == "holdout":
+            return part
+    return None
+
+
+def _is_unread_card(card: ResearchCard) -> bool:
+    holdout = _card_holdout(card)
+    unread = _unread_window()
+    return (
+        holdout is not None
+        and holdout.role == "holdout"
+        and holdout.start == unread.start
+        and holdout.end == unread.end
+    )
+
+
+def _manifest_digest(card: ResearchCard) -> str:
+    return config_hash(resolve(card.treatment, Settings(_env_file=None)))
+
+
+def _manifest_authorizes(card: ResearchCard, gate: HoldoutGate | None) -> bool:
+    """True when ``gate`` froze this card and the card's holdout is the unread window."""
+    if gate is None or not _is_unread_card(card):
+        return False
+    holdout = _card_holdout(card)
+    if holdout is None or holdout.contaminated:
+        return False
+    if not gate.frozen_hash or gate.frozen_manifest is None:
+        return False
+    digest = _manifest_digest(card)
+    return gate.frozen_hash == digest and config_hash(gate.frozen_manifest) == digest
+
+
+def _refuse_blocked_dates(
+    bars: pd.DataFrame,
+    partitions: tuple[Partition, ...],
+    *,
+    permit_unread: bool = False,
+) -> None:
     if "date" not in bars.columns:
         raise ValueError("bars need a date column")
-    unread = next(part for part in unread_holdout_partitions() if part.role == "holdout")
+    unread = _unread_window()
     for dates in _clocks(bars):
         if (dates.dt.year == VIEWED_YEAR).any():
             raise HoldoutBlocked("2025 was viewed and is not scored")
         for ts in dates:
             day = pd.Timestamp(ts).date()
             if unread.start <= day <= unread.end:
-                raise HoldoutBlocked("unread holdout")
-            part = _covering(pd.Timestamp(ts).date(), partitions)
+                if not permit_unread:
+                    raise HoldoutBlocked("unread holdout")
+                continue
+            part = _covering(day, partitions)
             if part is not None and (part.role == "holdout" or part.contaminated):
                 raise HoldoutBlocked(part.name)
 

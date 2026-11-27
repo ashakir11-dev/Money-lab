@@ -15,11 +15,20 @@ from moneylab.components.registry import get_component
 from moneylab.data.context_feeds import join_context_feeds, load_context_feeds
 from moneylab.data.providers.base import ProviderNotFound
 from moneylab.data.snapshot import MarketData
-from moneylab.decision.evidence import EvidenceBundle, HoldoutBlocked, observe_candidates
+from moneylab.decision.evidence import (
+    EvidenceBundle,
+    HoldoutBlocked,
+    RegisteredRunRefused,
+    observe_candidates,
+    score_unread_holdout,
+)
 from moneylab.decision.integrity import (
+    EvidenceFloor,
     HoldoutGate,
+    ResearchCard,
     example_research_card,
     recovery_swing_partitions,
+    support_recovery_v2_card,
     unread_holdout_partitions,
 )
 from moneylab.decision.proposals import propose_from_evidence
@@ -28,6 +37,7 @@ from moneylab.engine.config import (
     ExitRule,
     IndicatorRef,
     PortfolioSettings,
+    SizingRule,
     StrategyConfig,
     resolve,
 )
@@ -269,6 +279,135 @@ def test_unread_holdout_stays_blocked_and_2025_stays_contaminated() -> None:
     )
     with pytest.raises(HoldoutBlocked, match="unread holdout"):
         observe_candidates(early, example_research_card())
+
+
+def _unread_card() -> ResearchCard:
+    """A small card whose holdout is 2027. It is not Support Recovery V2."""
+    book = {
+        "universe": ["XA"],
+        "benchmark": "SPY",
+        "timeframe": "1d",
+        "portfolio": PortfolioSettings(
+            starting_cash=10_000,
+            max_positions=1,
+            target_allocation=1,
+            cost_bps_per_side=0,
+            cost_model="legacy_unapplied",
+        ),
+        "sizing": SizingRule(id="fixed_dollar", params={"amount": 1_000}),
+    }
+    hold = ExitRule(kind="holding_period", params={"sessions": 2})
+    treatment = StrategyConfig(
+        name="unread treatment",
+        entry=[
+            Condition(
+                kind="threshold",
+                indicator=IndicatorRef(id="sma", params={"length": 1}),
+                params={"op": "above", "value": 15},
+            )
+        ],
+        exit=hold,
+        **book,
+    )
+    control = StrategyConfig(
+        name="unread control",
+        entry=[
+            Condition(
+                kind="threshold",
+                indicator=IndicatorRef(id="sma", params={"length": 1}),
+                params={"op": "above", "value": 0},
+            )
+        ],
+        exit=hold,
+        **book,
+    )
+    return ResearchCard(
+        family="momentum",
+        behavior="Close above a level.",
+        observable_event="SMA(1) above 0.",
+        eligibility="XA, one position, next open.",
+        treatment=treatment,
+        control=control,
+        target_estimand="net forward return from the next open",
+        horizon="2 bars",
+        timeframe="1d",
+        cost_label="legacy_zero_cost",
+        falsifier="The contrast is not positive.",
+        falsifier_series="active_excess_pp",
+        falsifier_op="lte",
+        falsifier_level=0.0,
+        uncertainty_method="moving_block_bootstrap",
+        minimum_evidence=EvidenceFloor(
+            delta_pp=0.0,
+            min_events=1,
+            min_folds=1,
+            confidence=0.95,
+            block_length=2,
+            horizon_bars=2,
+            timeframe="1d",
+        ),
+        trial_budget=2,
+        partitions=unread_holdout_partitions(),
+        declared_axis="entry",
+    )
+
+
+def _year_bars(year: int) -> pd.DataFrame:
+    start = pd.Timestamp(f"{year}-01-04")
+    rows = []
+    for offset in range(6):
+        session = start + pd.Timedelta(days=offset)
+        for symbol, close in (("XA", 16.0 + offset), ("SPY", 100.0 + offset)):
+            rows.append(
+                {
+                    "date": session,
+                    "symbol": symbol,
+                    "open": close,
+                    "high": close + 1,
+                    "low": close - 1,
+                    "close": close,
+                    "volume": 1000,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_frozen_manifest_scores_the_unread_holdout_and_unfrozen_does_not_load() -> None:
+    card = _unread_card()
+    gate = HoldoutGate.from_partitions(card.partitions)
+    calls: list[str] = []
+
+    def loader() -> pd.DataFrame:
+        calls.append("loaded")
+        return _year_bars(2027)
+
+    with pytest.raises(HoldoutBlocked, match="not_frozen"):
+        score_unread_holdout(card, loader, gate)
+    assert calls == []
+
+    gate.freeze(resolve(card.treatment, Settings(_env_file=None)))
+    bundle = score_unread_holdout(card, loader, gate)
+    assert calls == ["loaded"]
+    assert bundle.events
+    assert {event["partition"] for event in bundle.events} == {"holdout"}
+    assert all(event["session"].startswith("2027-") for event in bundle.events)
+
+    with pytest.raises(HoldoutBlocked, match="contaminated"):
+        score_unread_holdout(card, loader, gate)
+    assert calls == ["loaded"]
+
+
+def test_support_recovery_v2_is_not_loaded_as_the_unread_holdout() -> None:
+    calls: list[str] = []
+    gate = HoldoutGate.from_partitions(unread_holdout_partitions())
+
+    def loader() -> pd.DataFrame:
+        calls.append("loaded")
+        return _year_bars(2027)
+
+    with pytest.raises(RegisteredRunRefused):
+        score_unread_holdout(support_recovery_v2_card(), loader, gate)
+    assert calls == []
 
 
 def test_relative_volume_bucket_becomes_an_entry_condition() -> None:

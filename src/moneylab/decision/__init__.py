@@ -16,6 +16,7 @@ from moneylab.decision.evidence import (
     RegisteredRunRefused,
     execute_registered_card,
     observe_candidates,
+    score_unread_holdout,
 )
 from moneylab.decision.integrity import (
     DEFERRED,
@@ -146,6 +147,7 @@ __all__ = [
     "proposer_mode",
     "registry_capabilities",
     "sample_cases",
+    "score_unread_holdout",
     "seed_jobs",
     "settings_diff",
     "small_batch_allows",
