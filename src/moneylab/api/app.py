@@ -14,7 +14,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
@@ -952,7 +952,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         for family in lab.strategy_families():
             for version in family["versions"]:
                 if version["id"] == strategy_id:
-                    return jsonable(version)
+                    return cast(dict[str, Any], jsonable(version))
         raise HTTPException(404, f"strategy {strategy_id} not found")
 
     @app.post("/api/strategies", response_model=StrategyVersionOut, tags=["strategies"])
@@ -972,7 +972,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         for family in lab.strategy_families():
             for version in family["versions"]:
                 if version["id"] == saved:
-                    return jsonable(version)
+                    return cast(dict[str, Any], jsonable(version))
         raise HTTPException(500, "saved strategy was not readable")
 
     # Runs ----------------------------------------------------------------------------
