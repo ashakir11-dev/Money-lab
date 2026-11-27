@@ -44,7 +44,12 @@ def adjust(raw: pd.DataFrame, actions: pd.DataFrame) -> pd.DataFrame:
     """Return adjusted bars. ``raw`` uses the file-import columns."""
     out = raw.copy()
     out["date"] = pd.to_datetime(out["date"]).dt.normalize()
-    out = out.sort_values(["symbol", "date"]).reset_index(drop=True)
+    if "bar_start" in out.columns:
+        out["bar_start"] = pd.to_datetime(out["bar_start"])
+        order = ["symbol", "bar_start"]
+    else:
+        order = ["symbol", "date"]
+    out = out.sort_values(order, kind="mergesort").reset_index(drop=True)
     prices = ["open", "high", "low", "close"]
     out[prices] = out[prices].astype(float)
     out["volume"] = out["volume"].astype(float)

@@ -19,6 +19,7 @@ from moneylab.decision.evidence import (
     discovery_view,
     execute_registered_card,
     observe_candidates,
+    paired_forward_contrast,
     read_evidence_files,
     write_evidence_dir,
 )
@@ -502,3 +503,77 @@ def _proposal_bundle(card: ResearchCard):
 
     bundle.contrast = diagnostic_report(bundle)
     return bundle
+
+
+def test_development_run_rejects_a_date_outside_the_declared_window() -> None:
+    card = support_recovery_v2_card()
+    early = pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2019-06-03")],
+            "symbol": ["NVDA"],
+            "open": [1.0],
+            "high": [1.0],
+            "low": [1.0],
+            "close": [1.0],
+            "volume": [1],
+        }
+    )
+    with pytest.raises(HoldoutBlocked, match="outside"):
+        observe_candidates(early, card, development_only=True)
+
+
+def test_hourly_card_does_not_score_bars_that_have_no_bar_start() -> None:
+    with pytest.raises(ValueError, match="bar_start"):
+        observe_candidates(_prices(), support_recovery_v2_card(), development_only=True)
+
+
+def test_paired_contrast_is_the_band_mean_minus_the_control_mean() -> None:
+    events = [
+        _event("2020-01-02", "accepted"),
+        _event("2020-06-01", "treatment_rejected"),
+        _event("2021-01-04", "position_blocked"),
+        _event("2021-06-01", "treatment_rejected"),
+    ]
+    outcomes = [
+        _net_row(str(events[0]["event_id"]), 0.10),
+        _net_row(str(events[1]["event_id"]), 0.00),
+        _net_row(str(events[2]["event_id"]), 0.20),
+        _net_row(str(events[3]["event_id"]), 0.00),
+    ]
+    contrast = paired_forward_contrast(
+        events,
+        outcomes,
+        horizon=65,
+        block_length=2,
+        partition="discovery",
+        seed=0,
+        draws=20,
+    )
+    assert contrast["n_treatment"] == 2
+    assert contrast["n_control"] == 4
+    assert contrast["folds"] == 2
+    assert contrast["fold_years"] == [2020, 2021]
+    assert contrast["point"] == pytest.approx(0.075)
+    assert contrast["complement_point"] == pytest.approx(0.15)
+    assert contrast["effective_sample"] == pytest.approx(2.0)
+    assert contrast["low"] is not None and contrast["high"] is not None
+    assert contrast["low"] <= contrast["high"]
+
+
+def _event(session: str, reason: str) -> dict[str, object]:
+    return {
+        "event_id": f"NVDA|{session}|control_session_v1",
+        "symbol": "NVDA",
+        "session": session,
+        "partition": "discovery",
+        "reason": reason,
+    }
+
+
+def _net_row(event_id: str, net: float) -> dict[str, object]:
+    return {
+        "event_id": event_id,
+        "horizon_bars": 65,
+        "censored": False,
+        "net_return": net,
+    }

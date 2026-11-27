@@ -15,9 +15,11 @@ the return is missing, not a shorter window. Feature rows do not carry those lab
 Sector and VIX stay missing unless the bars already include ``sector_close`` or
 ``vix_close``. Nothing is invented or carried forward across a gap. 2025 is refused
 before any label is computed, because that year was already viewed. A holdout or
-contaminated partition is refused the same way.
+contaminated partition is refused the same way. Bars are aligned on the card's
+timeframe, so an hourly card is not scored on a daily calendar.
 
-The Support Recovery V2 card is recognized and refused. This module does not run it.
+Support Recovery V2 stays refused unless the caller sets ``development_only``.
+That path still rejects 2025, 2026, and any bar outside a development partition.
 """
 
 from __future__ import annotations
@@ -76,7 +78,8 @@ UNRESOLVED_GAPS = (
     "Same-session events share a block. That is not a cluster-robust estimator.",
     "Frozen entry levels are recorded and are not executed as stops.",
     "The equity ledger has no per-asset weights. Same-stock matching needs caller weights.",
-    "Support Recovery V2 is registered and not run. 2025 was viewed and is refused.",
+    "Support Recovery V2 runs only with development_only, inside development partitions.",
+    "2025 and 2026 are refused.",
 )
 _UNITS = {
     "rsi": "index",
@@ -204,13 +207,20 @@ def observe_candidates(
     snapshot_id: str = "unspecified",
     minimum_count: int = 5,
     seed: int = 0,
+    development_only: bool = False,
 ) -> EvidenceBundle:
-    """Build candidates from the control, then label them. Holdout dates raise first."""
-    if _is_support_recovery_v2(card):
+    """Build candidates from the control, then label them. Holdout dates raise first.
+
+    ``development_only`` is the only way to observe Support Recovery V2. It still
+    refuses 2025, a holdout partition, and any bar outside a development partition.
+    """
+    if _is_support_recovery_v2(card) and not development_only:
         raise RegisteredRunRefused(
             "Support Recovery V2 is registered and is not run. No window is loaded."
         )
     _refuse_blocked_dates(bars, card.partitions)
+    if development_only:
+        _refuse_outside_development(bars, card.partitions)
     if bars.empty:
         raise ValueError("candidate observation needs bars")
     settings = Settings(_env_file=None)
@@ -218,7 +228,7 @@ def observe_candidates(
     control = resolve(card.control, settings)
     universe = list(treatment["universe"])
     benchmark = str(treatment["benchmark"])
-    frames, sessions = _align(bars, universe, benchmark)
+    frames, sessions = _align(bars, universe, benchmark, card.timeframe)
     availability = _attach_context(bars, frames, universe, benchmark)
     specs = feature_specs()
     arrays = _feature_arrays(frames, universe, specs, treatment["entry"], control["entry"])
@@ -341,6 +351,143 @@ def diagnostic_report(bundle: EvidenceBundle) -> dict[str, Any]:
             "session; missing when either price is missing, with no forward fill"
         ),
     }
+
+
+def paired_forward_contrast(
+    events: list[dict[str, Any]],
+    outcomes: list[dict[str, Any]],
+    *,
+    horizon: int,
+    block_length: int,
+    partition: str,
+    seed: int = 0,
+    draws: int = 400,
+    confidence: float = 0.95,
+    timeframe: str = "1h",
+) -> dict[str, Any]:
+    """Support-band mean minus the mean of every control event, at one horizon.
+
+    A control event is a candidate. The support band is a candidate whose reason
+    is not ``treatment_rejected``. The contrast is that band's mean net return
+    minus the mean net return of every complete control event in ``partition``.
+    A calendar year is a fold when it contains a complete band outcome. The
+    interval is the circular moving-block bootstrap used by
+    ``moving_block_interval``, applied to the event list in session order. A
+    draw with no band event is omitted. ``effective_sample`` is the number of
+    complete control events divided by the block length.
+    """
+    if block_length < 1 or draws < 1 or not 0 < confidence < 1:
+        raise ValueError("uncertainty settings are out of range")
+    by_event = {row["event_id"]: row for row in outcomes if row["horizon_bars"] == horizon}
+    rows: list[dict[str, Any]] = []
+    censored = 0
+    for event in events:
+        if event.get("partition") != partition:
+            continue
+        outcome = by_event.get(event["event_id"])
+        if outcome is None or outcome.get("censored") or outcome.get("net_return") is None:
+            censored += 1
+            continue
+        rows.append(
+            {
+                "session": str(event["session"]),
+                "symbol": str(event["symbol"]),
+                "net": float(outcome["net_return"]),
+                "band": event.get("reason") != "treatment_rejected",
+            }
+        )
+    rows.sort(key=lambda row: (row["session"], row["symbol"]))
+    band_rows = [row for row in rows if row["band"]]
+    complement = [row for row in rows if not row["band"]]
+    years = sorted({int(row["session"][:4]) for row in band_rows})
+    point = _mean_of([row["net"] for row in band_rows])
+    control_mean = _mean_of([row["net"] for row in rows])
+    contrast = None if point is None or control_mean is None else point - control_mean
+    outside = _mean_of([row["net"] for row in complement])
+    complement_point = None if point is None or outside is None else point - outside
+    assumptions = [
+        "contrast is the support-band mean minus the mean of every control event",
+        "a fold is a calendar year with a complete support-band outcome",
+        "circular moving-block bootstrap of that contrast",
+        f"block length {block_length}; observations inside a block stay together",
+        "resampled blocks are not treated as independent bars",
+        f"{confidence:.0%} percentile interval",
+        f"timeframe {timeframe}",
+        "events are ordered by session then symbol",
+        "a bootstrap draw with no support-band event is omitted",
+        "same-session events share a block; this is not a cluster-robust estimator",
+    ]
+    if horizon > 1 and block_length < horizon:
+        assumptions.append("assumption_violated: block shorter than the outcome horizon")
+    low, high, used = _block_contrast(rows, block_length, seed, draws, confidence)
+    if used < 2:
+        assumptions.append("fewer than two bootstrap draws contained a support-band event")
+        low, high = None, None
+    n_control = len(rows)
+    return {
+        "point": contrast,
+        "low": low,
+        "high": high,
+        "band_mean": point,
+        "control_mean": control_mean,
+        "complement_point": complement_point,
+        "n_control": n_control,
+        "n_treatment": len(band_rows),
+        "n_complement": len(complement),
+        "n_censored": censored,
+        "folds": len(years),
+        "fold_years": years,
+        "effective_sample": None if n_control == 0 else n_control / block_length,
+        "assumptions": assumptions,
+        "method": "moving_block_bootstrap",
+        "draws_used": used,
+        "seed": seed,
+        "block_length": block_length,
+        "horizon": horizon,
+        "partition": partition,
+    }
+
+
+def _mean_of(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(np.mean(np.asarray(values, dtype=float)))
+
+
+def _block_contrast(
+    rows: list[dict[str, Any]],
+    block_length: int,
+    seed: int,
+    draws: int,
+    confidence: float,
+) -> tuple[float | None, float | None, int]:
+    n = len(rows)
+    if n < 2 or not any(row["band"] for row in rows):
+        return None, None, 0
+    rng = np.random.Generator(np.random.PCG64(seed))
+    n_blocks = math.ceil(n / block_length)
+    samples: list[float] = []
+    for _ in range(draws):
+        starts = rng.integers(0, n, size=n_blocks)
+        picked: list[dict[str, Any]] = []
+        for start in starts:
+            start_i = int(start)
+            stop = start_i + block_length
+            if stop <= n:
+                picked.extend(rows[start_i:stop])
+            else:
+                picked.extend(rows[start_i:])
+                picked.extend(rows[: stop - n])
+        picked = picked[:n]
+        band = [float(row["net"]) for row in picked if row["band"]]
+        if not band:
+            continue
+        samples.append(float(np.mean(band) - np.mean([float(row["net"]) for row in picked])))
+    if len(samples) < 2:
+        return None, None, len(samples)
+    alpha = (1.0 - confidence) / 2.0
+    low, high = np.quantile(np.asarray(samples, dtype=float), [alpha, 1.0 - alpha])
+    return float(low), float(high), len(samples)
 
 
 def drilldown(bundle: EvidenceBundle, event_id: str) -> dict[str, Any]:
@@ -491,13 +638,35 @@ def _is_support_recovery_v2(card: ResearchCard) -> bool:
 def _refuse_blocked_dates(bars: pd.DataFrame, partitions: tuple[Partition, ...]) -> None:
     if "date" not in bars.columns:
         raise ValueError("bars need a date column")
-    dates = pd.to_datetime(bars["date"])
-    if (dates.dt.year == VIEWED_YEAR).any():
-        raise HoldoutBlocked("2025 was viewed and is not scored")
-    for ts in dates:
-        part = _covering(pd.Timestamp(ts).date(), partitions)
-        if part is not None and (part.role == "holdout" or part.contaminated):
-            raise HoldoutBlocked(part.name)
+    for dates in _clocks(bars):
+        if (dates.dt.year == VIEWED_YEAR).any():
+            raise HoldoutBlocked("2025 was viewed and is not scored")
+        for ts in dates:
+            part = _covering(pd.Timestamp(ts).date(), partitions)
+            if part is not None and (part.role == "holdout" or part.contaminated):
+                raise HoldoutBlocked(part.name)
+
+
+def _refuse_outside_development(bars: pd.DataFrame, partitions: tuple[Partition, ...]) -> None:
+    windows = [part for part in partitions if part.role == "development" and not part.contaminated]
+    if not windows:
+        raise HoldoutBlocked("development run has no development partition")
+    for dates in _clocks(bars):
+        for ts in dates:
+            if pd.isna(ts):
+                raise HoldoutBlocked("development run has a bar with no timestamp")
+            day = pd.Timestamp(ts).date()
+            if day.year >= VIEWED_YEAR:
+                raise HoldoutBlocked(f"{day.year} is not a development year")
+            if not any(part.start <= day <= part.end for part in windows):
+                raise HoldoutBlocked(f"{day.isoformat()} is outside the development partitions")
+
+
+def _clocks(bars: pd.DataFrame) -> list[pd.Series]:
+    clocks = [pd.to_datetime(bars["date"])]
+    if "bar_start" in bars.columns:
+        clocks.append(pd.to_datetime(bars["bar_start"]))
+    return clocks
 
 
 def _covering(day: date, partitions: tuple[Partition, ...]) -> Partition | None:
@@ -508,7 +677,7 @@ def _covering(day: date, partitions: tuple[Partition, ...]) -> Partition | None:
 
 
 def _align(
-    bars: pd.DataFrame, universe: list[str], benchmark: str
+    bars: pd.DataFrame, universe: list[str], benchmark: str, timeframe: str
 ) -> tuple[dict[str, pd.DataFrame], pd.DatetimeIndex]:
     symbols = list(universe)
     if benchmark not in symbols and (bars["symbol"].astype(str).str.upper() == benchmark).any():
@@ -516,7 +685,7 @@ def _align(
     frame = bars.copy()
     frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
     frame["symbol"] = frame["symbol"].astype(str).str.upper()
-    data = MarketData.build(frame, symbols, timeframe="1d")
+    data = MarketData.build(frame, symbols, timeframe=timeframe)
     return dict(data.frames), data.sessions
 
 

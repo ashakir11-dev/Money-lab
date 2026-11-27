@@ -144,6 +144,27 @@ def test_missing_bar_waits_and_never_invents_a_price() -> None:
     assert r.equity["cash"].tolist() == [1000.0, 1000.0, 1000.0, 475.0]
 
 
+def test_adjust_keeps_hourly_bars_in_bar_start_order() -> None:
+    raw = pd.DataFrame(
+        {
+            "bar_start": pd.to_datetime(
+                ["2024-01-02 15:00", "2024-01-02 09:00", "2024-01-02 10:00"]
+            ),
+            "date": pd.to_datetime(["2024-01-02"] * 3),
+            "symbol": ["NVDA"] * 3,
+            "open": [3.0, 1.0, 2.0],
+            "high": [3.0, 1.0, 2.0],
+            "low": [3.0, 1.0, 2.0],
+            "close": [3.0, 1.0, 2.0],
+            "volume": [1, 1, 1],
+        }
+    )
+    actions = pd.DataFrame(columns=["date", "symbol", "type", "value"])
+    adjusted = adjust(raw, actions)
+    assert adjusted["bar_start"].dt.hour.tolist() == [9, 10, 15]
+    assert adjusted["open"].tolist() == [1.0, 2.0, 3.0]
+
+
 def test_corporate_actions_split_and_dividend() -> None:
     # Raw SP: 100 for days 0-2, 2-for-1 split effective day 3 (raw 50), $1 dividend
     # ex day 4 (raw 49). Adjusted: split halves days 0-2 to 50; dividend factor
