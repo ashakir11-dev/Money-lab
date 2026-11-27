@@ -56,7 +56,7 @@ def test_absent_key_keeps_the_deterministic_fallback_and_makes_no_request(
         draft = proposer.write_thesis("breakout", _budget())
     assert hit == []
     assert draft.signals == ("highest_high",)
-    assert Settings().cost_bps_per_side == 5.0
+    assert Settings().cost_bps_per_side == 0.0
 
 
 def test_blank_key_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,7 +104,7 @@ def test_openai_key_calls_chat_completions_for_one_thesis(
     assert len(seen) == 1
     assert draft.claim == "Breakouts continue for ten sessions."
     assert draft.signals == ("highest_high",)
-    assert resolve(draft.recipe)["portfolio"]["cost_bps_per_side"] == 5.0
+    assert resolve(draft.recipe)["portfolio"]["cost_bps_per_side"] == 0.0
 
 
 def test_model_name_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,7 +174,7 @@ def test_model_change_stays_on_one_axis(monkeypatch: pytest.MonkeyPatch) -> None
     with _client(handler) as client:
         child = open_proposer(client=client).propose_change(parent, "exit")
     assert changed_axes(resolve(parent), resolve(child)) == ["exit"]
-    assert resolve(child)["portfolio"]["cost_bps_per_side"] == 5.0
+    assert resolve(child)["portfolio"]["cost_bps_per_side"] == 0.0
 
 
 def test_model_thesis_cannot_name_a_signal_outside_the_catalog(
