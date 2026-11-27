@@ -1,7 +1,7 @@
 """The proposer writes the thesis and names one change. It does not judge the result.
 
-Kill, freeze, and paper stay on the thresholds. With no model completion function this
-module returns the deterministic fallback. It does not call a model API by itself.
+Kill, freeze, and paper stay on the thresholds. When ``OPENAI_API_KEY`` is set, the
+proposer calls OpenAI chat completions. Otherwise it returns the deterministic fallback.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
+
+import httpx
 
 from moneylab.decision.rules import catalog_has
 from moneylab.engine.config import (
@@ -25,10 +27,24 @@ from moneylab.engine.config import (
 FAMILIES = ("bounce", "breakout", "trend", "rotation")
 VERDICTS = frozenset({"kill", "freeze", "paper"})
 _MODEL_KEYS = ("MONEYLAB_MODEL_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+_OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+_DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_OPENAI_SYSTEM = (
+    "You may only propose a seed or thesis and one next change inside the existing rules. "
+    "Families are bounce, breakout, trend, and rotation. "
+    "Buckets are exit, filter, and entry. "
+    "Signals must already be in the catalog. "
+    "Return one JSON object. "
+    "Kill, freeze, and paper stay thresholds. Do not return those as a verdict or a bucket."
+)
 
 
 class ProposerOverreach(ValueError):
     """A proposer tried to kill, freeze, or paper. Those calls are thresholds."""
+
+
+class OpenAIProposerError(RuntimeError):
+    """The chat completion failed. The message does not include the API key."""
 
 
 class ThesisIncomplete(ValueError):
@@ -98,14 +114,113 @@ def model_api_key() -> str | None:
 
 
 def proposer_mode() -> str:
-    """``fallback`` when no model key is set. A key does not by itself call a model."""
+    """``model`` when a model key is set. Calling out still requires ``OPENAI_API_KEY``."""
     return "model" if model_api_key() else "fallback"
 
 
-def open_proposer(complete: Callable[[str], str] | None = None) -> Proposer:
+def open_proposer(
+    complete: Callable[[str], str] | None = None,
+    *,
+    client: httpx.Client | None = None,
+) -> Proposer:
+    """Use OpenAI when ``OPENAI_API_KEY`` is set. Otherwise use the deterministic fallback.
+
+    ``complete`` injects a completion and does not call the network. ``client`` is the
+    HTTP client for that call, so tests can pass a mock transport.
+    """
     if complete is not None:
         return ModelProposer(complete)
-    return FallbackProposer()
+    if _openai_api_key() is None:
+        return FallbackProposer()
+    return ModelProposer(lambda prompt: _openai_chat_complete(prompt, client=client))
+
+
+def _openai_api_key() -> str | None:
+    value = os.environ.get("OPENAI_API_KEY")
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _openai_model() -> str:
+    stripped = os.environ.get("MONEYLAB_OPENAI_MODEL", "").strip()
+    return stripped or _DEFAULT_OPENAI_MODEL
+
+
+def _redact(text: str, key: str) -> str:
+    if not key:
+        return text
+    return text.replace(key, "[redacted]")
+
+
+def _openai_chat_complete(prompt: str, *, client: httpx.Client | None = None) -> str:
+    key = _openai_api_key()
+    if key is None:
+        raise OpenAIProposerError("openai_key_absent")
+    body: dict[str, object] = {
+        "model": _openai_model(),
+        "messages": [
+            {"role": "system", "content": _OPENAI_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    headers = {"Authorization": f"Bearer {key}"}
+
+    def post(http: httpx.Client) -> httpx.Response:
+        return http.post(_OPENAI_CHAT_URL, headers=headers, json=body)
+
+    try:
+        if client is None:
+            with httpx.Client(timeout=30.0, trust_env=False, follow_redirects=False) as http:
+                response = post(http)
+        else:
+            response = post(client)
+    except httpx.HTTPError:
+        raise OpenAIProposerError("openai_transport") from None
+    return _completion_text(response, key)
+
+
+def _completion_text(response: httpx.Response, key: str) -> str:
+    if response.status_code != 200:
+        detail = _error_detail(response, key)
+        failure = f"openai_http_{response.status_code}"
+        if detail:
+            failure = f"{failure} {detail}"
+        raise OpenAIProposerError(failure)
+    try:
+        payload: object = response.json()
+    except json.JSONDecodeError:
+        raise OpenAIProposerError("openai_payload") from None
+    if not isinstance(payload, dict):
+        raise OpenAIProposerError("openai_payload")
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise OpenAIProposerError("openai_payload")
+    choice = choices[0].get("message")
+    if not isinstance(choice, dict):
+        raise OpenAIProposerError("openai_payload")
+    content = choice.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise OpenAIProposerError("openai_payload")
+    return content
+
+
+def _error_detail(response: httpx.Response, key: str) -> str:
+    try:
+        payload: object = response.json()
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return ""
+    message = error.get("message")
+    if not isinstance(message, str):
+        return ""
+    return _redact(message, key)
 
 
 def reject_verdict(payload: Mapping[str, object]) -> None:

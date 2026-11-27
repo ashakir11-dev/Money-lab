@@ -54,6 +54,12 @@ from moneylab.settings import Settings
 UNIVERSE = ("AAA", "BBB")
 
 
+@pytest.fixture(autouse=True)
+def _no_openai_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This file expects the deterministic proposer. A key in the environment must not call out."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+
 def card() -> OwnerCard:
     return OwnerCard(
         series=SERIES_ACTIVE,

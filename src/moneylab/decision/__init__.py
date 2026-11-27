@@ -22,6 +22,7 @@ from moneylab.decision.measure import (
 from moneylab.decision.proposer import (
     FallbackProposer,
     ModelProposer,
+    OpenAIProposerError,
     ProposerOverreach,
     open_proposer,
     proposer_mode,
@@ -69,6 +70,7 @@ __all__ = [
     "MatchSpec",
     "Measurement",
     "ModelProposer",
+    "OpenAIProposerError",
     "OwnerCard",
     "PaperDecision",
     "ProposerOverreach",
