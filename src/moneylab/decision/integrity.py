@@ -8,7 +8,9 @@ Costs: new research uses 5 bps per side and the ``research_bps`` model, which is
 path that charges them. A zero-cost replay must say ``legacy_zero_cost``. The settings
 default stays 0, and an omitted cost model still charges nothing.
 
-R09 through R14 and the V2 run are named in ``DEFERRED`` and are not implemented here.
+Candidate evidence, outcomes, and the proposer contract live in ``decision.evidence``
+and ``decision.proposals``. The Support Recovery V2 card is registered here and is
+not run. That run stays in ``DEFERRED``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from moneylab.decision.proposer import proposer_mode
 from moneylab.decision.rules import Judgment
 from moneylab.engine.config import (
     Condition,
+    EntryFill,
     ExitRule,
     IndicatorRef,
     PortfolioSettings,
@@ -52,15 +55,8 @@ KNOWN_FAMILIES = (
     "momentum",
 )
 BOUNCE_FAMILIES = frozenset({"support_bounce", "support_recovery"})
-DEFERRED = (
-    "R09 event-level evidence",
-    "R10 outcome labels and diagnostic buckets",
-    "R11 storage and UI drilldown",
-    "R12 proposal modes beyond the existing proposer",
-    "R13 evidence-driven iteration",
-    "R14 governance store of prompts",
-    "V2 support-recovery run",
-)
+DEFERRED = ("V2 support-recovery run",)
+SUPPORT_RECOVERY_V2_STATUS = "registered_not_run"
 REPORTED_V0_ACTIVE_EXCESS_PP = -0.00346
 
 DecisionState = Literal["INVALID", "PARK", "DROP", "KILL", "KEEP", "FREEZE"]
@@ -962,6 +958,98 @@ def example_research_card() -> ResearchCard:
         timeframe="1d",
         cost_label="research",
         falsifier="Active excess versus the benchmark is not positive.",
+        falsifier_series="active_excess_pp",
+        falsifier_op="lte",
+        falsifier_level=0.0,
+        uncertainty_method="moving_block_bootstrap",
+        minimum_evidence=floor,
+        trial_budget=3,
+        partitions=partitions,
+        declared_axis="entry",
+    )
+
+
+def support_recovery_v2_card() -> ResearchCard:
+    """The registered Support Recovery V2 card. Building it does not load or score bars.
+
+    Control is ROC(1) > 0. Treatment adds support distance > 0 and < 1 ATR, using the
+    report's level defaults. Both books are hourly NVDA, a 65-bar hold, next-open
+    fills, a $10,000 position, and $100,000 of cash. 2025 is not a partition: that
+    year was already viewed. The holdout slot is 2026 and is not read here.
+    """
+    portfolio = bind_cost(
+        StrategyConfig(
+            name="book",
+            universe=["NVDA"],
+            benchmark="SPY",
+            entry=[_threshold("roc", "above", 0, {"length": 1})],
+            portfolio=PortfolioSettings(
+                starting_cash=100_000,
+                max_positions=1,
+                target_allocation=0.10,
+                idle_cash="cash",
+            ),
+            sizing=SizingRule(id="fixed_dollar", params={"amount": 10_000}),
+        ),
+        "research",
+    ).portfolio
+    book: dict[str, Any] = {
+        "universe": ["NVDA"],
+        "benchmark": "SPY",
+        "timeframe": "1h",
+        "portfolio": portfolio,
+        "sizing": SizingRule(id="fixed_dollar", params={"amount": 10_000}),
+        "entry_fill": EntryFill(kind="next_open"),
+    }
+    hold = ExitRule(kind="holding_period", params={"sessions": 65})
+    control = StrategyConfig(
+        name="Support Recovery V2 control",
+        entry=[_threshold("roc", "above", 0, {"length": 1})],
+        exit=hold,
+        **book,
+    )
+    treatment = StrategyConfig(
+        name="Support Recovery V2",
+        entry=[
+            _threshold("roc", "above", 0, {"length": 1}),
+            _threshold("support_distance", "above", 0, _LEVEL),
+            _threshold("support_distance", "below", 1, _LEVEL),
+        ],
+        exit=hold,
+        **book,
+    )
+    floor = EvidenceFloor(
+        delta_pp=0.0,
+        min_events=30,
+        min_folds=3,
+        confidence=0.95,
+        block_length=65,
+        horizon_bars=65,
+        timeframe="1h",
+    )
+    partitions = (
+        Partition("discovery", date(2020, 1, 1), date(2023, 12, 31), "development"),
+        Partition("validation", date(2024, 1, 1), date(2024, 12, 31), "development"),
+        Partition("holdout", date(2026, 1, 1), date(2026, 12, 31), "holdout"),
+    )
+    return ResearchCard(
+        family="support_recovery",
+        behavior=(
+            "Positive hourly momentum near established support has higher forward "
+            "net returns than positive hourly momentum alone."
+        ),
+        observable_event="ROC(1) above 0 and support distance above 0 and below 1 ATR.",
+        eligibility="Hourly NVDA, one position, next open, fixed $10,000, $100,000 cash.",
+        treatment=treatment,
+        control=control,
+        target_estimand=(
+            "paired event-level net forward return versus matched ROC-only "
+            "opportunities at a fixed 65-bar horizon"
+        ),
+        horizon="65 bars",
+        timeframe="1h",
+        cost_label="research",
+        falsifier="The paired 65-bar net contrast is not above the predeclared delta.",
         falsifier_series="active_excess_pp",
         falsifier_op="lte",
         falsifier_level=0.0,

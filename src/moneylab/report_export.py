@@ -75,10 +75,17 @@ def trades_csv(rows: list[dict[str, Any]]) -> str:
     return buf.getvalue()
 
 
-def report_zip(summary: dict[str, Any], trades: list[dict[str, Any]]) -> bytes:
-    """Zip ``summary.json`` and ``trades.csv`` for one finished report."""
+def report_zip(
+    summary: dict[str, Any],
+    trades: list[dict[str, Any]],
+    evidence: dict[str, str] | None = None,
+) -> bytes:
+    """Zip the summary, closed trades, and a stored evidence drill-down when present."""
+    files = evidence or {}
     raw = io.BytesIO()
     with zipfile.ZipFile(raw, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("summary.json", json.dumps(summary, indent=2) + "\n")
         archive.writestr("trades.csv", trades_csv(trades))
+        for name in sorted(files):
+            archive.writestr(f"evidence/{name}", files[name])
     return raw.getvalue()

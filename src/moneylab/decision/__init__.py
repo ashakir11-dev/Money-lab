@@ -10,9 +10,17 @@ from moneylab.decision.estimands import (
     exposure_matched,
     portfolio_estimands,
 )
+from moneylab.decision.evidence import (
+    EvidenceBundle,
+    HoldoutBlocked,
+    RegisteredRunRefused,
+    execute_registered_card,
+    observe_candidates,
+)
 from moneylab.decision.integrity import (
     DEFERRED,
     RESEARCH_COST_BPS,
+    SUPPORT_RECOVERY_V2_STATUS,
     ResearchBranch,
     ResearchCard,
     authorize_one_axis,
@@ -22,6 +30,7 @@ from moneylab.decision.integrity import (
     legacy_recovery_configs,
     moving_block_interval,
     registry_capabilities,
+    support_recovery_v2_card,
     validate_card,
 )
 from moneylab.decision.loop import (
@@ -38,6 +47,7 @@ from moneylab.decision.measure import (
     seed_jobs,
     settings_diff,
 )
+from moneylab.decision.proposals import propose_from_evidence
 from moneylab.decision.proposer import (
     FallbackProposer,
     ModelProposer,
@@ -82,11 +92,14 @@ __all__ = [
     "RESEARCH_COST_BPS",
     "SERIES_ACTIVE",
     "SERIES_TERMINAL",
+    "SUPPORT_RECOVERY_V2_STATUS",
     "Authorization",
     "Case",
     "Contrast",
+    "EvidenceBundle",
     "FallbackProposer",
     "FamilyLoop",
+    "HoldoutBlocked",
     "Judgment",
     "MatchSpec",
     "Measurement",
@@ -96,6 +109,7 @@ __all__ = [
     "PaperDecision",
     "ProposerOverreach",
     "ReadReport",
+    "RegisteredRunRefused",
     "ResearchBranch",
     "ResearchCard",
     "SearchDoesNotPick",
@@ -112,6 +126,7 @@ __all__ = [
     "check_seed",
     "decide_research",
     "example_research_card",
+    "execute_registered_card",
     "exposure_matched",
     "falsifier_fires",
     "feature_executable",
@@ -123,15 +138,18 @@ __all__ = [
     "measurement_from_equity",
     "members_on",
     "moving_block_interval",
+    "observe_candidates",
     "open_proposer",
     "pick_blame",
     "portfolio_estimands",
+    "propose_from_evidence",
     "proposer_mode",
     "registry_capabilities",
     "sample_cases",
     "seed_jobs",
     "settings_diff",
     "small_batch_allows",
+    "support_recovery_v2_card",
     "tie_break",
     "validate_card",
     "windows_overlap",

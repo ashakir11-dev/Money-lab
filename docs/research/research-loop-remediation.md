@@ -1,6 +1,6 @@
-# Research loop remediation, phase 1
+# Research loop remediation
 
-Phase 1 adds a research contract beside the existing family loop. It does not rerun NVDA, and it does not change the historical kill. R09–R14 and the Support Recovery V2 run are named in `moneylab.decision.integrity.DEFERRED` and are not implemented.
+Phase 1 adds a research contract beside the existing family loop. It does not rerun NVDA, and it does not change the historical kill. Phase 2 adds candidate evidence, forward labels, a report drill-down, and the proposer contract. `support_recovery_v2_card()` registers Support Recovery V2 and does not run it. That run remains in `moneylab.decision.integrity.DEFERRED`. 2025 is not a partition on the card and the observer refuses that year before it computes a label.
 
 `example_research_card()` is a bounded support-bounce card on the 5 bps path. `validate_card` accepts it. Nothing in that helper fetches prices or scores a window.
 
@@ -66,6 +66,14 @@ A block shorter than the outcome horizon is `assumption_violated` and parks. The
 
 Holdout scoring, previews, and reports require a frozen manifest and a partition that is not already contaminated. The loader is not called on a refusal. A proposer read of a holdout is refused even after a freeze. `redact_for_proposer` drops holdout rows. `recovery_swing_partitions()` marks 2025 contaminated for that branch because the 27 Nov 2026 run already scored it.
 
+## Phase 2 evidence
+
+`observe_candidates` records a candidate only when every control entry condition passes. A rejected bar keeps its point-in-time features and the reason: treatment, position, cooldown, capacity, or no next open. The fill price is the next session open. Horizons 6, 13, 26, 39, and 65, plus the card horizon, are censored when the window does not finish. Feature rows and outcome rows are separate files. A second write of the same evidence folder is refused.
+
+The report zip stays `summary.json` and `trades.csv` when no drill-down was stored. When evidence was written under the run's `evidence` directory, the export adds that drill-down.
+
+Buckets are exploratory. A count below five is not a supported bucket, and a supported bucket is still not a promoted filter. The proposer may turn one expressible bucket into a single entry-axis child. It sees discovery rows only. A kill is not reopened. With no injected completion the response is labeled `fallback`. `require_model` fails closed. Relative volume and MACD slope can be observed and cannot become a condition, because the registry does not have those operators.
+
 ## What this phase does not do
 
-It does not claim the NVDA book is profitable or statistically supported. It does not re-simulate the Equibles snapshot. It does not promote a diagnostic bucket, store candidate tables, or let a model override a kill.
+It does not claim the NVDA book is profitable or statistically supported. It does not re-simulate the Equibles snapshot. It does not run Support Recovery V2, score 2025, or let a model override a kill. Sector and VIX stay missing unless those closes were already on the bars. There is no as-of sector map and no VIX feed.

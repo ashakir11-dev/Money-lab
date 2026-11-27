@@ -400,7 +400,7 @@ export interface paths {
         };
         /**
          * Export Run
-         * @description Download a finished report: the summary as JSON and closed trades as CSV.
+         * @description Download a finished report, including a stored evidence drill-down.
          */
         get: operations["export_run_api_runs__run_id__export_get"];
         put?: never;
@@ -2505,7 +2505,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Zip of summary.json (report summary) and trades.csv. */
+            /** @description Zip of summary.json, trades.csv, and an evidence drill-down when one was stored for the run. */
             200: {
                 headers: {
                     [name: string]: unknown;

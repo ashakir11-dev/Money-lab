@@ -168,7 +168,8 @@ def test_t02_capabilities_crossing_inclusive_cooldown_and_frozen_snapshot() -> N
     caps = registry_capabilities()
     assert caps["numeric_threshold_cross"] is True
     assert caps["default_cost_bps_per_side"] == 0.0
-    assert "R09 event-level evidence" in DEFERRED
+    assert "V2 support-recovery run" in DEFERRED
+    assert "R09 event-level evidence" not in DEFERRED
 
     bare = example_research_card()
     claimed = replace(
