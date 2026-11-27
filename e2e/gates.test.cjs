@@ -2,7 +2,9 @@
 // Needs a built dashboard (`make web`) and Playwright's Chromium. Run: `make e2e`.
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const { ROOT, startServer, api, waitJob } = require("./server.cjs");
@@ -35,7 +37,10 @@ test.before(async () => {
   snapshotId = snap.id;
   const job = await api(server.base, "POST", "/api/runs", { config: rsiStrategy(30), snapshot_id: snapshotId });
   original = (await waitJob(server.base, job)).run_ids[0];
-  browser = await chromium.launch();
+  // CHROME_PATH uses a system Chrome when Playwright's browser is not installed.
+  browser = await chromium.launch(
+    process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {},
+  );
 });
 
 test.after(async () => {
@@ -232,6 +237,43 @@ test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule r
   const restored = page.locator('[data-testid^="condition-"]').last();
   await restored.click();
   assert.equal(await restored.getByTestId("other-select").inputValue(), "sma");
+  assert.deepEqual(errors, []);
+});
+
+test("report page: Export report downloads the trades and the summary", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/report?id=${original}`);
+  const link = page.getByTestId("export-report");
+  await link.waitFor();
+  assert.equal((await link.innerText()).trim(), "Export report");
+  assert.equal(await link.getAttribute("href"), `/api/runs/${encodeURIComponent(original)}/export`);
+
+  const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+  assert.match(download.suggestedFilename(), /^moneylab-report-.+\.zip$/);
+  const dest = path.join(os.tmpdir(), download.suggestedFilename());
+  await download.saveAs(dest);
+  const check = execFileSync(
+    "python3",
+    [
+      "-c",
+      [
+        "import json, sys, zipfile",
+        "archive = zipfile.ZipFile(sys.argv[1])",
+        "assert archive.namelist() == ['summary.json', 'trades.csv']",
+        "summary = json.loads(archive.read('summary.json'))",
+        "assert summary['id'] == sys.argv[2]",
+        "assert summary['status'] == 'completed'",
+        "assert summary['name']",
+        "lines = archive.read('trades.csv').decode().splitlines()",
+        "assert lines[0].startswith('symbol,entry_session,exit_session,')",
+        "assert len(lines) > 1",
+      ].join("\n"),
+      dest,
+      original,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(check, "");
   assert.deepEqual(errors, []);
 });
 

@@ -42,7 +42,16 @@ import {
   sweepEnd,
   timeInMarket,
 } from "@/lib/analysis";
-import { api, waitForJob, type DecisionRow, type Job, type RunMetrics, type RunSummary, type Watchlist } from "@/lib/api";
+import {
+  api,
+  reportExportPath,
+  waitForJob,
+  type DecisionRow,
+  type Job,
+  type RunMetrics,
+  type RunSummary,
+  type Watchlist,
+} from "@/lib/api";
 import { int, money, num, pct, sharpe, versusSpy, versusSpyDollars, when } from "@/lib/format";
 import { rootId, versionNumber } from "@/lib/lineage";
 import { metricStats } from "@/lib/reportMetrics";
@@ -254,6 +263,17 @@ function ReportView() {
           <button onClick={rerun} disabled={job?.status === "queued" || job?.status === "running"}>
             Re-run exactly
           </button>
+          {r.status === "completed" ? (
+            <a
+              className="button"
+              data-testid="export-report"
+              href={reportExportPath(id)}
+              download={`moneylab-report-${id}.zip`}
+              title="Download trades as CSV and the report summary as JSON"
+            >
+              Export report
+            </a>
+          ) : null}
           <JobStatus status={job?.status} error={job?.error} />
           <div className="mode-toggle" role="group" aria-label="Detail">
             <button className={detailed ? undefined : "on"} onClick={() => setDetailed(false)}>
