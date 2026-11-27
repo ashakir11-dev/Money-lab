@@ -1,0 +1,102 @@
+"""Research decisions around the existing runner.
+
+The policy service allocates trials, advances a branch, opens the final window, and
+queues paper. It does not invent measurements the engine cannot produce.
+"""
+
+from moneylab.decision.context import matched_cohort, members_on
+from moneylab.decision.loop import (
+    FamilyLoop,
+    SeedCheck,
+    Thesis,
+    WindowBook,
+    check_seed,
+)
+from moneylab.decision.measure import (
+    changed_axes,
+    fold_windows,
+    measurement_from_equity,
+    seed_jobs,
+    settings_diff,
+)
+from moneylab.decision.proposer import (
+    FallbackProposer,
+    ModelProposer,
+    ProposerOverreach,
+    open_proposer,
+    proposer_mode,
+)
+from moneylab.decision.rules import (
+    CLOSURES,
+    CONTEXT_FEATURES,
+    ENGINE_LIMITATIONS,
+    SERIES_ACTIVE,
+    SERIES_TERMINAL,
+    Authorization,
+    Case,
+    Contrast,
+    Judgment,
+    MatchSpec,
+    Measurement,
+    OwnerCard,
+    PaperDecision,
+    ReadReport,
+    Selection,
+    falsifier_fires,
+    feature_executable,
+    judge_pair,
+    judge_seed,
+    pick_blame,
+    sample_cases,
+    small_batch_allows,
+    tie_break,
+    windows_overlap,
+)
+from moneylab.decision.search import SearchDoesNotPick, authorize_search, cash_rerun
+
+__all__ = [
+    "CLOSURES",
+    "CONTEXT_FEATURES",
+    "ENGINE_LIMITATIONS",
+    "SERIES_ACTIVE",
+    "SERIES_TERMINAL",
+    "Authorization",
+    "Case",
+    "Contrast",
+    "FallbackProposer",
+    "FamilyLoop",
+    "Judgment",
+    "MatchSpec",
+    "Measurement",
+    "ModelProposer",
+    "OwnerCard",
+    "PaperDecision",
+    "ProposerOverreach",
+    "ReadReport",
+    "SearchDoesNotPick",
+    "SeedCheck",
+    "Selection",
+    "Thesis",
+    "WindowBook",
+    "authorize_search",
+    "cash_rerun",
+    "changed_axes",
+    "check_seed",
+    "falsifier_fires",
+    "feature_executable",
+    "fold_windows",
+    "judge_pair",
+    "judge_seed",
+    "matched_cohort",
+    "measurement_from_equity",
+    "members_on",
+    "open_proposer",
+    "pick_blame",
+    "proposer_mode",
+    "sample_cases",
+    "seed_jobs",
+    "settings_diff",
+    "small_batch_allows",
+    "tie_break",
+    "windows_overlap",
+]

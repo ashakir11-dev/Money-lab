@@ -56,13 +56,28 @@ def small(ind: str) -> dict[str, Any]:
     return decl.resolve_params(out)
 
 
+_CONTEXT = {
+    "stock_minus_sector": ("sector_close",),
+    "sector_minus_spy": ("sector_close", "benchmark_close"),
+    "stock_minus_spy": ("benchmark_close",),
+    "vix_level": ("vix_close",),
+    "vix_change_1": ("vix_close",),
+    "vix_change_5": ("vix_close",),
+    "vix_percentile_252": ("vix_close",),
+}
+
+
 def compute(ind: str, data: pd.DataFrame, params: dict[str, Any]) -> np.ndarray:
     decl = get_component(ind)
+    prepared = data.copy()
+    for offset, column in enumerate(_CONTEXT.get(ind, ())):
+        # A supplied series, not a stand-in invented inside the indicator.
+        prepared[column] = data["close"] * (1.1 + 0.05 * offset)
     if decl.compute_universe is not None:
-        other = data * 1.01
-        return decl.compute_universe({"A": data, "B": other}, params).to_numpy(dtype=float)
+        other = prepared * 1.01
+        return decl.compute_universe({"A": prepared, "B": other}, params).to_numpy(dtype=float)
     assert decl.compute is not None
-    return decl.compute(data, params).to_numpy(dtype=float)
+    return decl.compute(prepared, params).to_numpy(dtype=float)
 
 
 @pytest.mark.parametrize("ind", INDICATORS)

@@ -699,6 +699,16 @@ class PaperDesk:
         }
 
     # Replay ---------------------------------------------------------------------------
+    def score_against_frozen(self, paper_id: str, data: Any) -> dict[str, Any]:
+        """Compare this account's fills with the frozen model's fills on ``data``.
+
+        The stored recipe is not edited.
+        """
+        from moneylab.paper.score import score_account
+
+        account = self.store.account(paper_id)
+        return score_account(account["resolved"], data, self.ledgers(paper_id).fills)
+
     def replay(self, paper_id: str) -> dict[str, Any]:
         """Re-run every processed session from the initial state on the recorded events
         and compare decisions, fills and equity with the live record (exact match)."""
