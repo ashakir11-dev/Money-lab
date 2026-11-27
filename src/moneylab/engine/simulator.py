@@ -414,6 +414,7 @@ class Account:
         # ``positions``. They never count toward max_positions and are not trades.
         self.idle_in_benchmark = port.get("idle_cash", "cash") == "benchmark"
         self.bench = str(resolved["benchmark"])
+        self._weights = _weight_index(resolved.get("point_in_time_weights"))
         self.sweep_qty = 0
         self.cash = float(port["starting_cash"])
         self.positions: dict[str, _Position] = {}
@@ -760,6 +761,9 @@ class Account:
             sym = symbols[k]
             if i < view.first_bar[sym]:
                 continue  # not yet listed in the snapshot
+            if self._weights is not None and not _in_index(self._weights, sym, view.sessions[i]):
+                self._record(day, sym, INELIGIBLE, "not_in_index")
+                continue
             closes = view.closes[sym]
             c = closes[i]
             if math.isnan(c):
@@ -928,8 +932,48 @@ def _benchmark(
     }
 
 
+def _weight_index(
+    records: object,
+) -> dict[str, list[tuple[pd.Timestamp, float]]] | None:
+    if records is None:
+        return None
+    if not isinstance(records, list):
+        raise ValueError("point_in_time_weights must be a list of as-of rows")
+    grouped: dict[str, list[tuple[pd.Timestamp, float]]] = {}
+    for row in records:
+        if not isinstance(row, dict):
+            raise ValueError("point_in_time_weights row is not a record")
+        symbol = str(row["symbol"]).upper()
+        grouped.setdefault(symbol, []).append((pd.Timestamp(row["as_of"]), float(row["weight"])))
+    for symbol in grouped:
+        grouped[symbol].sort()
+    return grouped
+
+
+def _in_index(
+    weights: dict[str, list[tuple[pd.Timestamp, float]]], symbol: str, session: pd.Timestamp
+) -> bool:
+    """Latest weight at or before this session. Later rows are not used."""
+    latest: float | None = None
+    day = pd.Timestamp(session)
+    for as_of, weight in weights.get(symbol, []):
+        if as_of <= day:
+            latest = weight
+        else:
+            break
+    return latest is not None and latest > 0
+
+
 def simulate(resolved: dict[str, Any], data: MarketData) -> RunResult:
-    """Historical run: one account stepped through every session of ``data``."""
+    """Historical run: one account stepped through every session of ``data``.
+
+    A ``walk_forward`` block fits one knob on each prior window and trades the next
+    window from a flat account. Without that block this is a single pass.
+    """
+    if resolved.get("walk_forward"):
+        from moneylab.engine.walkforward import simulate_walk_forward
+
+        return simulate_walk_forward(resolved, data)
     view = MarketView.build(resolved, data)
     account = Account(resolved)
     for i in range(len(view.sessions)):
