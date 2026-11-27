@@ -1024,7 +1024,7 @@ function Builder() {
             <ViewBlock
               icon="cost"
               summary={draft.costBps ? `${draft.costBps} bp` : "Cost"}
-              help="Trading cost charged on each buy and each sell, in basis points."
+              help="Recorded in basis points. Buys, sells, and results are not reduced by it."
               open={open === "cost"}
               onOpen={() => toggle("cost")}
             >

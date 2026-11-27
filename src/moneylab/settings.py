@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     starting_cash: float = 100_000.0
     target_allocation: float = 0.10
     max_positions: int = 10
-    cost_bps_per_side: float = 5.0
+    cost_bps_per_side: float = 0.0
 
     @property
     def db_path(self) -> Path:

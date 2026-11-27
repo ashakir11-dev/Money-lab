@@ -25,10 +25,11 @@ components, engine, reporting, store, API, dashboard) is tested on its own.
 * Exits are filled before entries. Competing entries are processed in ascending symbol
   order (documented tie-break), or by the strategy's `rank_by` indicator when it has one
   (missing values last, ties in symbol order).
-* Costs: `cost_bps_per_side` of gross notional, rounded half-up to the cent, on every fill.
-  Cash and equity are also kept to the cent, rounded half-up.
+* Costs: transaction costs are not applied. `cost_bps_per_side` is still stored on the
+  portfolio (default 0) but does not reduce fills, cash, equity, or the benchmark.
+  Cash and equity are kept to the cent, rounded half-up.
 * Cash can never go negative. If an opening gap makes the ordered quantity unaffordable
-  (quantity x open x (1 + cost) > cash), the whole order is skipped and recorded as
+  (quantity x open > cash), the whole order is skipped and recorded as
   `insufficient_cash_at_open` with the ordered quantity, the open, the estimated cost and
   the cash available. A smaller quantity is never bought (engine/0.2.0).
 * Every candidate is recorded: `enter`, `exit`, `skip` (with reason: `max_positions`,
@@ -40,7 +41,7 @@ components, engine, reporting, store, API, dashboard) is tested on its own.
   sessions the exit is signalled at the close of the Nth session held (the fill session
   plus N - 1) and filled at the next open (engine/0.2.0).
 * The benchmark is bought once with the same starting cash: whole shares at the open of
-  the first session with a bar, paying the same cost per side, the rest kept as cash,
+  the first session with a bar, with no transaction cost, the rest kept as cash,
   and valued at each close. Its purchase session, price, shares, cost and leftover cash
   are stored in the run's metrics and shown on the run page.
 * Metrics: drawdown from the running closing-equity peak; Sharpe from daily returns,

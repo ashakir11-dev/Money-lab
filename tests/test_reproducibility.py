@@ -26,7 +26,7 @@ def test_changed_default_does_not_change_an_old_run(demo, monkeypatch) -> None: 
     lab: Lab = demo["lab"]
     before = lab.store.get(demo["original"])
 
-    # Change current defaults after the run (costs 5 -> 25 bps, allocation 10% -> 20%).
+    # Change current defaults after the run (costs 0 -> 25 bps, allocation 10% -> 20%).
     monkeypatch.setenv("MONEYLAB_COST_BPS_PER_SIDE", "25")
     monkeypatch.setenv("MONEYLAB_TARGET_ALLOCATION", "0.2")
     new_lab = Lab.open(lab.settings.home)
@@ -35,7 +35,7 @@ def test_changed_default_does_not_change_an_old_run(demo, monkeypatch) -> None: 
     reopened = new_lab.store.get(demo["original"])
     assert reopened["resolved"] == before["resolved"]
     p = reopened["resolved"]["portfolio"]
-    assert (p["cost_bps_per_side"], p["target_allocation"]) == (5.0, 0.1)
+    assert (p["cost_bps_per_side"], p["target_allocation"]) == (0.0, 0.1)
 
     # Every active setting is present, defaults included.
     keys = set(_flatten_for_test(reopened["resolved"]))
@@ -58,7 +58,7 @@ def test_changed_default_does_not_change_an_old_run(demo, monkeypatch) -> None: 
 
     # An unchanged duplicate made under the new defaults still reproduces the ledger.
     dup = new_lab.duplicate(demo["original"])
-    assert new_lab.store.get(dup)["resolved"]["portfolio"]["cost_bps_per_side"] == 5.0
+    assert new_lab.store.get(dup)["resolved"]["portfolio"]["cost_bps_per_side"] == 0.0
     _ledgers_equal(new_lab, demo["original"], dup)
     cmp = new_lab.compare(demo["original"], dup)
     assert cmp["config_diff"] == [] and cmp["first_difference"] is None

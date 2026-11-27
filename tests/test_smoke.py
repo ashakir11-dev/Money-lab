@@ -23,5 +23,5 @@ def test_settings_defaults_match_spec() -> None:
         100_000.0,
         0.10,
         10,
-        5.0,
+        0.0,
     )

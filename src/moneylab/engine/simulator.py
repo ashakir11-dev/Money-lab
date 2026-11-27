@@ -398,7 +398,10 @@ class Account:
     def __init__(self, resolved: dict[str, Any]) -> None:
         self.resolved = resolved
         port = resolved["portfolio"]
-        self.cost_rate = float(port["cost_bps_per_side"]) / 10_000.0
+        # Transaction costs are not applied. The portfolio still records
+        # cost_bps_per_side (default 0) so a saved run keeps the setting, but
+        # fills, cash, affordability, marks, and the benchmark are not reduced by it.
+        self.cost_rate = 0.0
         self.target = float(port["target_allocation"])
         self.max_pos = int(port["max_positions"])
         self.entry_conds = resolved["entry"]
@@ -898,8 +901,8 @@ def _benchmark(
 ) -> tuple[np.ndarray, dict[str, Any] | None]:
     """Buy-and-hold the benchmark under the strategy's own conventions.
 
-    Whole shares are bought at the open of the first session with a bar, paying the
-    same cost per side; the rest stays as cash. It is valued at each close (last known
+    Whole shares are bought at the open of the first session with a bar. Transaction
+    costs are not charged; the rest stays as cash. It is valued at each close (last known
     close when a bar is missing). Prices come from the same snapshot, so splits and
     dividends are treated exactly as for the strategy's holdings.
     """
