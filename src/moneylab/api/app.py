@@ -14,12 +14,12 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -31,6 +31,7 @@ from moneylab.describe import data_source, strategy_summary
 from moneylab.engine.chart import ChartRejected, assemble_chart
 from moneylab.engine.config import StrategyConfig, VersionMismatch, check_versions
 from moneylab.jsonable import jsonable
+from moneylab.report_export import report_zip, summary_document
 from moneylab.service import Lab
 
 API_VERSION = "1"
@@ -951,7 +952,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         for family in lab.strategy_families():
             for version in family["versions"]:
                 if version["id"] == strategy_id:
-                    return jsonable(version)
+                    return cast(dict[str, Any], jsonable(version))
         raise HTTPException(404, f"strategy {strategy_id} not found")
 
     @app.post("/api/strategies", response_model=StrategyVersionOut, tags=["strategies"])
@@ -971,7 +972,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         for family in lab.strategy_families():
             for version in family["versions"]:
                 if version["id"] == saved:
-                    return jsonable(version)
+                    return cast(dict[str, Any], jsonable(version))
         raise HTTPException(500, "saved strategy was not readable")
 
     # Runs ----------------------------------------------------------------------------
@@ -1056,14 +1057,49 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         _detail(lab, run_id)
         return records(lab.store.ledgers(run_id).equity)
 
+    def _closed_trades(run_id: str) -> list[dict[str, Any]]:
+        """Closed round trips. ``_detail`` first so older runs grow a trade list."""
+        _detail(lab, run_id)
+        t = lab.store.trades(run_id)
+        out: list[dict[str, Any]] = jsonable(records(t)) if t is not None else []
+        return out
+
     @app.get("/api/runs/{run_id}/trades", response_model=list[TradeRow], tags=["runs"])
     def trades(run_id: str) -> list[dict[str, Any]]:
         """Closed round trips with return, edge versus the benchmark, MAE/MFE, how each
         closed and the true holding length. Empty when the analysis cannot be computed."""
-        _detail(lab, run_id)  # computes the analysis (and the trade list) for older runs
-        t = lab.store.trades(run_id)
-        out: list[dict[str, Any]] = jsonable(records(t)) if t is not None else []
-        return out
+        return _closed_trades(run_id)
+
+    @app.get(
+        "/api/runs/{run_id}/export",
+        tags=["runs"],
+        response_class=Response,
+        response_model=None,
+        responses={
+            200: {
+                "description": "Zip of summary.json (report summary) and trades.csv.",
+                "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    def export_run(run_id: str) -> Response:
+        """Download a finished report: the summary as JSON and closed trades as CSV."""
+        detail = _detail(lab, run_id)
+        if detail.status != "completed":
+            raise HTTPException(
+                409,
+                f"run {run_id} is {detail.status}; only a finished report can be exported",
+            )
+        payload = report_zip(
+            summary_document(detail.model_dump(mode="json")),
+            _closed_trades(run_id),
+        )
+        filename = f"moneylab-report-{run_id}.zip"
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.get("/api/runs/{run_id}/fills", response_model=list[FillRow], tags=["runs"])
     def fills(run_id: str) -> list[dict[str, Any]]:

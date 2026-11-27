@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any
+from typing import Any, TypeGuard
 
 from moneylab.engine.config import resolved_exits, resolved_sizing
 
@@ -55,5 +55,5 @@ def run_gap(metrics: dict[str, Any] | None) -> float | None:
     return float(left) - float(right)
 
 
-def _finite(value: Any) -> bool:
+def _finite(value: object) -> TypeGuard[int | float]:
     return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)

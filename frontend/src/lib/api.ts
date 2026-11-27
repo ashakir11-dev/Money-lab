@@ -66,6 +66,11 @@ export type Delivery = { session?: string | null; status: string; detail?: strin
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
+/** Finished-report download: a zip of trades.csv and summary.json. */
+export function reportExportPath(id: string): string {
+  return `${API_BASE}/api/runs/${encodeURIComponent(id)}/export`;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
+import sqlite3
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from moneylab.api.app import create_app
 from moneylab.demo import FIXTURE, rsi_strategy
+from moneylab.engine.analytics import TRADE_COLUMNS
 from moneylab.service import Lab
 
 
@@ -205,3 +211,114 @@ def test_adding_a_stop_loss_shows_the_first_trade_it_changed(client: TestClient)
     first = cmp["first_difference"]
     assert first is not None
     assert "stop_loss" in str(first)
+
+
+# Headline fields of a finished report. The export's summary.json is these, plus the
+# metrics and analysis the report page shows — not the raw strategy settings.
+_SUMMARY_KEYS = {
+    "id",
+    "name",
+    "status",
+    "created_at",
+    "finished_at",
+    "parent_id",
+    "strategy_id",
+    "summary",
+    "snapshot_id",
+    "snapshot_name",
+    "source_kind",
+    "source_label",
+    "engine_version",
+    "total_return",
+    "benchmark_return",
+    "benchmark_symbol",
+    "max_drawdown",
+    "sharpe",
+    "trades",
+    "open_positions",
+    "win_rate",
+    "profit_factor",
+    "cagr",
+    "edge_mean",
+    "edge_t",
+    "low_sample",
+    "metrics",
+    "analysis",
+}
+
+
+def test_export_is_a_zip_of_trades_csv_and_report_summary(client: TestClient) -> None:
+    sid = _snapshot(client)
+    run_id = _run(client, sid, 30)
+    detail = client.get(f"/api/runs/{run_id}").json()
+    trades = client.get(f"/api/runs/{run_id}/trades").json()
+    assert detail["status"] == "completed"
+    assert trades, "the demo run should close at least one trade"
+
+    resp = client.get(f"/api/runs/{run_id}/export")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("application/zip")
+    disposition = resp.headers["content-disposition"]
+    assert disposition.startswith("attachment;")
+    assert f"moneylab-report-{run_id}.zip" in disposition
+
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+        assert archive.namelist() == ["summary.json", "trades.csv"]
+        summary = json.loads(archive.read("summary.json"))
+        rows = list(csv.DictReader(io.StringIO(archive.read("trades.csv").decode())))
+
+    assert set(summary) == _SUMMARY_KEYS
+    assert summary["id"] == run_id
+    assert summary["status"] == "completed"
+    assert summary["name"] == detail["name"]
+    assert summary["summary"] == detail["summary"]
+    assert summary["finished_at"] == detail["finished_at"]
+    assert summary["snapshot_name"] == detail["snapshot_name"]
+    assert summary["engine_version"] == detail["engine_version"]
+    for key in (
+        "total_return",
+        "benchmark_return",
+        "benchmark_symbol",
+        "max_drawdown",
+        "sharpe",
+        "trades",
+        "open_positions",
+        "win_rate",
+        "profit_factor",
+        "cagr",
+        "edge_mean",
+        "edge_t",
+        "low_sample",
+    ):
+        assert summary[key] == detail[key]
+    assert summary["metrics"] == detail["metrics"]
+    assert summary["analysis"] == detail["analysis"]
+    assert "resolved" not in summary
+    assert list(rows[0]) == TRADE_COLUMNS
+    assert len(rows) == len(trades)
+    for csv_row, trade in zip(rows, trades, strict=True):
+        assert csv_row["symbol"] == trade["symbol"]
+        assert csv_row["entry_session"] == trade["entry_session"]
+        assert csv_row["exit_session"] == trade["exit_session"]
+        assert csv_row["exit_kind"] == trade["exit_kind"]
+        assert float(csv_row["qty"]) == pytest.approx(trade["qty"])
+        assert float(csv_row["pnl"]) == pytest.approx(trade["pnl"])
+        assert float(csv_row["ret"]) == pytest.approx(trade["ret"])
+        assert float(csv_row["costs"]) == pytest.approx(trade["costs"])
+
+
+def test_export_unknown_run_is_404(client: TestClient) -> None:
+    assert client.get("/api/runs/nope/export").status_code == 404
+
+
+def test_export_refuses_a_run_that_is_not_finished(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    app = create_app(Lab.open(home), web_dir=tmp_path / "no-web")
+    with TestClient(app) as unfinished:
+        sid = _snapshot(unfinished)
+        run_id = _run(unfinished, sid, 30)
+        with sqlite3.connect(home / "moneylab.sqlite") as db:
+            db.execute("UPDATE runs SET status = ? WHERE id = ?", ("running", run_id))
+        resp = unfinished.get(f"/api/runs/{run_id}/export")
+    assert resp.status_code == 409
+    assert "finished" in resp.json()["detail"]

@@ -2,7 +2,9 @@
 // Needs a built dashboard (`make web`) and Playwright's Chromium. Run: `make e2e`.
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const { ROOT, startServer, api, waitJob } = require("./server.cjs");
@@ -35,7 +37,10 @@ test.before(async () => {
   snapshotId = snap.id;
   const job = await api(server.base, "POST", "/api/runs", { config: rsiStrategy(30), snapshot_id: snapshotId });
   original = (await waitJob(server.base, job)).run_ids[0];
-  browser = await chromium.launch();
+  // CHROME_PATH uses a system Chrome when Playwright's browser is not installed.
+  browser = await chromium.launch(
+    process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {},
+  );
 });
 
 test.after(async () => {
@@ -71,6 +76,8 @@ test("gate 3: duplicate, change the RSI threshold, run, and compare the two repo
 
   await page.getByTestId("compare-metrics").waitFor({ timeout: 60000 });
   await page.getByTestId("config-diff").waitFor();
+  // The settings list is collapsed until its summary is opened.
+  await click(page.getByTestId("config-diff").locator("summary"));
   const diff = await page.getByTestId("config-diff").innerText();
   assert.match(diff, /30/);
   assert.match(diff, /35/);
@@ -97,6 +104,7 @@ test("gate 3 walkthrough: drop DDD and change the threshold; compare shows the s
   await page.getByTestId("run-backtest").click();
   await page.getByTestId("compare-with-original").click();
   await page.getByTestId("compare-metrics").waitFor({ timeout: 60000 });
+  await page.getByTestId("config-diff").locator("summary").click();
   const diff = await page.getByTestId("config-diff").innerText();
   assert.match(diff, /DDD/);
   assert.match(diff, /35/);
@@ -232,6 +240,43 @@ test("builder: price exits, sizing, ranking and an indicator-vs-indicator rule r
   const restored = page.locator('[data-testid^="condition-"]').last();
   await restored.click();
   assert.equal(await restored.getByTestId("other-select").inputValue(), "sma");
+  assert.deepEqual(errors, []);
+});
+
+test("report page: Export report downloads the trades and the summary", async () => {
+  const { page, errors } = await newPage();
+  await page.goto(`${server.base}/report?id=${original}`);
+  const link = page.getByTestId("export-report");
+  await link.waitFor();
+  assert.equal((await link.innerText()).trim(), "Export report");
+  assert.equal(await link.getAttribute("href"), `/api/runs/${encodeURIComponent(original)}/export`);
+
+  const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+  assert.match(download.suggestedFilename(), /^moneylab-report-.+\.zip$/);
+  const dest = path.join(os.tmpdir(), download.suggestedFilename());
+  await download.saveAs(dest);
+  const check = execFileSync(
+    "python3",
+    [
+      "-c",
+      [
+        "import json, sys, zipfile",
+        "archive = zipfile.ZipFile(sys.argv[1])",
+        "assert archive.namelist() == ['summary.json', 'trades.csv']",
+        "summary = json.loads(archive.read('summary.json'))",
+        "assert summary['id'] == sys.argv[2]",
+        "assert summary['status'] == 'completed'",
+        "assert summary['name']",
+        "lines = archive.read('trades.csv').decode().splitlines()",
+        "assert lines[0].startswith('symbol,entry_session,exit_session,')",
+        "assert len(lines) > 1",
+      ].join("\n"),
+      dest,
+      original,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(check, "");
   assert.deepEqual(errors, []);
 });
 
