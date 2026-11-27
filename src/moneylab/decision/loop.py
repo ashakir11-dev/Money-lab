@@ -41,13 +41,12 @@ from moneylab.engine.batch import Job
 from moneylab.engine.config import StrategyConfig, config_hash
 
 _MATCH_LIMIT = (
-    "A matched cohort needs a match key, a tolerance, and an as-of field of decision. "
-    "The engine compares two recipes and has no matched-cohort runner, so this control "
-    "is not executed."
+    "A matched cohort needs the match key's values on the decision date. "
+    "Those values were not supplied, so the cohort is rejected and not filled in."
 )
 _WEIGHT_LIMIT = (
-    "Point-in-time index weights are not in the engine. The universe is the static "
-    "symbol list on the recipe. This thesis is rejected."
+    "Point-in-time weights are used only from a supplied as-of table. "
+    "Without that table the thesis is rejected."
 )
 
 
@@ -59,6 +58,8 @@ class Thesis:
     match: MatchSpec | None = None
     requires_historical_weights: bool = False
     falsifier_series: str | None = None
+    weights: Any = None
+    key_series: Any = None
 
 
 @dataclass
@@ -121,10 +122,14 @@ class WindowBook:
         return None
 
 
-def _match_reason(match: MatchSpec) -> str:
+def _match_reason(match: MatchSpec, key_series: object) -> str:
     if not match.key or match.tolerance is None or match.tolerance < 0 or match.as_of != "decision":
         return "invalid_match"
-    return "matched_cohort_not_executable"
+    from moneylab.decision.context import key_series_usable
+
+    if not key_series_usable(key_series):
+        return "matched_cohort_data_absent"
+    return ""
 
 
 def check_seed(card: OwnerCard, thesis: Thesis) -> SeedCheck:
@@ -134,9 +139,14 @@ def check_seed(card: OwnerCard, thesis: Thesis) -> SeedCheck:
         return SeedCheck(False, problems, False, 0, [])
     reasons: list[str] = []
     limitations: list[str] = []
+    weight_problem = ""
     if thesis.requires_historical_weights:
-        reasons.append("point_in_time_weights_unavailable")
-        limitations.append(_WEIGHT_LIMIT)
+        from moneylab.decision.context import weights_problem
+
+        weight_problem = weights_problem(thesis.weights)
+        if weight_problem:
+            reasons.append(weight_problem)
+            limitations.append(_WEIGHT_LIMIT)
     if thesis.falsifier_series is not None and thesis.falsifier_series != card.series:
         reasons.append("falsifier_series_mismatch")
     if thesis.control is not None and thesis.match is not None:
@@ -144,15 +154,21 @@ def check_seed(card: OwnerCard, thesis: Thesis) -> SeedCheck:
     if thesis.control is None and thesis.match is None:
         reasons.append("missing_control")
     if thesis.match is not None:
-        reason = _match_reason(thesis.match)
-        reasons.append(reason)
-        limitations.append(_MATCH_LIMIT)
+        reason = _match_reason(thesis.match, thesis.key_series)
+        if reason:
+            reasons.append(reason)
+            limitations.append(_MATCH_LIMIT)
     try:
         resolved = resolve_recipe(thesis.recipe)
     except (KeyError, ValueError) as exc:
         return SeedCheck(False, [*reasons, "recipe_invalid", str(exc)], False, 0, limitations)
     if resolved["portfolio"]["idle_cash"] != card.idle_cash:
         reasons.append("idle_cash_mismatch")
+    if thesis.requires_historical_weights and not weight_problem:
+        from moneylab.decision.context import weight_records
+
+        resolved = dict(resolved)
+        resolved["point_in_time_weights"] = weight_records(thesis.weights)
     resolved_control: dict[str, Any] | None = None
     if thesis.control is not None:
         try:
@@ -161,6 +177,9 @@ def check_seed(card: OwnerCard, thesis: Thesis) -> SeedCheck:
             reasons.append("recipe_invalid")
             reasons.append(str(exc))
         else:
+            if thesis.requires_historical_weights and not weight_problem:
+                resolved_control = dict(resolved_control)
+                resolved_control["point_in_time_weights"] = resolved["point_in_time_weights"]
             axes = changed_axes(resolved, resolved_control)
             same_book = execution_signature(resolved) == execution_signature(resolved_control)
             if not same_book or (axes and axes != ["entry"]):
@@ -169,7 +188,17 @@ def check_seed(card: OwnerCard, thesis: Thesis) -> SeedCheck:
                 reasons.append("control_not_different")
     if reasons:
         return SeedCheck(False, reasons, False, 0, limitations)
-    assert resolved_control is not None
+    if resolved_control is None:
+        return SeedCheck(
+            True,
+            ["accepted"],
+            True,
+            1,
+            [],
+            jobs=[Job(resolved=resolved, data_key=0)],
+            resolved_recipe=resolved,
+            resolved_control=None,
+        )
     return SeedCheck(
         True,
         ["accepted"],
@@ -311,7 +340,7 @@ class FamilyLoop:
         if feature_id is not None:
             ok, why = feature_executable(feature_id)
             if not ok:
-                if why == "context_feature_not_in_catalog":
+                if why in {"context_feature_not_in_catalog", "context_data_absent"}:
                     limitations.append(ENGINE_LIMITATIONS[1])
                 return self._deny([why], limitations)
         for report_id in cited_reports:

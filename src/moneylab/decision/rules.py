@@ -67,12 +67,11 @@ CLOSURES: dict[str, str] = {
     "control_contract": (
         "A seed control must be a second recipe the catalog can run, with the same "
         "hold, size, slots, costs, cash policy, and dates, differing only in the entry. "
-        "A matched cohort is legal only with a match key, a tolerance, and an as-of "
-        "field of decision. The engine cannot run that cohort, so the rule records it "
-        "and does not pretend to. Context features are legal recipe inputs only when "
-        "the catalog can evaluate them. A thesis that needs historical index weights "
-        "is rejected. The universe is the static symbol list. A catalog rejection does "
-        "not spend a family trial."
+        "A matched cohort is legal only with a match key, a tolerance, an as-of field "
+        "of decision, and the key's values on that date. Missing values reject the "
+        "cohort. Context features run only when their closes are supplied. A thesis "
+        "that needs historical index weights is rejected unless an as-of weight table "
+        "is supplied. A catalog rejection does not spend a family trial."
     ),
     "closed_definitions": (
         "Concentration is the largest session's share of the sum of absolute daily "
@@ -96,16 +95,17 @@ CLOSURES: dict[str, str] = {
 }
 
 ENGINE_LIMITATIONS: tuple[str, ...] = (
-    "Matched-cohort controls are specified and not executed. The engine compares two recipes.",
+    "Matched-cohort controls run only from a supplied match-key series on the decision "
+    "date. Absent values are a hard rejection, and no peer return is filled in.",
     "Stock minus sector, sector minus SPY, stock minus SPY, and VIX level, change, and "
-    "percentile are not in the component registry, so they cannot be recipe inputs.",
-    "Point-in-time index membership and weights are not available. The universe is a static "
-    "symbol list.",
+    "percentile run only when those closes are supplied. Absent series are a hard rejection.",
+    "Point-in-time index weights run only from a supplied as-of table. A missing table "
+    "rejects the thesis. Membership is not invented.",
     "Uncertainty intervals are supplied by the report. This slice does not block-bootstrap them.",
-    "Walk-forward fitting is a date filter. Each fold is its own start and end and begins flat. "
-    "The simulator does not fit thresholds or carry positions across a fold boundary.",
-    "The paper gate decides whether to queue one run. Fill-versus-model scoring stays on the "
-    "existing paper desk.",
+    "Walk-forward fitting runs inside the simulator. Each fold fits one declared knob on "
+    "the prior window and trades the next window from a flat start.",
+    "Paper scoring compares the account's fills with the frozen model's fills on the same "
+    "bars. A mismatch does not edit the entry, the filter, or the exit.",
 )
 
 
@@ -121,10 +121,15 @@ def catalog_has(feature_id: str) -> bool:
     return True
 
 
-def feature_executable(feature_id: str) -> tuple[bool, str]:
-    """A context feature is a recipe input only when the catalog can evaluate it."""
-    if feature_id in CONTEXT_FEATURES and not catalog_has(feature_id):
-        return False, "context_feature_not_in_catalog"
+def feature_executable(feature_id: str, context: object = None) -> tuple[bool, str]:
+    """A context feature runs only when its series was supplied. Otherwise it is rejected."""
+    if feature_id in CONTEXT_FEATURES:
+        if not catalog_has(feature_id):
+            return False, "context_feature_not_in_catalog"
+        covers = getattr(context, "covers", None)
+        if context is None or not callable(covers) or not covers(feature_id):
+            return False, "context_data_absent"
+        return True, ""
     if not catalog_has(feature_id):
         return False, "feature_not_in_catalog"
     return True, ""

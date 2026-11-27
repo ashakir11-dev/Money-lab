@@ -232,13 +232,12 @@ def _propose_exit(branch: FamilyLoop, *, hold: int = 5, experiment_id: str = "ex
     )
 
 
-def test_context_features_are_absent_from_the_registry() -> None:
+def test_context_features_reject_when_the_series_is_absent() -> None:
     for feature_id in CONTEXT_FEATURES:
-        with pytest.raises(KeyError):
-            get_component(feature_id)
+        assert get_component(feature_id).id == feature_id
         ok, reason = feature_executable(feature_id)
         assert not ok
-        assert reason == "context_feature_not_in_catalog"
+        assert reason == "context_data_absent"
     assert "sector" in ENGINE_LIMITATIONS[1]
     assert "VIX" in ENGINE_LIMITATIONS[1]
 
@@ -310,9 +309,9 @@ def test_complete_match_is_recorded_and_not_executed() -> None:
         ),
     )
     assert not result.accepted
-    assert "matched_cohort_not_executable" in result.reasons
+    assert "matched_cohort_data_absent" in result.reasons
     assert result.limitations
-    assert "no matched-cohort runner" in result.limitations[0]
+    assert "not filled in" in result.limitations[0]
     assert result.spends_trial is False
 
 
@@ -521,7 +520,7 @@ def test_blame_picker_skips_what_the_catalog_cannot_run() -> None:
     selected, skipped = pick_blame(card(), contrasts, entry_closed=False)
     assert selected is not None
     assert selected.question == "exit"
-    assert any(item.reason == "context_feature_not_in_catalog" for item in skipped)
+    assert any(item.reason == "context_data_absent" for item in skipped)
     assert any(item.question == "entry" and item.reason == "not_supported" for item in skipped)
 
     tie = [
@@ -697,7 +696,7 @@ def test_context_feature_proposal_is_rejected() -> None:
         feature_id="vix_level",
     )
     assert not auth.authorized
-    assert auth.reasons == ["context_feature_not_in_catalog"]
+    assert auth.reasons == ["context_data_absent"]
     assert auth.limitations
     assert branch.trials_spent == 2
 
