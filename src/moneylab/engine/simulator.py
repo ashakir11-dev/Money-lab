@@ -2,9 +2,10 @@
 
 Timeline for each exchange session ``t``:
 
-1. Pending orders fill on ``t`` (exits first, then entries in ascending symbol order).
-   Default entries fill at the open. Range and dip entries use that session's high/low.
-   An order for a symbol without a bar on ``t`` waits.
+1. A position whose open is already through its frozen support or resistance sells
+   at that open. Pending orders then fill (exits first, then entries in ascending
+   symbol order). Default entries fill at the open. Range and dip entries use that
+   session's high and low. An order for a symbol without a bar on ``t`` waits.
 2. Equity is marked at the close of ``t``.
 3. Signals are evaluated on data up to and including the close of ``t`` and new orders
    are queued for the next eligible open. Only data at or before ``t`` is read, so
@@ -32,7 +33,12 @@ from moneylab.components.registry import (
 )
 from moneylab.data.bars import session_label
 from moneylab.data.snapshot import MarketData
-from moneylab.engine.config import required_indicators, resolved_exits, resolved_sizing
+from moneylab.engine.config import (
+    required_indicators,
+    resolved_exits,
+    resolved_sizing,
+    structure_refs,
+)
 
 # Decision actions
 ENTER = "enter"
@@ -146,6 +152,83 @@ def _finite_levels(values: dict[str, float | None]) -> dict[str, float]:
             continue
         out[key] = number
     return out
+
+
+def _structure_values(view: Any, symbol: str, index: int, keys: dict[str, str]) -> dict[str, float]:
+    """Finite support, resistance, and ATR at the entry decision. One missing piece disarms."""
+    if set(keys) != {"support", "resistance", "atr"}:
+        return {}
+    found: dict[str, float] = {}
+    series = view.indicators.get(symbol, {})
+    for role, key in keys.items():
+        values = series.get(key)
+        if values is None or index >= len(values):
+            return {}
+        number = float(values[index])
+        if not math.isfinite(number):
+            return {}
+        found[role] = number
+    if found["atr"] <= 0 or found["resistance"] <= found["support"]:
+        return {}
+    return {
+        "frozen_support": found["support"],
+        "frozen_resistance": found["resistance"],
+        "frozen_atr": found["atr"],
+    }
+
+
+def _parsed_structure(
+    levels: dict[str, float] | None,
+) -> tuple[float, float, float] | None:
+    if not levels:
+        return None
+    try:
+        support = float(levels["frozen_support"])
+        resistance = float(levels["frozen_resistance"])
+        atr_value = float(levels["frozen_atr"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(number) for number in (support, resistance, atr_value)):
+        return None
+    if atr_value <= 0 or resistance <= support:
+        return None
+    return support, resistance, atr_value
+
+
+def _breach_at(
+    price: float, levels: dict[str, float] | None, *, at_open: bool
+) -> tuple[str, dict[str, float]] | None:
+    """Stop at frozen support and target at frozen resistance.
+
+    An open at or through the level fills at that open. A close at or through the
+    level queues the next open. The distance past the level is recorded in ATR.
+    """
+    parsed = _parsed_structure(levels)
+    if parsed is None or not math.isfinite(price):
+        return None
+    support, resistance, atr_value = parsed
+    if price <= support:
+        side = "support"
+        distance = (support - price) / atr_value
+    elif price >= resistance:
+        side = "resistance"
+        distance = (price - resistance) / atr_value
+    else:
+        return None
+    if at_open and distance > 0:
+        reason = f"gapped through frozen {side}"
+    elif at_open:
+        reason = f"opened on frozen {side}"
+    elif side == "support":
+        reason = "frozen support stop"
+    else:
+        reason = "frozen resistance target"
+    return reason, {
+        "frozen_support": support,
+        "frozen_resistance": resistance,
+        "frozen_atr": atr_value,
+        "gap_atr": distance,
+    }
 
 
 def _session_day(label: str) -> str:
@@ -496,6 +579,7 @@ class Account:
         self._size_fn = get_component(self.sizing["id"]).size_fn
         self._size_keys = [_ind_key(r) for r in self.sizing.get("requires", [])]
         self._rank_key = _ind_key(self.rank["indicator"]) if self.rank else None
+        self._structure_keys = {ref["id"]: _ind_key(ref) for ref in structure_refs(resolved)}
         self._cand_view: MarketView | None = None
         self._cand: np.ndarray = np.zeros((0, 0), dtype=bool)
 
@@ -574,6 +658,7 @@ class Account:
             # tradable session. They do not fill, signal, or mark equity.
             self.last_index = i
             return
+        self._gap_exit(view, i)
         self._fill_at_open(view, i)
         equity = self._mark_at_close(view, i)
         exiting = self._decide_exits(view, i)
@@ -613,6 +698,51 @@ class Account:
             return lo, "filled at range low", False
         return open_px, "", False
 
+    def _gap_exit(self, view: MarketView, i: int) -> None:
+        """Sell at this open when the open is already through the frozen level."""
+        day = session_label(view.sessions[i])
+        for sym in sorted(self.positions):
+            if sym in self.pending:
+                continue
+            pos = self.positions[sym]
+            open_px = float(view.opens[sym][i])
+            fired = _breach_at(open_px, pos.frozen_levels, at_open=True)
+            if fired is None:
+                continue
+            reason, extra = fired
+            did = self._record(day, sym, EXIT, reason, qty=pos.qty, **extra)
+            order = _Order(sym, "sell", pos.qty, i, did, open_px)
+            self._complete_sell(day, sym, order, open_px, i, note=reason)
+
+    def _complete_sell(
+        self,
+        day: str,
+        sym: str,
+        order: _Order,
+        open_px: float,
+        i: int,
+        note: str = "",
+    ) -> None:
+        pos = self.positions.pop(sym)
+        gross = pos.qty * open_px
+        cost = _cents(gross * self.cost_rate)
+        self.cash = _cents(self.cash + gross - cost)
+        self.last_exit_fill[sym] = i
+        self.fills.append(
+            _fill(
+                day,
+                sym,
+                "sell",
+                pos.qty,
+                open_px,
+                cost,
+                self.cash,
+                order,
+                i - order.decision_idx,
+                note,
+            )
+        )
+
     def _fill_at_open(self, view: MarketView, i: int) -> None:
         day = session_label(view.sessions[i])
         cost_rate = self.cost_rate
@@ -626,24 +756,10 @@ class Account:
                     continue  # no bar: never invent a price, wait for the next session
                 if side == "sell":
                     del self.pending[sym]
-                    pos = self.positions.pop(sym)
-                    gross = pos.qty * open_px
-                    cost = _cents(gross * cost_rate)
-                    self.cash = _cents(self.cash + gross - cost)
-                    self.last_exit_fill[sym] = i
-                    self.fills.append(
-                        _fill(
-                            day,
-                            sym,
-                            "sell",
-                            pos.qty,
-                            open_px,
-                            cost,
-                            self.cash,
-                            o,
-                            i - o.decision_idx,
-                        )
-                    )
+                    pos = self.positions[sym]
+                    breach = _breach_at(open_px, pos.frozen_levels, at_open=True)
+                    note = "" if breach is None else breach[0]
+                    self._complete_sell(day, sym, o, open_px, i, note=note)
                     continue
                 px, note, wait = self._entry_fill_price(view, i, o, open_px)
                 if wait:
@@ -799,6 +915,13 @@ class Account:
                 continue
             pos = self.positions[sym]
             close = float(view.closes[sym][i])
+            fired = _breach_at(close, pos.frozen_levels, at_open=False)
+            if fired is not None:
+                reason, extra = fired
+                did = self._record(day, sym, EXIT, reason, qty=pos.qty, **extra)
+                self.pending[sym] = _Order(sym, "sell", pos.qty, i, did, close)
+                exiting += 1
+                continue
             if not math.isnan(close) and not close <= pos.peak_close:
                 pos.peak_close = close
             # The fill session counts as holding session one.
@@ -936,7 +1059,12 @@ class Account:
             elif kind == "next_range":
                 lo = close_px * (1.0 - float(fill.get("below_pct") or 0.0))
                 hi = close_px * (1.0 + float(fill.get("above_pct") or 0.0))
-            frozen = _finite_levels(vals) if self.freeze_entry_levels else None
+            frozen = None
+            if self.freeze_entry_levels:
+                frozen = _finite_levels(vals)
+                frozen.update(_structure_values(view, sym, i, self._structure_keys))
+                if not frozen:
+                    frozen = None
             self.pending[sym] = _Order(
                 sym,
                 "buy",

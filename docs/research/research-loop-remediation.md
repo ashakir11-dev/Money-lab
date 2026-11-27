@@ -29,7 +29,7 @@ Claims and prose that ask for a numeric cross, a cooldown, an inclusive bound, o
 
 `cooldown_bars` blocks a new entry for that many sessions after the exit fill, including the fill session when the count is 1. Omitted means there is no cooldown.
 
-`freeze_entry_levels` stores the finite indicator values from the entry decision on the buy fill. Missing warmup values are left out, not stored as zero. Exit rules still read live indicators, so a frozen structural stop is `unsupported_frozen_stop` unless an approximation is approved.
+`freeze_entry_levels` stores the finite indicator values from the entry decision on the buy fill. Missing warmup values are left out, not stored as zero. When support, resistance, and ATR are finite at that decision, the position sells at the frozen support and takes profit at the frozen resistance. An open through the level fills at that open. A claim that names a frozen stop still needs the flag or an approved approximation.
 
 `trade_start` lets earlier loaded bars warm indicators without fills or signals. `Lab.execute` still slices the snapshot to `start`/`end`, so this only applies when the caller passes the earlier bars.
 
@@ -72,8 +72,8 @@ Holdout scoring, previews, and reports require a frozen manifest and a partition
 
 The report zip stays `summary.json` and `trades.csv` when no drill-down was stored. When evidence was written under the run's `evidence` directory, the export adds that drill-down.
 
-Buckets are exploratory. A count below five is not a supported bucket, and a supported bucket is still not a promoted filter. The proposer may turn one expressible bucket into a single entry-axis child. It sees discovery rows only. A kill is not reopened. With no injected completion the response is labeled `fallback`. `require_model` fails closed. Relative volume and MACD slope can be observed and cannot become a condition, because the registry does not have those operators.
+Buckets are exploratory. A count below five is not a supported bucket, and a supported bucket is still not a promoted filter. The proposer may turn one expressible bucket into a single entry-axis child. It sees discovery rows only. A kill is not reopened. With no injected completion the response is labeled `fallback`. `require_model` fails closed. Relative volume and MACD slope are registry indicators, so a threshold on either one is an entry condition.
 
 ## What this phase does not do
 
-It does not claim the NVDA book is profitable or statistically supported. It does not re-simulate the Equibles snapshot. It does not execute Support Recovery V2 through `execute_registered_card`, score 2025 or 2026, or let a model override a kill. A development-only observation is a separate call. Sector and VIX stay missing unless those closes were already on the bars. There is no as-of sector map and no VIX feed.
+It does not claim the NVDA book is profitable or statistically supported. It does not re-simulate the Equibles snapshot. It does not execute Support Recovery V2 through `execute_registered_card`, score 2025 or 2026, or let a model override a kill. A development-only observation is a separate call. Sector and VIX stay missing unless an as-of map and those bars were supplied. A missing session is not forward-filled. There is no shipped historical sector-classification source, and the Equibles stock route does not supply VIX. Relative volume and MACD slope are entry conditions. The unread holdout is 2027 and is not run. 2025 stays contaminated. Support Recovery V2 is not retuned or frozen.

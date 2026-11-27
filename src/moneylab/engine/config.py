@@ -491,7 +491,7 @@ def all_conditions(resolved: dict[str, Any]) -> list[dict[str, Any]]:
 
 def required_indicators(resolved: dict[str, Any]) -> list[dict[str, Any]]:
     """Every indicator a run needs computed: conditions (both sides), exit and sizing
-    requirements, and the ranking indicator."""
+    requirements, the ranking indicator, and frozen support, resistance, and ATR."""
     inds: list[dict[str, Any]] = []
     for c in all_conditions(resolved):
         inds.append(c["indicator"])
@@ -503,7 +503,43 @@ def required_indicators(resolved: dict[str, Any]) -> list[dict[str, Any]]:
     rank = resolved.get("rank_by")
     if rank:
         inds.append(rank["indicator"])
+    inds += structure_refs(resolved)
     return inds
+
+
+_LEVEL_IDS = {
+    "support": "support",
+    "support_distance": "support",
+    "support_tests": "support",
+    "resistance": "resistance",
+    "resistance_distance": "resistance",
+    "resistance_tests": "resistance",
+}
+_DEFAULT_LEVEL = {"lookback": 120, "min_move": 2.0, "zone": 1.0, "atr_length": 14}
+
+
+def structure_refs(resolved: dict[str, Any]) -> list[dict[str, Any]]:
+    """Support, resistance, and ATR snapped when frozen entry levels are on.
+
+    Parameters follow the entry condition that already uses that level. Otherwise
+    they are the indicator defaults. ATR uses the level's usual-bar length.
+    """
+    if not (resolved.get("portfolio") or {}).get("freeze_entry_levels"):
+        return []
+    chosen: dict[str, dict[str, Any]] = {}
+    for cond in resolved.get("entry", []):
+        indicator = cond.get("indicator") or {}
+        role = _LEVEL_IDS.get(str(indicator.get("id")))
+        if role is not None and role not in chosen:
+            chosen[role] = dict(indicator.get("params") or {})
+    support_params = chosen.get("support", dict(_DEFAULT_LEVEL))
+    resistance_params = chosen.get("resistance", dict(support_params))
+    atr_length = int(support_params.get("atr_length", _DEFAULT_LEVEL["atr_length"]))
+    return [
+        _resolve_indicator(IndicatorRef(id="support", params=support_params)),
+        _resolve_indicator(IndicatorRef(id="resistance", params=resistance_params)),
+        _resolve_indicator(IndicatorRef(id="atr", params={"length": atr_length})),
+    ]
 
 
 def config_hash(resolved: dict[str, Any]) -> str:

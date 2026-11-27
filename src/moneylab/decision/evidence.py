@@ -48,6 +48,7 @@ from moneylab.decision.integrity import (
     ResearchCard,
     moving_block_interval,
     support_recovery_v2_card,
+    unread_holdout_partitions,
 )
 from moneylab.engine.config import config_hash, resolve
 from moneylab.engine.simulator import _evaluate
@@ -71,15 +72,14 @@ EVIDENCE_FILES = (
     "outcomes.csv",
 )
 UNRESOLVED_GAPS = (
-    "No as-of sector map. Sector features stay missing unless sector_close is on the bars.",
-    "No VIX feed. VIX features stay missing unless vix_close was supplied.",
-    "relative_volume and macd_slope are observations, not registry conditions.",
+    "No historical sector-classification source is shipped. The join uses a supplied as-of map.",
+    "VIX is not on the Equibles stock route. An unknown VIX symbol stays missing.",
     "Forward labels count sessions with a close. holding_period counts aligned sessions.",
     "Same-session events share a block. That is not a cluster-robust estimator.",
-    "Frozen entry levels are recorded and are not executed as stops.",
     "The equity ledger has no per-asset weights. Same-stock matching needs caller weights.",
-    "Support Recovery V2 runs only with development_only, inside development partitions.",
-    "2025 and 2026 are refused.",
+    "Support Recovery V2 is not frozen. Its 2026 holdout slot is unchanged.",
+    "The unread holdout is 2027. It is refused here and is not run.",
+    "2025 was viewed and is refused.",
 )
 _UNITS = {
     "rsi": "index",
@@ -111,7 +111,6 @@ _UNITS = {
     "breadth": "fraction",
 }
 _LEVEL = {"lookback": 50, "min_move": 2.0, "zone": 1.0, "atr_length": 14}
-_MACD = {"fast": 12, "slow": 26, "signal": 9, "output": "histogram"}
 _CONTEXT_COLUMNS = {
     "stock_minus_sector": "sector_close",
     "sector_minus_spy": "sector_close",
@@ -155,7 +154,7 @@ def feature_cache_key(snapshot_id: str, timeframe: str, spec: dict[str, Any]) ->
 
 
 def feature_specs() -> list[dict[str, Any]]:
-    """Every registered indicator at its default parameters, plus two derived series."""
+    """Every registered indicator at its default parameters."""
     specs: list[dict[str, Any]] = []
     for decl in list_components("indicator"):
         if decl.compute is None and decl.compute_universe is None:
@@ -170,24 +169,6 @@ def feature_specs() -> list[dict[str, Any]]:
                 "derived": False,
             }
         )
-    specs.append(
-        {
-            "id": "relative_volume",
-            "params": {"length": 20},
-            "version": "1.0.0",
-            "unit": "ratio",
-            "derived": True,
-        }
-    )
-    specs.append(
-        {
-            "id": "macd_slope",
-            "params": dict(_MACD),
-            "version": "1.0.0",
-            "unit": "price",
-            "derived": True,
-        }
-    )
     return specs
 
 
@@ -638,10 +619,14 @@ def _is_support_recovery_v2(card: ResearchCard) -> bool:
 def _refuse_blocked_dates(bars: pd.DataFrame, partitions: tuple[Partition, ...]) -> None:
     if "date" not in bars.columns:
         raise ValueError("bars need a date column")
+    unread = next(part for part in unread_holdout_partitions() if part.role == "holdout")
     for dates in _clocks(bars):
         if (dates.dt.year == VIEWED_YEAR).any():
             raise HoldoutBlocked("2025 was viewed and is not scored")
         for ts in dates:
+            day = pd.Timestamp(ts).date()
+            if unread.start <= day <= unread.end:
+                raise HoldoutBlocked("unread holdout")
             part = _covering(pd.Timestamp(ts).date(), partitions)
             if part is not None and (part.role == "holdout" or part.contaminated):
                 raise HoldoutBlocked(part.name)
@@ -708,18 +693,38 @@ def _attach_context(
             frames[symbol] = frames[symbol].copy()
             frames[symbol]["benchmark_close"] = bench_close
     if "sector_close" in raw.columns:
-        availability["sector"] = "present"
+        saw = False
         for symbol in universe:
-            part = raw[raw["symbol"] == symbol].drop_duplicates("date").set_index("date")
+            part = raw[raw["symbol"] == symbol]
+            projected = _project_context(part, "sector_close", frames[symbol].index)
             frames[symbol] = frames[symbol].copy()
-            frames[symbol]["sector_close"] = part["sector_close"].reindex(frames[symbol].index)
+            frames[symbol]["sector_close"] = projected
+            saw = saw or bool(projected.notna().any())
+        if saw:
+            availability["sector"] = "present"
     if "vix_close" in raw.columns:
-        availability["vix"] = "present"
-        grouped = raw.groupby("date")["vix_close"].first()
+        projected = _project_context(raw, "vix_close", frames[universe[0]].index)
+        if bool(projected.notna().any()):
+            availability["vix"] = "present"
         for symbol in universe:
             frames[symbol] = frames[symbol].copy()
-            frames[symbol]["vix_close"] = grouped.reindex(frames[symbol].index)
+            frames[symbol]["vix_close"] = projected.reindex(frames[symbol].index)
     return availability
+
+
+def _project_context(raw: pd.DataFrame, column: str, index: pd.Index) -> pd.Series:
+    """Align a supplied close onto ``index`` without filling a missing session."""
+    if raw.empty:
+        return pd.Series(np.nan, index=index, dtype=float)
+    table = raw.copy()
+    stamps = pd.to_datetime(index)
+    intraday = bool(((stamps.hour != 0) | (stamps.minute != 0)).any())
+    if intraday and "bar_start" in table.columns:
+        table["_key"] = pd.to_datetime(table["bar_start"])
+    else:
+        table["_key"] = pd.to_datetime(table["date"]).dt.normalize()
+    values = table.drop_duplicates("_key").set_index("_key")[column]
+    return values.reindex(index).astype(float)
 
 
 def _feature_arrays(
@@ -762,12 +767,6 @@ def _feature_arrays(
             if key in shared:
                 out[symbol][key] = shared[key]
                 continue
-            if feature_id == "relative_volume":
-                out[symbol][key] = _relative_volume(frame, int(params["length"]))
-                continue
-            if feature_id == "macd_slope":
-                out[symbol][key] = _macd_slope(frame, params)
-                continue
             decl = get_component(feature_id)
             if decl.compute is None:
                 out[symbol][key] = np.full(len(frame), np.nan)
@@ -790,27 +789,6 @@ def _context_column_missing(frame: pd.DataFrame, feature_id: str) -> bool:
     if feature_id == "stock_minus_spy":
         return "benchmark_close" not in frame.columns
     return column not in frame.columns
-
-
-def _relative_volume(frame: pd.DataFrame, length: int) -> np.ndarray:
-    average = get_component("avg_volume").compute
-    assert average is not None
-    base = average(frame, {"length": length}).to_numpy(dtype=float)
-    volume = frame["volume"].to_numpy(dtype=float)
-    out = np.full(base.shape, np.nan)
-    ok = np.isfinite(base) & np.isfinite(volume) & (base != 0)
-    out[ok] = volume[ok] / base[ok]
-    return out
-
-
-def _macd_slope(frame: pd.DataFrame, params: dict[str, Any]) -> np.ndarray:
-    compute = get_component("macd").compute
-    assert compute is not None
-    hist = compute(frame, params).to_numpy(dtype=float)
-    out = np.full(hist.shape, np.nan)
-    if hist.size > 1:
-        out[1:] = hist[1:] - hist[:-1]
-    return out
 
 
 def _walk(

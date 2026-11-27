@@ -59,6 +59,15 @@ _EXPRESSIBLE: dict[str, tuple[str, tuple[tuple[str, float], ...], dict[str, Any]
     "support_tests:three_plus": ("support_tests", (("at_or_above", 3),), _LEVEL),
     "market_structure:positive": ("market_structure", (("above", 0),), {}),
     "stock_minus_spy:positive": ("stock_minus_spy", (("above", 0),), {}),
+    "relative_volume:below_1": ("relative_volume", (("below", 1),), {"length": 20}),
+    "relative_volume:1_to_1_5": (
+        "relative_volume",
+        (("at_or_above", 1), ("at_or_below", 1.5)),
+        {"length": 20},
+    ),
+    "relative_volume:above_1_5": ("relative_volume", (("above", 1.5),), {"length": 20}),
+    "macd_slope:positive": ("macd_slope", (("above", 0),), {"fast": 12, "slow": 26, "signal": 9}),
+    "macd_slope:negative": ("macd_slope", (("below", 0),), {"fast": 12, "slow": 26, "signal": 9}),
 }
 
 

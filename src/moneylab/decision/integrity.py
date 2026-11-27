@@ -204,8 +204,9 @@ def registry_capabilities() -> dict[str, Any]:
         "indicator_cross": "two indicators only; a numeric level uses threshold crosses_*",
         "cooldown_bars": "charged only when portfolio.cooldown_bars is set",
         "frozen_entry_levels": (
-            "portfolio.freeze_entry_levels stores the entry decision's finite values; "
-            "exit rules still read live indicators, so a frozen stop needs an approximation"
+            "portfolio.freeze_entry_levels stores the entry decision's finite values and, "
+            "when support, resistance, and ATR are finite, sells at frozen support and "
+            "takes profit at frozen resistance; an open through the level fills at that open"
         ),
         "cost_model": (
             "omitted or legacy_unapplied charges nothing; research_bps charges cost_bps_per_side"
@@ -245,6 +246,20 @@ def proposer_status() -> dict[str, str]:
         "mode": mode,
         "labeled": "fallback" if mode == "fallback" else "model",
     }
+
+
+def unread_holdout_partitions() -> tuple[Partition, ...]:
+    """Inspected development windows plus an unread holdout.
+
+    2025 stays on ``recovery_swing_partitions`` as contaminated. 2026 stays the
+    holdout slot already named on Support Recovery V2 and is not reused here.
+    Nothing in this function loads a bar.
+    """
+    return (
+        Partition("discovery", date(2020, 1, 1), date(2023, 12, 31), "development"),
+        Partition("validation", date(2024, 1, 1), date(2024, 12, 31), "development"),
+        Partition("holdout", date(2027, 1, 1), date(2027, 12, 31), "holdout"),
+    )
 
 
 def recovery_swing_partitions() -> tuple[Partition, ...]:
