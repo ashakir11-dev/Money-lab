@@ -31,9 +31,11 @@ def measurement_from_equity(
 ) -> Measurement:
     """Build the two bound series from a finished equity ledger.
 
-    ``active_excess_pp`` averages strategy-minus-benchmark daily returns on sessions
+    ``active_excess_pp`` averages strategy-minus-benchmark bar returns on sessions
     that began invested. Sessions spent in cash are left out, so a rising benchmark
-    while the book is in cash does not become the falsifier.
+    while the book is in cash does not become the falsifier. When no session began
+    invested, this historical series is 0.0. ``decision.estimands`` keeps that number
+    and reports the same case as undefined on ``active_excess_pp_v2``.
     """
     own = metrics(equity, fills, timeframe=timeframe)
     bench = metrics(equity, fills, column="benchmark_equity", timeframe=timeframe)
@@ -99,7 +101,10 @@ def changed_axes(parent: dict[str, Any], child: dict[str, Any]) -> list[str]:
         ("target_allocation", "sizing"),
         ("idle_cash", "cash"),
         ("cost_bps_per_side", "costs"),
+        ("cost_model", "costs"),
         ("starting_cash", "capital"),
+        ("cooldown_bars", "cooldown"),
+        ("freeze_entry_levels", "frozen_levels"),
     )
     parent_book = parent.get("portfolio") or {}
     child_book = child.get("portfolio") or {}

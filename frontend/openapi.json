@@ -1846,6 +1846,20 @@
       },
       "PortfolioSettings": {
         "properties": {
+          "cooldown_bars": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "bars after an exit fill before the same symbol may enter again. Omitted means no cooldown rule is applied.",
+            "title": "Cooldown Bars"
+          },
           "cost_bps_per_side": {
             "anyOf": [
               {
@@ -1858,6 +1872,34 @@
               }
             ],
             "title": "Cost Bps Per Side"
+          },
+          "cost_model": {
+            "anyOf": [
+              {
+                "enum": [
+                  "legacy_unapplied",
+                  "research_bps"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "legacy_unapplied records a cost but does not charge it (the historical engine). research_bps charges cost_bps_per_side. Omitted means the historical engine.",
+            "title": "Cost Model"
+          },
+          "freeze_entry_levels": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "when true, store the finite indicator values from the entry decision on the buy fill. Exit rules still read live indicators.",
+            "title": "Freeze Entry Levels"
           },
           "idle_cash": {
             "anyOf": [
@@ -2932,6 +2974,19 @@
             ],
             "description": "bar size; when omitted, the run takes the snapshot's bar size",
             "title": "Timeframe"
+          },
+          "trade_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "first session that may trade. Earlier sessions in the loaded bars warm indicators and cannot fill or signal. Omitted means every loaded session may trade.",
+            "title": "Trade Start"
           },
           "universe": {
             "items": {
@@ -5017,7 +5072,7 @@
     },
     "/api/runs/{run_id}/export": {
       "get": {
-        "description": "Download a finished report: the summary as JSON and closed trades as CSV.",
+        "description": "Download a finished report, including a stored evidence drill-down.",
         "operationId": "export_run_api_runs__run_id__export_get",
         "parameters": [
           {
@@ -5040,7 +5095,7 @@
                 }
               }
             },
-            "description": "Zip of summary.json (report summary) and trades.csv."
+            "description": "Zip of summary.json, trades.csv, and an evidence drill-down when one was stored for the run."
           },
           "422": {
             "content": {

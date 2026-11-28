@@ -113,12 +113,32 @@ register(
         label="Indicator compared with a number",
         uses=("entry", "exit", "filter"),
         params=(
-            ParamSpec("op", "choice", "below", "Comparison", choices=("below", "above")),
+            ParamSpec(
+                "op",
+                "choice",
+                "below",
+                "Comparison",
+                choices=(
+                    "below",
+                    "above",
+                    "at_or_below",
+                    "at_or_above",
+                    "crosses_below",
+                    "crosses_above",
+                ),
+            ),
             ParamSpec("value", "float", 30.0, "Threshold", min=-1e9, max=1e9),
         ),
         inputs=("indicator",),
         outputs=("signal",),
-        description="Below: indicator < value. Above: indicator > value.",
+        description=(
+            "Below: indicator < value. Above: indicator > value. "
+            "at_or_below and at_or_above are the inclusive comparisons. "
+            "crosses_above: previous value <= threshold and current value > threshold. "
+            "crosses_below is the mirror image. A missing warmup value does not pass. "
+            "The version stays 1.0.0 because above and below are unchanged; a version bump "
+            "would mark every saved threshold recipe unreproducible."
+        ),
     )
 )
 register(

@@ -110,6 +110,29 @@ class PortfolioSettings(BaseModel):
     target_allocation: float | None = Field(default=None, gt=0, le=1)
     max_positions: int | None = Field(default=None, ge=1, le=300)
     cost_bps_per_side: float | None = Field(default=None, ge=0, le=500)
+    cost_model: Literal["legacy_unapplied", "research_bps"] | None = Field(
+        default=None,
+        description=(
+            "legacy_unapplied records a cost but does not charge it (the historical engine). "
+            "research_bps charges cost_bps_per_side. Omitted means the historical engine."
+        ),
+    )
+    cooldown_bars: int | None = Field(
+        default=None,
+        ge=0,
+        le=500,
+        description=(
+            "bars after an exit fill before the same symbol may enter again. "
+            "Omitted means no cooldown rule is applied."
+        ),
+    )
+    freeze_entry_levels: bool | None = Field(
+        default=None,
+        description=(
+            "when true, store the finite indicator values from the entry decision on the "
+            "buy fill. Exit rules still read live indicators."
+        ),
+    )
     idle_cash: Literal["cash", "benchmark"] | None = Field(
         default=None,
         description="what cash not needed by a position does: stay as cash (default) or be "
@@ -171,6 +194,13 @@ class StrategyConfig(BaseModel):
     rank_by: RankBy | None = Field(
         default=None,
         description="order entry candidates by an indicator; default ascending symbol order",
+    )
+    trade_start: date | None = Field(
+        default=None,
+        description=(
+            "first session that may trade. Earlier sessions in the loaded bars warm "
+            "indicators and cannot fill or signal. Omitted means every loaded session may trade."
+        ),
     )
 
     @field_validator("exits")
@@ -364,6 +394,14 @@ def resolve(config: StrategyConfig, settings: Settings | None = None) -> dict[st
             "missing_bars": "no trade on a session without a bar; orders wait for the next bar",
         },
     }
+    if p.cost_model is not None:
+        resolved["portfolio"]["cost_model"] = p.cost_model
+    if p.cooldown_bars is not None:
+        resolved["portfolio"]["cooldown_bars"] = p.cooldown_bars
+    if p.freeze_entry_levels:
+        resolved["portfolio"]["freeze_entry_levels"] = True
+    if config.trade_start is not None:
+        resolved["execution"]["trade_start"] = config.trade_start.isoformat()
     strat_entry = resolved["entry"][len(config.entry) :]
     if strat_entry:
         resolved["entry_signals"] = strat_entry
@@ -427,6 +465,7 @@ def config_from_resolved(resolved: dict[str, Any]) -> StrategyConfig:
         ),
         sizing=SizingRule(id=sizing["id"], params=dict(sizing["params"])) if sizing else None,
         rank_by=RankBy(indicator=ref(rank["indicator"]), order=rank["order"]) if rank else None,
+        trade_start=resolved.get("execution", {}).get("trade_start"),
     )
 
 
@@ -452,7 +491,7 @@ def all_conditions(resolved: dict[str, Any]) -> list[dict[str, Any]]:
 
 def required_indicators(resolved: dict[str, Any]) -> list[dict[str, Any]]:
     """Every indicator a run needs computed: conditions (both sides), exit and sizing
-    requirements, and the ranking indicator."""
+    requirements, the ranking indicator, and frozen support, resistance, and ATR."""
     inds: list[dict[str, Any]] = []
     for c in all_conditions(resolved):
         inds.append(c["indicator"])
@@ -464,7 +503,43 @@ def required_indicators(resolved: dict[str, Any]) -> list[dict[str, Any]]:
     rank = resolved.get("rank_by")
     if rank:
         inds.append(rank["indicator"])
+    inds += structure_refs(resolved)
     return inds
+
+
+_LEVEL_IDS = {
+    "support": "support",
+    "support_distance": "support",
+    "support_tests": "support",
+    "resistance": "resistance",
+    "resistance_distance": "resistance",
+    "resistance_tests": "resistance",
+}
+_DEFAULT_LEVEL = {"lookback": 120, "min_move": 2.0, "zone": 1.0, "atr_length": 14}
+
+
+def structure_refs(resolved: dict[str, Any]) -> list[dict[str, Any]]:
+    """Support, resistance, and ATR snapped when frozen entry levels are on.
+
+    Parameters follow the entry condition that already uses that level. Otherwise
+    they are the indicator defaults. ATR uses the level's usual-bar length.
+    """
+    if not (resolved.get("portfolio") or {}).get("freeze_entry_levels"):
+        return []
+    chosen: dict[str, dict[str, Any]] = {}
+    for cond in resolved.get("entry", []):
+        indicator = cond.get("indicator") or {}
+        role = _LEVEL_IDS.get(str(indicator.get("id")))
+        if role is not None and role not in chosen:
+            chosen[role] = dict(indicator.get("params") or {})
+    support_params = chosen.get("support", dict(_DEFAULT_LEVEL))
+    resistance_params = chosen.get("resistance", dict(support_params))
+    atr_length = int(support_params.get("atr_length", _DEFAULT_LEVEL["atr_length"]))
+    return [
+        _resolve_indicator(IndicatorRef(id="support", params=support_params)),
+        _resolve_indicator(IndicatorRef(id="resistance", params=resistance_params)),
+        _resolve_indicator(IndicatorRef(id="atr", params={"length": atr_length})),
+    ]
 
 
 def config_hash(resolved: dict[str, Any]) -> str:

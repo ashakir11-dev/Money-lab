@@ -27,6 +27,7 @@ from moneylab import ENGINE_VERSION
 from moneylab.api.jobs import Job, JobRunner
 from moneylab.components.registry import list_components
 from moneylab.data.snapshot import list_snapshots, read_import_file, snapshot_name
+from moneylab.decision.evidence import read_evidence_files
 from moneylab.describe import data_source, strategy_summary
 from moneylab.engine.chart import ChartRejected, assemble_chart
 from moneylab.engine.config import StrategyConfig, VersionMismatch, check_versions
@@ -1077,13 +1078,16 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         response_model=None,
         responses={
             200: {
-                "description": "Zip of summary.json (report summary) and trades.csv.",
+                "description": (
+                    "Zip of summary.json, trades.csv, and an evidence drill-down "
+                    "when one was stored for the run."
+                ),
                 "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
             }
         },
     )
     def export_run(run_id: str) -> Response:
-        """Download a finished report: the summary as JSON and closed trades as CSV."""
+        """Download a finished report, including a stored evidence drill-down."""
         detail = _detail(lab, run_id)
         if detail.status != "completed":
             raise HTTPException(
@@ -1093,6 +1097,7 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         payload = report_zip(
             summary_document(detail.model_dump(mode="json")),
             _closed_trades(run_id),
+            read_evidence_files(lab.store.run_dir(run_id) / "evidence"),
         )
         filename = f"moneylab-report-{run_id}.zip"
         return Response(

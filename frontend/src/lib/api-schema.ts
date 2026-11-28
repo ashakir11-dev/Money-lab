@@ -400,7 +400,7 @@ export interface paths {
         };
         /**
          * Export Run
-         * @description Download a finished report: the summary as JSON and closed trades as CSV.
+         * @description Download a finished report, including a stored evidence drill-down.
          */
         get: operations["export_run_api_runs__run_id__export_get"];
         put?: never;
@@ -1217,8 +1217,23 @@ export interface components {
         };
         /** PortfolioSettings */
         PortfolioSettings: {
+            /**
+             * Cooldown Bars
+             * @description bars after an exit fill before the same symbol may enter again. Omitted means no cooldown rule is applied.
+             */
+            cooldown_bars?: number | null;
             /** Cost Bps Per Side */
             cost_bps_per_side?: number | null;
+            /**
+             * Cost Model
+             * @description legacy_unapplied records a cost but does not charge it (the historical engine). research_bps charges cost_bps_per_side. Omitted means the historical engine.
+             */
+            cost_model?: ("legacy_unapplied" | "research_bps") | null;
+            /**
+             * Freeze Entry Levels
+             * @description when true, store the finite indicator values from the entry decision on the buy fill. Exit rules still read live indicators.
+             */
+            freeze_entry_levels?: boolean | null;
             /**
              * Idle Cash
              * @description what cash not needed by a position does: stay as cash (default) or be held in whole shares of the benchmark, sold at the open when a trade needs the cash
@@ -1543,6 +1558,11 @@ export interface components {
              * @description bar size; when omitted, the run takes the snapshot's bar size
              */
             timeframe?: ("1min" | "5min" | "15min" | "30min" | "1h" | "1d") | null;
+            /**
+             * Trade Start
+             * @description first session that may trade. Earlier sessions in the loaded bars warm indicators and cannot fill or signal. Omitted means every loaded session may trade.
+             */
+            trade_start?: string | null;
             /** Universe */
             universe: string[];
         };
@@ -2485,7 +2505,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Zip of summary.json (report summary) and trades.csv. */
+            /** @description Zip of summary.json, trades.csv, and an evidence drill-down when one was stored for the run. */
             200: {
                 headers: {
                     [name: string]: unknown;
