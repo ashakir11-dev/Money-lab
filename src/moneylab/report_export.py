@@ -89,3 +89,18 @@ def report_zip(
         for name in sorted(files):
             archive.writestr(f"evidence/{name}", files[name])
     return raw.getvalue()
+
+
+def batch_report_zip(runs: list[tuple[str, bytes]]) -> bytes:
+    """One zip of finished reports, each run in its own folder.
+
+    ``runs`` is ``(run id, that run's report zip)``. The files in each folder are
+    the same files ``report_zip`` would download for that run alone.
+    """
+    raw = io.BytesIO()
+    with zipfile.ZipFile(raw, "w", compression=zipfile.ZIP_DEFLATED) as outer:
+        for run_id, payload in runs:
+            with zipfile.ZipFile(io.BytesIO(payload)) as inner:
+                for name in inner.namelist():
+                    outer.writestr(f"{run_id}/{name}", inner.read(name))
+    return raw.getvalue()

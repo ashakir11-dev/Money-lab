@@ -4195,6 +4195,54 @@
         ]
       }
     },
+    "/api/batches/export": {
+      "get": {
+        "description": "Download several finished reports in one zip, one folder per run.",
+        "operationId": "export_batch_api_batches_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Run Id",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "One zip with a folder per run. Each folder holds that run's summary.json, trades.csv, and an evidence drill-down when one was stored."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Batch",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/compare": {
       "get": {
         "description": "What changed between two runs: settings, data, and the first differing\ntrading decision with the values behind it.",
