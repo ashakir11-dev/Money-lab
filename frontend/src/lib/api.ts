@@ -71,6 +71,12 @@ export function reportExportPath(id: string): string {
   return `${API_BASE}/api/runs/${encodeURIComponent(id)}/export`;
 }
 
+/** Several finished reports in one zip: one folder per run, same files as a single export. */
+export function batchExportPath(ids: readonly string[]): string {
+  const query = ids.map((id) => `run_id=${encodeURIComponent(id)}`).join("&");
+  return `${API_BASE}/api/batches/export?${query}`;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

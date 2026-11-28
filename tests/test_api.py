@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from moneylab.api.app import create_app
 from moneylab.demo import FIXTURE, rsi_strategy
 from moneylab.engine.analytics import TRADE_COLUMNS
+from moneylab.report_export import batch_report_zip, report_zip
 from moneylab.service import Lab
 
 
@@ -305,6 +306,88 @@ def test_export_is_a_zip_of_trades_csv_and_report_summary(client: TestClient) ->
         assert float(csv_row["pnl"]) == pytest.approx(trade["pnl"])
         assert float(csv_row["ret"]) == pytest.approx(trade["ret"])
         assert float(csv_row["costs"]) == pytest.approx(trade["costs"])
+
+
+def test_batch_export_is_one_zip_with_each_runs_report(client: TestClient) -> None:
+    sid = _snapshot(client)
+    first = _run(client, sid, 30)
+    second = _run(client, sid, 35)
+
+    resp = client.get(
+        "/api/batches/export",
+        params=[("run_id", first), ("run_id", second), ("run_id", first)],
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("application/zip")
+    disposition = resp.headers["content-disposition"]
+    assert disposition.startswith("attachment;")
+    assert 'filename="moneylab-batch.zip"' in disposition
+
+    singles = {run_id: client.get(f"/api/runs/{run_id}/export") for run_id in (first, second)}
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+        names = archive.namelist()
+        for run_id, single in singles.items():
+            assert single.status_code == 200, single.text
+            with zipfile.ZipFile(io.BytesIO(single.content)) as inner:
+                inner_names = inner.namelist()
+                assert inner_names == ["summary.json", "trades.csv"]
+                for name in inner_names:
+                    assert archive.read(f"{run_id}/{name}") == inner.read(name)
+
+    assert names == [
+        f"{first}/summary.json",
+        f"{first}/trades.csv",
+        f"{second}/summary.json",
+        f"{second}/trades.csv",
+    ]
+
+
+def test_batch_export_keeps_a_stored_evidence_drill_down() -> None:
+    one = report_zip({"id": "a"}, [], {"drilldown.json": "{}\n", "features.csv": "event_id\n"})
+    two = report_zip({"id": "b"}, [], None)
+    payload = batch_report_zip([("run-a", one), ("run-b", two)])
+    with (
+        zipfile.ZipFile(io.BytesIO(payload)) as archive,
+        zipfile.ZipFile(io.BytesIO(one)) as inner,
+    ):
+        assert archive.namelist() == [
+            "run-a/summary.json",
+            "run-a/trades.csv",
+            "run-a/evidence/drilldown.json",
+            "run-a/evidence/features.csv",
+            "run-b/summary.json",
+            "run-b/trades.csv",
+        ]
+        assert archive.read("run-a/evidence/features.csv") == inner.read("evidence/features.csv")
+
+
+def test_batch_export_unknown_run_is_404(client: TestClient) -> None:
+    sid = _snapshot(client)
+    run_id = _run(client, sid, 30)
+    resp = client.get("/api/batches/export", params=[("run_id", run_id), ("run_id", "nope")])
+    assert resp.status_code == 404
+
+
+def test_batch_export_refuses_a_run_that_is_not_finished(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    app = create_app(Lab.open(home), web_dir=tmp_path / "no-web")
+    with TestClient(app) as unfinished:
+        sid = _snapshot(unfinished)
+        done = _run(unfinished, sid, 30)
+        pending = _run(unfinished, sid, 35)
+        with sqlite3.connect(home / "moneylab.sqlite") as db:
+            db.execute("UPDATE runs SET status = ? WHERE id = ?", ("running", pending))
+        resp = unfinished.get(
+            "/api/batches/export",
+            params=[("run_id", done), ("run_id", pending)],
+        )
+    assert resp.status_code == 409
+    assert pending in resp.json()["detail"]
+    assert "finished" in resp.json()["detail"]
+
+
+def test_batch_export_requires_a_run(client: TestClient) -> None:
+    assert client.get("/api/batches/export").status_code == 422
 
 
 def test_export_unknown_run_is_404(client: TestClient) -> None:

@@ -32,7 +32,7 @@ from moneylab.describe import data_source, strategy_summary
 from moneylab.engine.chart import ChartRejected, assemble_chart
 from moneylab.engine.config import StrategyConfig, VersionMismatch, check_versions
 from moneylab.jsonable import jsonable
-from moneylab.report_export import report_zip, summary_document
+from moneylab.report_export import batch_report_zip, report_zip, summary_document
 from moneylab.service import Lab
 
 API_VERSION = "1"
@@ -1071,6 +1071,20 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
         closed and the true holding length. Empty when the analysis cannot be computed."""
         return _closed_trades(run_id)
 
+    def _finished_report_zip(run_id: str) -> bytes:
+        """The single-run export. Refuses a run that has not finished."""
+        detail = _detail(lab, run_id)
+        if detail.status != "completed":
+            raise HTTPException(
+                409,
+                f"run {run_id} is {detail.status}; only a finished report can be exported",
+            )
+        return report_zip(
+            summary_document(detail.model_dump(mode="json")),
+            _closed_trades(run_id),
+            read_evidence_files(lab.store.run_dir(run_id) / "evidence"),
+        )
+
     @app.get(
         "/api/runs/{run_id}/export",
         tags=["runs"],
@@ -1088,22 +1102,40 @@ def create_app(lab: Lab | None = None, web_dir: Path | None = None) -> FastAPI:
     )
     def export_run(run_id: str) -> Response:
         """Download a finished report, including a stored evidence drill-down."""
-        detail = _detail(lab, run_id)
-        if detail.status != "completed":
-            raise HTTPException(
-                409,
-                f"run {run_id} is {detail.status}; only a finished report can be exported",
-            )
-        payload = report_zip(
-            summary_document(detail.model_dump(mode="json")),
-            _closed_trades(run_id),
-            read_evidence_files(lab.store.run_dir(run_id) / "evidence"),
-        )
         filename = f"moneylab-report-{run_id}.zip"
+        return Response(
+            content=_finished_report_zip(run_id),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.get(
+        "/api/batches/export",
+        tags=["runs"],
+        response_class=Response,
+        response_model=None,
+        responses={
+            200: {
+                "description": (
+                    "One zip with a folder per run. Each folder holds that run's "
+                    "summary.json, trades.csv, and an evidence drill-down when one "
+                    "was stored."
+                ),
+                "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    def export_batch(run_id: Annotated[list[str], Query(min_length=1)]) -> Response:
+        """Download several finished reports in one zip, one folder per run."""
+        ordered: list[str] = []
+        for item in run_id:
+            if item not in ordered:
+                ordered.append(item)
+        payload = batch_report_zip([(item, _finished_report_zip(item)) for item in ordered])
         return Response(
             content=payload,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": 'attachment; filename="moneylab-batch.zip"'},
         )
 
     @app.get("/api/runs/{run_id}/fills", response_model=list[FillRow], tags=["runs"])

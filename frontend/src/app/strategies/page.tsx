@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState, type ReactNode } from "react";
 import { ErrorBox, Loading } from "@/components/ui";
-import { api, type StrategyFamily, type StrategyVersion } from "@/lib/api";
+import { api, batchExportPath, type StrategyFamily, type StrategyVersion } from "@/lib/api";
 import { pct, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 
@@ -158,6 +158,17 @@ function StrategyDesk({ families }: { families: StrategyFamily[] }) {
                     <Link className="button primary" href={`/builder?strategy=${encodeURIComponent(version.id)}`}>
                       Edit
                     </Link>
+                    {version.runs.length >= 2 ? (
+                      <a
+                        className="button"
+                        data-testid="export-batch"
+                        href={batchExportPath(version.runs.map((run) => run.id))}
+                        download="moneylab-batch.zip"
+                        title="Download one zip with a folder of trades and the summary for each run of this version"
+                      >
+                        Export reports
+                      </a>
+                    ) : null}
                   </div>
                 </header>
                 <p className="muted small">

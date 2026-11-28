@@ -8,7 +8,7 @@ import { TradeChartDialog } from "@/components/TradeChartDialog";
 import { DecisionsTable, FillsTable } from "@/components/tables";
 import { ErrorBox, Loading } from "@/components/ui";
 import { chartRequestForFill, roundTrips } from "@/lib/analysis";
-import { api, type DecisionRow, type FillRow, type FirstDifference, type RunMetrics, type RunSummary, type TradeRow } from "@/lib/api";
+import { api, batchExportPath, type DecisionRow, type FillRow, type FirstDifference, type RunMetrics, type RunSummary, type TradeRow } from "@/lib/api";
 import { pct, sharpe, versusSpy, when } from "@/lib/format";
 import { useAsync } from "@/lib/hooks";
 
@@ -135,6 +135,7 @@ function AnalyticsDesk({ runs }: { runs: RunSummary[] }) {
   const router = useRouter();
   const [slots, setSlots] = useState(() => slotsFrom(params));
   const chosen = slots.filter(Boolean).slice(0, 3);
+  const batchIds = [...new Set(chosen)];
 
   function choose(index: number, id: string) {
     const next = [...slots];
@@ -154,6 +155,19 @@ function AnalyticsDesk({ runs }: { runs: RunSummary[] }) {
           <h1>Analytics</h1>
           <p className="lead">Up to three runs. Each one is scored against its own benchmark, over its own dates.</p>
         </div>
+        {batchIds.length >= 2 ? (
+          <div className="page-actions">
+            <a
+              className="button"
+              data-testid="export-batch"
+              href={batchExportPath(batchIds)}
+              download="moneylab-batch.zip"
+              title="Download one zip with a folder of trades and the summary for each selected run"
+            >
+              Export reports
+            </a>
+          </div>
+        ) : null}
       </header>
       <div className="analytics-picks">
         {SLOTS.map((key, index) => (
